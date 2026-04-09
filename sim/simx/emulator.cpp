@@ -77,6 +77,7 @@ Emulator::Emulator(const Arch &arch, const DCRS &dcrs, Core* core)
     , dcrs_(dcrs)
     , core_(core)
     , warps_(arch.num_warps(), arch.num_threads())
+    , older_warps_(arch.num_warps())
     , barriers_(arch.num_barriers(), 0)
     , ipdom_size_(arch.num_threads()-1)
   #ifdef EXT_TCU_ENABLE
@@ -121,11 +122,21 @@ void Emulator::reset() {
 
   stalled_warps_.reset();
   active_warps_.reset();
+  greedy_warp_ = 0;
 
   // activate first warp and thread
   active_warps_.set(0);
   warps_[0].tmask.set(0);
   wspawn_.valid = false;
+
+  for (uint32_t i = 0; i < arch_.num_warps(); ++i) {
+    older_warps_[i].reset();
+    for (uint32_t j = 0; j < arch_.num_warps(); ++j) {
+      if (i <= j) {
+        older_warps_[i].set(j);
+      }
+    }
+  }
 }
 
 void Emulator::attach_ram(RAM* ram) {
@@ -149,6 +160,20 @@ uint32_t Emulator::fetch(uint32_t wid, uint64_t uuid) {
   return instr_code;
 }
 
+void Emulator::update_schedule_order(uint32_t scheduled_warp) {
+  for (uint32_t i = 0; i < arch_.num_warps(); ++i) {
+    for (uint32_t j = 0; j < arch_.num_warps(); ++j) {
+      if (i == j) {
+        older_warps_[i].set(j);
+      } else if (i == scheduled_warp) {
+        older_warps_[i].reset(j);
+      } else if (j == scheduled_warp) {
+        older_warps_[i].set(j);
+      }
+    }
+  }
+}
+
 instr_trace_t* Emulator::step() {
   int scheduled_warp = -1;
 
@@ -165,18 +190,44 @@ instr_trace_t* Emulator::step() {
     stalled_warps_.reset(0);
   }
 
-  // find next ready warp
-  for (size_t wid = 0, nw = arch_.num_warps(); wid < nw; ++wid) {
-    bool warp_active = active_warps_.test(wid);
-    bool warp_stalled = stalled_warps_.test(wid);
-    if (warp_active && !warp_stalled) {
-      scheduled_warp = wid;
-      break;
+  bool greedy_ready = active_warps_.test(greedy_warp_) && !stalled_warps_.test(greedy_warp_);
+
+  // keep scheduling the current warp while it remains ready,
+  // otherwise fall back to the oldest ready warp.
+  if (greedy_ready) {
+    scheduled_warp = greedy_warp_;
+  } else {
+    for (size_t wid = 0, nw = arch_.num_warps(); wid < nw; ++wid) {
+      bool warp_active = active_warps_.test(wid);
+      bool warp_stalled = stalled_warps_.test(wid);
+      if (!warp_active || warp_stalled)
+        continue;
+
+      bool is_oldest = true;
+      for (size_t j = 0; j < nw; ++j) {
+        bool other_active = active_warps_.test(j);
+        bool other_stalled = stalled_warps_.test(j);
+        if (!other_active || other_stalled)
+          continue;
+
+        if (!older_warps_[wid].test(j)) {
+          is_oldest = false;
+          break;
+        }
+      }
+
+      if (is_oldest) {
+        scheduled_warp = wid;
+        break;
+      }
     }
   }
 
   if (scheduled_warp == -1)
     return nullptr;
+
+  greedy_warp_ = scheduled_warp;
+  this->update_schedule_order(scheduled_warp);
 
   // get scheduled warp
   auto& warp = warps_.at(scheduled_warp);

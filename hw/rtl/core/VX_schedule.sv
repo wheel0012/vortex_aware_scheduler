@@ -308,14 +308,65 @@ module VX_schedule import VX_gpu_pkg::*; #(
 
     wire [`NUM_WARPS-1:0] ready_warps = active_warps & ~stalled_warps;
 
+    reg [`NUM_WARPS-1:0][`NUM_WARPS-1:0] older_warps;
+
+    always @(posedge clk) begin
+        integer schedule_wid_int;
+        schedule_wid_int = int'(schedule_wid);
+        if (reset) begin 
+            for (integer i = 0; i < `NUM_WARPS; i = i + 1) begin
+                for (integer j = 0; j < `NUM_WARPS; j = j + 1) begin
+                    if (i <= j)
+                        older_warps[i][j] <= 1'b1;
+                    else
+                        older_warps[i][j] <= 1'b0;
+                end
+            end
+        end else if (schedule_fire) begin
+            for (integer i = 0; i < `NUM_WARPS; i = i + 1) begin
+                for (integer j = 0; j < `NUM_WARPS; j = j + 1) begin
+                    if (i == j) begin
+                        older_warps[i][j] <= 1'b1;
+                    end else if (i == schedule_wid_int) begin
+                        older_warps[i][j] <= 1'b0;
+                    end else if (j == schedule_wid_int) begin
+                        older_warps[i][j] <= 1'b1;
+                    end
+                end
+            end
+        end
+    end
+
+    wire [`NUM_WARPS-1:0] oldest_warp;
+    for (genvar i = 0; i < `NUM_WARPS; i = i + 1) begin : g_oldest_warp
+        assign oldest_warp[i] = ready_warps[i] & &( older_warps[i] | ~ready_warps );
+    end
+
+    reg [NW_WIDTH-1:0] greedy_wid;
+    wire greedy_valid = ready_warps[greedy_wid];
+
+    always @(posedge clk) begin
+        if (reset) begin
+            greedy_wid <= 0;
+        end else if (schedule_fire) begin
+            greedy_wid <= schedule_wid;
+        end
+    end
+
+    wire [NW_WIDTH-1:0] priority_wid;
+    wire priority_valid;
+
     VX_priority_encoder #(
         .N (`NUM_WARPS)
     ) wid_select (
-        .data_in   (ready_warps),
-        .index_out (schedule_wid),
-        .valid_out (schedule_valid),
+        .data_in   (oldest_warp),
+        .index_out (priority_wid),
+        .valid_out (priority_valid),
         `UNUSED_PIN (onehot_out)
     );
+    
+    assign schedule_wid = greedy_valid ? greedy_wid : priority_wid;
+    assign schedule_valid = greedy_valid | priority_valid;
 
     wire [`NUM_WARPS-1:0][(`NUM_THREADS + PC_BITS)-1:0] schedule_data;
     for (genvar i = 0; i < `NUM_WARPS; ++i) begin : g_schedule_data

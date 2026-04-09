@@ -124,6 +124,8 @@ private:
 
   bool dcache_amo_check(uint64_t addr);
 
+  void update_schedule_order(uint32_t scheduled_warp);
+
   void writeToStdOut(const void* data, uint64_t addr, uint32_t size);
 
   void cout_flush();
@@ -148,6 +150,8 @@ private:
   std::vector<warp_t> warps_;
   WarpMask    active_warps_;
   WarpMask    stalled_warps_;
+  std::vector<WarpMask> older_warps_;
+  uint32_t    greedy_warp_;
   std::vector<WarpMask> barriers_;
   std::unordered_map<int, std::stringstream> print_bufs_;
   MemoryUnit  mmu_;
