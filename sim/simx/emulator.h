@@ -76,6 +76,13 @@ struct wspawn_t {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+enum class WarpSchedulePolicy {
+  Static,
+  GTO
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
 class Emulator {
 public:
   Emulator(const Arch &arch, const DCRS &dcrs, Core* core);
@@ -111,6 +118,12 @@ public:
 private:
 
   uint32_t fetch(uint32_t wid, uint64_t uuid);
+
+  int select_static_warp() const;
+
+  int select_gto_warp();
+
+  void update_ready_timestamps();
 
   void decode(uint32_t code, uint32_t wid, uint64_t uuid);
 
@@ -148,6 +161,10 @@ private:
   std::vector<warp_t> warps_;
   WarpMask    active_warps_;
   WarpMask    stalled_warps_;
+  WarpSchedulePolicy schedule_policy_;
+  uint64_t    schedule_cycle_;
+  int         greedy_warp_;
+  std::vector<uint64_t> ready_timestamps_;
   std::vector<WarpMask> barriers_;
   std::unordered_map<int, std::stringstream> print_bufs_;
   MemoryUnit  mmu_;

@@ -15,6 +15,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <math.h>
+#include <algorithm>
+#include <limits>
 #include <assert.h>
 #include <util.h>
 
@@ -77,6 +79,10 @@ Emulator::Emulator(const Arch &arch, const DCRS &dcrs, Core* core)
     , dcrs_(dcrs)
     , core_(core)
     , warps_(arch.num_warps(), arch.num_threads())
+    , schedule_policy_(WarpSchedulePolicy::GTO)
+    , schedule_cycle_(0)
+    , greedy_warp_(-1)
+    , ready_timestamps_(arch.num_warps(), 0)
     , barriers_(arch.num_barriers(), 0)
     , ipdom_size_(arch.num_threads()-1)
   #ifdef EXT_TCU_ENABLE
@@ -121,6 +127,9 @@ void Emulator::reset() {
 
   stalled_warps_.reset();
   active_warps_.reset();
+  schedule_cycle_ = 0;
+  greedy_warp_ = -1;
+  std::fill(ready_timestamps_.begin(), ready_timestamps_.end(), 0);
 
   // activate first warp and thread
   active_warps_.set(0);
@@ -149,6 +158,54 @@ uint32_t Emulator::fetch(uint32_t wid, uint64_t uuid) {
   return instr_code;
 }
 
+int Emulator::select_static_warp() const {
+  for (size_t wid = 0, nw = arch_.num_warps(); wid < nw; ++wid) {
+    bool warp_active = active_warps_.test(wid);
+    bool warp_stalled = stalled_warps_.test(wid);
+    if (warp_active && !warp_stalled) {
+      return wid;
+    }
+  }
+  return -1;
+}
+
+void Emulator::update_ready_timestamps() {
+  for (size_t wid = 0, nw = arch_.num_warps(); wid < nw; ++wid) {
+    bool warp_ready = active_warps_.test(wid) && !stalled_warps_.test(wid);
+    if (warp_ready) {
+      if (ready_timestamps_.at(wid) == 0) {
+        ready_timestamps_.at(wid) = schedule_cycle_;
+      }
+    } else {
+      ready_timestamps_.at(wid) = 0;
+    }
+  }
+}
+
+int Emulator::select_gto_warp() {
+  if (greedy_warp_ >= 0) {
+    uint32_t wid = static_cast<uint32_t>(greedy_warp_);
+    if (active_warps_.test(wid) && !stalled_warps_.test(wid)) {
+      return greedy_warp_;
+    }
+  }
+
+  int selected_warp = -1;
+  uint64_t oldest_timestamp = std::numeric_limits<uint64_t>::max();
+  for (size_t wid = 0, nw = arch_.num_warps(); wid < nw; ++wid) {
+    auto ts = ready_timestamps_.at(wid);
+    if (ts == 0)
+      continue;
+    if (ts < oldest_timestamp) {
+      oldest_timestamp = ts;
+      selected_warp = wid;
+    }
+  }
+
+  greedy_warp_ = selected_warp;
+  return selected_warp;
+}
+
 instr_trace_t* Emulator::step() {
   int scheduled_warp = -1;
 
@@ -165,14 +222,19 @@ instr_trace_t* Emulator::step() {
     stalled_warps_.reset(0);
   }
 
-  // find next ready warp
-  for (size_t wid = 0, nw = arch_.num_warps(); wid < nw; ++wid) {
-    bool warp_active = active_warps_.test(wid);
-    bool warp_stalled = stalled_warps_.test(wid);
-    if (warp_active && !warp_stalled) {
-      scheduled_warp = wid;
-      break;
-    }
+  ++schedule_cycle_;
+  update_ready_timestamps();
+
+  // find next ready warp according to policy
+  switch (schedule_policy_) {
+  case WarpSchedulePolicy::Static:
+    scheduled_warp = select_static_warp();
+    break;
+  case WarpSchedulePolicy::GTO:
+    scheduled_warp = select_gto_warp();
+    break;
+  default:
+    assert(false);
   }
 
   if (scheduled_warp == -1)
