@@ -153,9 +153,3 @@ make -C sim/simx -j$(nproc)
 ```sh
 ./ci/blackbox.sh --driver=simx --app=sgemm3 --cores=32 --warps=32 --threads=32 --l2cache --perf=1
 ```
-
-### BFS 디버깅 분리 모드
-`tests/opencl/bfs/main.cc`에서 아래 환경변수를 지원합니다.
-
-- `BFS_CPU_ONLY=1` : 입력+CPU참조 경로만 점검
-- `BFS_SKIP_VERIFY=1` : GPU 실행만 점검(검증 생략)
