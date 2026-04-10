@@ -38,7 +38,23 @@ namespace {
 // WarpSchedulePolicy::Static
 // WarpSchedulePolicy::RR
 // WarpSchedulePolicy::GTO
-constexpr WarpSchedulePolicy kDefaultSchedulePolicy = WarpSchedulePolicy::Static;
+constexpr WarpSchedulePolicy kDefaultSchedulePolicy = WarpSchedulePolicy::GTO;
+
+#ifndef VX_GTO_MSHR_AWARE
+#define VX_GTO_MSHR_AWARE 1
+#endif
+
+#ifndef VX_GTO_MSHR_PRESSURE_NUM
+#define VX_GTO_MSHR_PRESSURE_NUM 3
+#endif
+
+#ifndef VX_GTO_MSHR_PRESSURE_DEN
+#define VX_GTO_MSHR_PRESSURE_DEN 4
+#endif
+
+#ifndef VX_GTO_MSHR_LOAD_COOLDOWN
+#define VX_GTO_MSHR_LOAD_COOLDOWN 2
+#endif
 
 } // namespace
 
@@ -93,6 +109,7 @@ Emulator::Emulator(const Arch &arch, const DCRS &dcrs, Core* core)
     , schedule_cycle_(0)
     , greedy_warp_(-1)
     , rr_last_warp_(-1)
+    , mshr_load_cooldown_ctr_(0)
     , ready_timestamps_(arch.num_warps(), 0)
     , barriers_(arch.num_barriers(), 0)
     , ipdom_size_(arch.num_threads()-1)
@@ -141,6 +158,7 @@ void Emulator::reset() {
   schedule_cycle_ = 0;
   greedy_warp_ = -1;
   rr_last_warp_ = -1;
+  mshr_load_cooldown_ctr_ = 0;
   std::fill(ready_timestamps_.begin(), ready_timestamps_.end(), 0);
 
   // activate first warp and thread
@@ -195,11 +213,19 @@ void Emulator::update_ready_timestamps() {
 }
 
 int Emulator::select_gto_warp() {
-  auto select_oldest_ready = [&](int excluded_warp) -> int {
+  auto is_ready_warp = [&](uint32_t wid) -> bool {
+    return active_warps_.test(wid) && !stalled_warps_.test(wid);
+  };
+
+  auto select_oldest_ready = [&](int excluded_warp, bool skip_load_warps) -> int {
     int selected_warp = -1;
     uint64_t oldest_timestamp = std::numeric_limits<uint64_t>::max();
     for (size_t wid = 0, nw = arch_.num_warps(); wid < nw; ++wid) {
       if (static_cast<int>(wid) == excluded_warp)
+        continue;
+      if (!is_ready_warp(wid))
+        continue;
+      if (skip_load_warps && this->warp_head_is_load(wid))
         continue;
       auto ts = ready_timestamps_.at(wid);
       if (ts == 0)
@@ -212,16 +238,72 @@ int Emulator::select_gto_warp() {
     return selected_warp;
   };
 
+  bool mshr_pressured = false;
+  if (VX_GTO_MSHR_AWARE) {
+    uint32_t dcache_mshr_capacity = core_->socket()->dcache_mshr_capacity();
+    uint32_t pressure_threshold = (dcache_mshr_capacity * VX_GTO_MSHR_PRESSURE_NUM) / VX_GTO_MSHR_PRESSURE_DEN;
+    pressure_threshold = std::max<uint32_t>(pressure_threshold, 1);
+    mshr_pressured = core_->socket()->is_dcache_mshr_pressured(pressure_threshold);
+  }
+
   if (greedy_warp_ >= 0) {
     uint32_t wid = static_cast<uint32_t>(greedy_warp_);
-    if (active_warps_.test(wid) && !stalled_warps_.test(wid)) {
+    if (is_ready_warp(wid) && (!mshr_pressured || !this->warp_head_is_load(wid))) {
       return greedy_warp_;
     }
   }
 
-  int selected_warp = select_oldest_ready(-1);
+  int selected_warp = -1;
+  if (mshr_pressured) {
+    // Under MSHR pressure, temporarily mask LOAD-headed warps.
+    selected_warp = select_oldest_ready(-1, true);
+    // Deadlock prevention: if all ready warps are LOAD-headed, allow the oldest.
+    if (-1 == selected_warp) {
+      if (mshr_load_cooldown_ctr_ < VX_GTO_MSHR_LOAD_COOLDOWN) {
+        ++mshr_load_cooldown_ctr_;
+        greedy_warp_ = -1;
+        return -1;
+      }
+      mshr_load_cooldown_ctr_ = 0;
+      selected_warp = select_oldest_ready(-1, false);
+    }
+  } else {
+    mshr_load_cooldown_ctr_ = 0;
+    selected_warp = select_oldest_ready(-1, false);
+  }
   greedy_warp_ = selected_warp;
   return selected_warp;
+}
+
+bool Emulator::warp_head_is_load(uint32_t wid) {
+  auto& warp = warps_.at(wid);
+  if (!warp.ibuffer.empty()) {
+    auto instr = warp.ibuffer.front();
+    if (FUType::LSU != instr->getFUType())
+      return false;
+
+    auto op_type = instr->getOpType();
+    if (auto lsu_type = std::get_if<LsuType>(&op_type)) {
+      return (*lsu_type == LsuType::LOAD);
+    }
+#ifdef EXT_V_ENABLE
+    if (auto vls_type = std::get_if<VlsType>(&op_type)) {
+      return (*vls_type == VlsType::VL || *vls_type == VlsType::VLS || *vls_type == VlsType::VLX);
+    }
+#endif
+    return false;
+  }
+
+  // If ibuffer is empty, predecode next opcode at PC without affecting core perf counters.
+  uint32_t instr_code = 0;
+#ifdef VM_ENABLE
+  mmu_.read(&instr_code, warp.PC, sizeof(uint32_t), ACCESS_TYPE::FETCH);
+#else
+  mmu_.read(&instr_code, warp.PC, sizeof(uint32_t), 0);
+#endif
+
+  auto opcode = static_cast<Opcode>(instr_code & ((1u << width_opcode) - 1));
+  return (opcode == Opcode::L || opcode == Opcode::FL);
 }
 
 int Emulator::select_rr_warp() {

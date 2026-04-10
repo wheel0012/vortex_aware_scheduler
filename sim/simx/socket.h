@@ -71,6 +71,12 @@ public:
 
   PerfStats perf_stats() const;
 
+  bool is_dcache_mshr_pressured(uint32_t threshold) const;
+
+  uint32_t dcache_mshr_occupancy() const;
+
+  uint32_t dcache_mshr_capacity() const;
+
 private:
   uint32_t                socket_id_;
   Cluster*                cluster_;

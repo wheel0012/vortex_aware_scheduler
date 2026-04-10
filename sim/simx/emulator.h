@@ -128,6 +128,8 @@ private:
 
   void update_ready_timestamps();
 
+  bool warp_head_is_load(uint32_t wid);
+
   void decode(uint32_t code, uint32_t wid, uint64_t uuid);
 
   instr_trace_t* execute(const Instr &instr, uint32_t wid);
@@ -168,6 +170,7 @@ private:
   uint64_t    schedule_cycle_;
   int         greedy_warp_;
   int         rr_last_warp_;
+  uint32_t    mshr_load_cooldown_ctr_;
   std::vector<uint64_t> ready_timestamps_;
   std::vector<WarpMask> barriers_;
   std::unordered_map<int, std::stringstream> print_bufs_;

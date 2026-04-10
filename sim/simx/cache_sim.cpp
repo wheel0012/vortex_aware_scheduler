@@ -349,6 +349,14 @@ public:
 		return perf_stats_;
 	}
 
+	uint32_t mshr_occupancy() const {
+		return pending_mshr_size_;
+	}
+
+	uint32_t mshr_capacity() const {
+		return mshr_.capacity();
+	}
+
 private:
 
 	void processInputs() {
@@ -684,6 +692,32 @@ public:
 		return perf_stats;
 	}
 
+	uint32_t mshr_occupancy() const {
+		if (config_.bypass)
+			return 0;
+		uint32_t total = 0;
+		for (const auto& bank : banks_) {
+			total += bank->mshr_occupancy();
+		}
+		return total;
+	}
+
+	uint32_t mshr_capacity() const {
+		if (config_.bypass)
+			return 0;
+		uint32_t total = 0;
+		for (const auto& bank : banks_) {
+			total += bank->mshr_capacity();
+		}
+		return total;
+	}
+
+	bool is_mshr_pressured(uint32_t threshold) const {
+		if (config_.bypass)
+			return false;
+		return (this->mshr_occupancy() >= threshold);
+	}
+
 private:
 
 	void processBypassResponse(const MemRsp& mem_rsp) {
@@ -746,4 +780,16 @@ void CacheSim::tick() {
 
 CacheSim::PerfStats CacheSim::perf_stats() const {
   return impl_->perf_stats();
+}
+
+uint32_t CacheSim::mshr_occupancy() const {
+	return impl_->mshr_occupancy();
+}
+
+uint32_t CacheSim::mshr_capacity() const {
+	return impl_->mshr_capacity();
+}
+
+bool CacheSim::is_mshr_pressured(uint32_t threshold) const {
+	return impl_->is_mshr_pressured(threshold);
 }

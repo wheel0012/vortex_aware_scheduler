@@ -169,3 +169,15 @@ Socket::PerfStats Socket::perf_stats() const {
   perf_stats.dcache = dcaches_->perf_stats();
   return perf_stats;
 }
+
+bool Socket::is_dcache_mshr_pressured(uint32_t threshold) const {
+  return dcaches_->is_mshr_pressured(threshold);
+}
+
+uint32_t Socket::dcache_mshr_occupancy() const {
+  return dcaches_->mshr_occupancy();
+}
+
+uint32_t Socket::dcache_mshr_capacity() const {
+  return dcaches_->mshr_capacity();
+}

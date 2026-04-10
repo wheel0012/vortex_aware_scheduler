@@ -95,6 +95,26 @@ public:
 		return perf;
 	}
 
+	uint32_t mshr_occupancy() const {
+		uint32_t total = 0;
+		for (auto cache : caches_) {
+			total += cache->mshr_occupancy();
+		}
+		return total;
+	}
+
+	uint32_t mshr_capacity() const {
+		uint32_t total = 0;
+		for (auto cache : caches_) {
+			total += cache->mshr_capacity();
+		}
+		return total;
+	}
+
+	bool is_mshr_pressured(uint32_t threshold) const {
+		return (this->mshr_occupancy() >= threshold);
+	}
+
 private:
   std::vector<CacheSim::Ptr> caches_;
 };

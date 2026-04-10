@@ -84,6 +84,12 @@ public:
 
 	PerfStats perf_stats() const;
 
+	uint32_t mshr_occupancy() const;
+
+	uint32_t mshr_capacity() const;
+
+	bool is_mshr_pressured(uint32_t threshold) const;
+
 private:
 	class Impl;
 	Impl* impl_;
