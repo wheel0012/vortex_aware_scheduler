@@ -32,6 +32,16 @@
 
 using namespace vortex;
 
+namespace {
+
+// Choose one schedule policy here for simx:
+// WarpSchedulePolicy::Static
+// WarpSchedulePolicy::RR
+// WarpSchedulePolicy::GTO
+constexpr WarpSchedulePolicy kDefaultSchedulePolicy = WarpSchedulePolicy::Static;
+
+} // namespace
+
 warp_t::warp_t(uint32_t num_threads)
   : ireg_file(MAX_NUM_REGS, std::vector<Word>(num_threads))
   , freg_file(MAX_NUM_REGS, std::vector<uint64_t>(num_threads))
@@ -79,9 +89,10 @@ Emulator::Emulator(const Arch &arch, const DCRS &dcrs, Core* core)
     , dcrs_(dcrs)
     , core_(core)
     , warps_(arch.num_warps(), arch.num_threads())
-    , schedule_policy_(WarpSchedulePolicy::GTO)
+    , schedule_policy_(kDefaultSchedulePolicy)
     , schedule_cycle_(0)
     , greedy_warp_(-1)
+    , rr_last_warp_(-1)
     , ready_timestamps_(arch.num_warps(), 0)
     , barriers_(arch.num_barriers(), 0)
     , ipdom_size_(arch.num_threads()-1)
@@ -129,6 +140,7 @@ void Emulator::reset() {
   active_warps_.reset();
   schedule_cycle_ = 0;
   greedy_warp_ = -1;
+  rr_last_warp_ = -1;
   std::fill(ready_timestamps_.begin(), ready_timestamps_.end(), 0);
 
   // activate first warp and thread
@@ -183,6 +195,23 @@ void Emulator::update_ready_timestamps() {
 }
 
 int Emulator::select_gto_warp() {
+  auto select_oldest_ready = [&](int excluded_warp) -> int {
+    int selected_warp = -1;
+    uint64_t oldest_timestamp = std::numeric_limits<uint64_t>::max();
+    for (size_t wid = 0, nw = arch_.num_warps(); wid < nw; ++wid) {
+      if (static_cast<int>(wid) == excluded_warp)
+        continue;
+      auto ts = ready_timestamps_.at(wid);
+      if (ts == 0)
+        continue;
+      if (ts < oldest_timestamp) {
+        oldest_timestamp = ts;
+        selected_warp = wid;
+      }
+    }
+    return selected_warp;
+  };
+
   if (greedy_warp_ >= 0) {
     uint32_t wid = static_cast<uint32_t>(greedy_warp_);
     if (active_warps_.test(wid) && !stalled_warps_.test(wid)) {
@@ -190,20 +219,23 @@ int Emulator::select_gto_warp() {
     }
   }
 
-  int selected_warp = -1;
-  uint64_t oldest_timestamp = std::numeric_limits<uint64_t>::max();
-  for (size_t wid = 0, nw = arch_.num_warps(); wid < nw; ++wid) {
-    auto ts = ready_timestamps_.at(wid);
-    if (ts == 0)
-      continue;
-    if (ts < oldest_timestamp) {
-      oldest_timestamp = ts;
-      selected_warp = wid;
-    }
-  }
-
+  int selected_warp = select_oldest_ready(-1);
   greedy_warp_ = selected_warp;
   return selected_warp;
+}
+
+int Emulator::select_rr_warp() {
+  auto nw = arch_.num_warps();
+  if (0 == nw)
+    return -1;
+  for (size_t step = 1; step <= nw; ++step) {
+    uint32_t wid = (uint32_t(rr_last_warp_ + step) % nw);
+    if (active_warps_.test(wid) && !stalled_warps_.test(wid)) {
+      rr_last_warp_ = static_cast<int>(wid);
+      return static_cast<int>(wid);
+    }
+  }
+  return -1;
 }
 
 instr_trace_t* Emulator::step() {
@@ -222,8 +254,10 @@ instr_trace_t* Emulator::step() {
     stalled_warps_.reset(0);
   }
 
-  ++schedule_cycle_;
-  update_ready_timestamps();
+  if (WarpSchedulePolicy::GTO == schedule_policy_) {
+    ++schedule_cycle_;
+    update_ready_timestamps();
+  }
 
   // find next ready warp according to policy
   switch (schedule_policy_) {
@@ -232,6 +266,9 @@ instr_trace_t* Emulator::step() {
     break;
   case WarpSchedulePolicy::GTO:
     scheduled_warp = select_gto_warp();
+    break;
+  case WarpSchedulePolicy::RR:
+    scheduled_warp = select_rr_warp();
     break;
   default:
     assert(false);

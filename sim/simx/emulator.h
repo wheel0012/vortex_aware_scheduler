@@ -78,7 +78,8 @@ struct wspawn_t {
 
 enum class WarpSchedulePolicy {
   Static,
-  GTO
+  GTO,
+  RR
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -123,6 +124,8 @@ private:
 
   int select_gto_warp();
 
+  int select_rr_warp();
+
   void update_ready_timestamps();
 
   void decode(uint32_t code, uint32_t wid, uint64_t uuid);
@@ -164,6 +167,7 @@ private:
   WarpSchedulePolicy schedule_policy_;
   uint64_t    schedule_cycle_;
   int         greedy_warp_;
+  int         rr_last_warp_;
   std::vector<uint64_t> ready_timestamps_;
   std::vector<WarpMask> barriers_;
   std::unordered_map<int, std::stringstream> print_bufs_;

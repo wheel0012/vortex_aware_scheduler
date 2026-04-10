@@ -132,3 +132,30 @@ echo "source <build-path>/ci/toolchain_env.sh" >> ~/.bashrc
 ./ci/blackbox.sh --app=demo --debug=3
 ```
 - For additional information, check out the [documentation](docs/index.md)
+
+## URP 실험 가이드 (simx)
+
+### 정책 선택(코드에서 1줄 수정)
+`sim/simx/emulator.cpp`의 `kDefaultSchedulePolicy` 값을 바꿔서 사용합니다.
+
+- `WarpSchedulePolicy::Static` : 기존 priority 방식
+- `WarpSchedulePolicy::RR` : round-robin
+- `WarpSchedulePolicy::GTO` : greedy-then-oldest
+
+### 빌드
+```sh
+cd build
+source ./ci/toolchain_env.sh
+make -C sim/simx -j$(nproc)
+```
+
+### 실행 예시 (sgemm3)
+```sh
+./ci/blackbox.sh --driver=simx --app=sgemm3 --cores=32 --warps=32 --threads=32 --l2cache --perf=1
+```
+
+### BFS 디버깅 분리 모드
+`tests/opencl/bfs/main.cc`에서 아래 환경변수를 지원합니다.
+
+- `BFS_CPU_ONLY=1` : 입력+CPU참조 경로만 점검
+- `BFS_SKIP_VERIFY=1` : GPU 실행만 점검(검증 생략)

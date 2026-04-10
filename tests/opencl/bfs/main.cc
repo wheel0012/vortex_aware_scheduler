@@ -185,9 +185,23 @@ int main(int argc, char *argv[]) {
   int errors = -1;
   int no_of_nodes;
   int edge_list_size;
-  FILE *fp;
-  Node *h_graph_nodes;
-  char *h_graph_mask, *h_updating_graph_mask, *h_graph_visited;
+  FILE *fp = nullptr;
+  Node *h_graph_nodes = nullptr;
+  char *h_graph_mask = nullptr;
+  char *h_updating_graph_mask = nullptr;
+  char *h_graph_visited = nullptr;
+  int *h_graph_edges = nullptr;
+  int *h_cost = nullptr;
+  int *h_cost_ref = nullptr;
+
+  bool cpu_only = false;
+  bool skip_verify = false;
+  if (auto env = std::getenv("BFS_CPU_ONLY")) {
+    cpu_only = (0 == std::strcmp(env, "1"));
+  }
+  if (auto env = std::getenv("BFS_SKIP_VERIFY")) {
+    skip_verify = (0 == std::strcmp(env, "1"));
+  }
 
   if (argc < 2) {
     printf("graph file missing!\n");
@@ -210,13 +224,11 @@ int main(int argc, char *argv[]) {
 
     fscanf(fp, "%d", &no_of_nodes);
 
-    int num_of_blocks = 1;
     int num_of_threads_per_block = no_of_nodes;
 
     // Make execution Parameters according to the number of nodes
     // Distribute threads across multiple Blocks if necessary
     if (no_of_nodes > MAX_THREADS_PER_BLOCK) {
-      num_of_blocks = (int)ceil(no_of_nodes / (double)MAX_THREADS_PER_BLOCK);
       num_of_threads_per_block = MAX_THREADS_PER_BLOCK;
     }
     work_group_size = num_of_threads_per_block;
@@ -244,18 +256,20 @@ int main(int argc, char *argv[]) {
     h_graph_visited[source] = true;
     fscanf(fp, "%d", &edge_list_size);
     int id, cost;
-    int *h_graph_edges = (int *)malloc(sizeof(int) * edge_list_size);
+    h_graph_edges = (int *)malloc(sizeof(int) * edge_list_size);
     for (int i = 0; i < edge_list_size; i++) {
       fscanf(fp, "%d", &id);
       fscanf(fp, "%d", &cost);
       h_graph_edges[i] = id;
     }
 
-    if (fp)
+    if (fp) {
       fclose(fp);
+      fp = nullptr;
+    }
     // allocate mem for the result on host side
-    int *h_cost = (int *)malloc(sizeof(int) * no_of_nodes);
-    int *h_cost_ref = (int *)malloc(sizeof(int) * no_of_nodes);
+    h_cost = (int *)malloc(sizeof(int) * no_of_nodes);
+    h_cost_ref = (int *)malloc(sizeof(int) * no_of_nodes);
     for (int i = 0; i < no_of_nodes; i++) {
       h_cost[i] = -1;
       h_cost_ref[i] = -1;
@@ -264,8 +278,10 @@ int main(int argc, char *argv[]) {
     h_cost_ref[source] = 0;
     //---------------------------------------------------------
     //--gpu entry
-    run_bfs_gpu(no_of_nodes, h_graph_nodes, edge_list_size, h_graph_edges,
-                h_graph_mask, h_updating_graph_mask, h_graph_visited, h_cost);
+    if (!cpu_only) {
+      run_bfs_gpu(no_of_nodes, h_graph_nodes, edge_list_size, h_graph_edges,
+                  h_graph_mask, h_updating_graph_mask, h_graph_visited, h_cost);
+    }
     //---------------------------------------------------------
     //--cpu entry
     // initalize the memory again
@@ -283,20 +299,39 @@ int main(int argc, char *argv[]) {
                 h_cost_ref);
     //---------------------------------------------------------
     //--result varification
-    errors = compare_results<int>(h_cost_ref, h_cost, no_of_nodes);
-    // release host memory
-    free(h_graph_nodes);
-    free(h_graph_mask);
-    free(h_updating_graph_mask);
-    free(h_graph_visited);
+    if (cpu_only || skip_verify) {
+      errors = 0;
+      if (cpu_only) {
+        printf("BFS mode: CPU-only (input/reference path checked)\n");
+      } else {
+        printf("BFS mode: verify skipped (GPU path only)\n");
+      }
+    } else {
+      errors = compare_results<int>(h_cost_ref, h_cost, no_of_nodes);
+      if (errors != 0) {
+        int printed = 0;
+        for (int i = 0; i < no_of_nodes && printed < 8; ++i) {
+          if (h_cost_ref[i] != h_cost[i]) {
+            printf("Mismatch[%d] cpu=%d gpu=%d\n", i, h_cost_ref[i], h_cost[i]);
+            ++printed;
+          }
+        }
+      }
+    }
   } catch (std::string msg) {
-    printf("--cambine: exception in main ->%s\n", msg);
-    // release host memory
-    free(h_graph_nodes);
-    free(h_graph_mask);
-    free(h_updating_graph_mask);
-    free(h_graph_visited);
+    printf("--cambine: exception in main ->%s\n", msg.c_str());
+    errors = -2;
   }
+
+  if (fp)
+    fclose(fp);
+  free(h_graph_edges);
+  free(h_cost);
+  free(h_cost_ref);
+  free(h_graph_nodes);
+  free(h_graph_mask);
+  free(h_updating_graph_mask);
+  free(h_graph_visited);
 
   if (errors != 0) {
     printf("Failed!\n");
