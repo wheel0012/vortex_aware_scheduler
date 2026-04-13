@@ -155,12 +155,12 @@ make -C sim/simx -j$(nproc)
 ```
 
 ### MSHR-aware(GTO)
-`GTO` 스케줄러에 MSHR 압박 신호를 결합한 정책입니다.
+`GTO` 스케줄러에 MSHR 압박 신호를 결합한 policy
 
 - 동작 원리:
-  - MSHR 압박 조건(`occupancy >= capacity * NUM / DEN`)이 참이면, head 명령이 `LOAD`인 ready warp를 임시 마스킹합니다.
-  - 가능한 경우 `non-load` warp를 우선 스케줄링해 LSU 포화를 완화합니다.
-  - 압박 상태에서 ready warp가 모두 `LOAD`이면, `LOAD_COOLDOWN` 주기마다 oldest load warp 1개를 허용해 진행을 보장합니다.
+  - MSHR 압박 조건(`occupancy >= capacity * NUM / DEN`)이 참이면, head 명령이 `LOAD`인 ready warp를 임시 masking
+  - 가능한 경우 `non-load` warp를 우선 스케줄링해 LSU 포화를 완화
+  - 압박 상태에서 ready warp가 모두 `LOAD`이면, `LOAD_COOLDOWN` 주기마다 oldest load warp 1개를 허용해 진행 보장
 
 - 기본값(현재 코드 기준):
   - `VX_GTO_MSHR_AWARE=1`
