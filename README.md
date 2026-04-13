@@ -153,3 +153,31 @@ make -C sim/simx -j$(nproc)
 ```sh
 ./ci/blackbox.sh --driver=simx --app=sgemm3 --cores=32 --warps=32 --threads=32 --l2cache --perf=1
 ```
+
+### MSHR-aware(GTO)
+`GTO` 스케줄러에 MSHR 압박 신호를 결합한 정책입니다.
+
+- 동작 원리:
+  - MSHR 압박 조건(`occupancy >= capacity * NUM / DEN`)이 참이면, head 명령이 `LOAD`인 ready warp를 임시 마스킹합니다.
+  - 가능한 경우 `non-load` warp를 우선 스케줄링해 LSU 포화를 완화합니다.
+  - 압박 상태에서 ready warp가 모두 `LOAD`이면, `LOAD_COOLDOWN` 주기마다 oldest load warp 1개를 허용해 진행을 보장합니다.
+
+- 기본값(현재 코드 기준):
+  - `VX_GTO_MSHR_AWARE=1`
+  - `VX_GTO_MSHR_PRESSURE_NUM=3`
+  - `VX_GTO_MSHR_PRESSURE_DEN=4`
+  - `VX_GTO_MSHR_LOAD_COOLDOWN=2`
+
+- 실행 예시:
+  - 기본 사용(옵션 없이, 코드 기본값 사용)
+```sh
+./ci/blackbox.sh --driver=simx --app=sgemm3 --cores=32 --warps=32 --threads=32 --l2cache --perf=1
+```
+  - OFF 비교(`MSHR-aware` 비활성화)
+```sh
+CONFIGS="-DVX_GTO_MSHR_AWARE=0" ./ci/blackbox.sh --driver=simx --app=sgemm3 --cores=32 --warps=32 --threads=32 --l2cache --perf=1
+```
+  - 튜닝 예시(`NUM/DEN/COOLDOWN` 지정)
+```sh
+CONFIGS="-DVX_GTO_MSHR_AWARE=1 -DVX_GTO_MSHR_PRESSURE_NUM=7 -DVX_GTO_MSHR_PRESSURE_DEN=8 -DVX_GTO_MSHR_LOAD_COOLDOWN=4" ./ci/blackbox.sh --driver=simx --app=sgemm3 --cores=32 --warps=32 --threads=32 --l2cache --perf=1
+```
