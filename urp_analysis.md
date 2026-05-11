@@ -205,6 +205,44 @@ iPAWS: criticality 기반 WOI 분류기 (구버전; closed-loop 문제 있음)
 
 `skipped=11` (BFS) 의 원인: 현재 구현은 `stalled_warps_.test(w)` true (= barrier 대기) 인 warp을 stall 카운트에서 제외함. 그 결과 barrier-heavy 윈도우는 woi_size<2 가 되어 분류 자체가 skip됨. 논문의 `iscore = inst + btime`에 맞게 barrier wait도 stall로 카운트하는 patch가 필요 (Run 4 검증).
 
+### Run 4 — barrier-aware iscore (2026-05-11)
+
+조건: Run 3와 동일 config. iPAWS만 barrier patch 적용 (commit 0f5ef9a3 `select_ipaws_warp` 의 `stalled_warps_.test(w)` skip 제거).
+
+| Bench | RR | GTO | gCAWS | iPAWS (Run 4) | Δ vs Run 3 iPAWS |
+|---|---|---|---|---|---|
+| bfs | 1.358 | 1.345 | 1.300 | 1.360 | unchanged |
+| sgemm3 | **4.238** | 4.210 | 4.129 | 4.237 | +0.7% (4.207 → 4.237) ✅ |
+| spmv | 4.294 | 4.290 | **4.340** | 4.290 | unchanged |
+
+`IPAWS_STATS` 비교 (Patch 효과 가시화):
+
+| | bfs (R3 → R4) | sgemm3 (R3 → R4) | spmv (R3 → R4) |
+|---|---|---|---|
+| decides | 16 → 16 | 377 → 374 | 903 → 903 |
+| valid | **5 → 15** | **341 → 374** | 902 → 902 |
+| skipped | **11 → 1** | **36 → 0** | 1 → 1 |
+| mm_min | 0.669 → 0.782 | 0.394 → 0.789 | 0.794 → 0.794 |
+| mm_avg | 0.782 → 0.985 | 0.784 → 0.999 | 1.000 → 1.000 |
+| concave | 0 → 0 | 4 → 0 | 0 → 0 |
+
+해석:
+1. **Barrier patch는 작동함** (mechanistically): BFS의 skipped 11→1, sgemm3 36→0. barrier-stalled warp들이 이제 WOI에 포함됨.
+2. **다만 분포가 더 균등해 보이게 됨**: barrier 대기 warp들이 stall 카운트 받으니 거의 모든 warp가 비슷한 iscore. mm_avg가 1.0 가까이 수렴.
+3. **부수효과 — sgemm3가 더 깨끗하게 RR 매치**: Run 3에서 잘못된 concave 4번이 Run 4에서 0번. IPC 4.207 → 4.237 (RR=4.238에 사실상 도달).
+4. **spmv 미해결**: mm_avg=1.000으로 완전 균등. spmv에서 gCAWS가 이기는 진짜 이유는 **issue 분포 skew가 아닌 다른 mechanism** (cache reuse 패턴 등). 우리 분류기로는 잡을 수 없음.
+
+요약 IPC (3 benchmarks 평균):
+
+| 정책 | 평균 IPC | 1위 횟수 |
+|---|---|---|
+| RR | 3.297 | 2 (bfs, sgemm3) |
+| GTO | 3.282 | 0 |
+| gCAWS | 3.256 | 1 (spmv) |
+| **iPAWS (Run 4)** | **3.296** | 2 (RR-match) |
+
+iPAWS는 RR과 동등 (best policy tracking 능력 검증), spmv에서만 −1% 손해.
+
 ---
 
 ## 다음 액션 (decided 2026-05-11)
@@ -219,9 +257,11 @@ CACP는 RTL 타겟에서 **제외**한다. 다음 두 가지 이유:
 완료:
 - **(A)** ✅ iPAWS 분류기를 paper Algorithm 1로 재구현 (commit d1feaf27).
 - **(B)** ✅ Run 3 sweep — 새 분류기 검증. BFS/sgemm3 best 매치, spmv 1% 손해.
+- **(C)** ✅ Barrier-aware iscore patch (commit 0f5ef9a3). Run 4로 검증 — patch가 mechanistically 작동, valid window 비율 대폭 증가.
 
 진행 중:
-- **(C)** Barrier wait를 iscore에 포함하는 1줄 patch — Run 4로 검증 예정.
-- **(D)** CACP 관련 코드 정리 / LRU 캐시 복귀 (RTL prep). 별도 PR로 진행.
+- **(D)** RR-friendly 워크로드 추가 (stencil, gaussian, lbm 후보). iPAWS의
+  RR 적응 능력을 더 다양한 케이스로 검증.
+- **(E)** CACP 관련 코드 정리 / LRU 캐시 복귀 (RTL prep). 별도 PR로 진행.
 
 `scripts/exp_cacp_ablation.sh` 는 CACP 드롭 결정 근거로 ablation 보고할 때만 사용.
