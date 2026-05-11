@@ -86,14 +86,14 @@ enum class WarpSchedulePolicy {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-// iPAWS adapts between criticality-aware (gCAWS+CACP) and uniform (RR)
-// scheduling based on the runtime distribution of warp criticality.
-//
-//   - Adapt phase: sample the criticality distribution across active warps;
-//                  count the fraction of warps that fall below
-//                  (median_criticality * IPAWS_WOI_RATIO) — these are the
-//                  Warps-of-Interest (WOI) for the criticality view.
-//                  A high WOI fraction means a skewed (concave) pattern.
+// iPAWS adapts between gCAWS and RR by following the original iPAWS
+// Algorithm 1:
+//   - Adapt phase: probe with GTO. For each cycle track per-warp issue and
+//                  "ready-but-not-issued" stall counts. iscore[w] = issue + stall.
+//   - Decide:      Restrict to WOI (warps that participated). If
+//                    iscore_sum < |WOI| * iscore_max / 2  (i.e. mean/max < 0.5)
+//                  the distribution is concave -> pick gCAWS. Otherwise convex
+//                  -> pick RR.
 //   - Execute phase: run the chosen policy for IPAWS_EXECUTE_CYCLES.
 enum class iPAWSPhase {
   Adapt,
@@ -104,15 +104,37 @@ struct ipaws_state_t {
   iPAWSPhase           phase;
   uint64_t             phase_start_cycle;
   WarpSchedulePolicy   chosen;       // policy selected during Execute
-  uint64_t             adapt_samples;
-  double               adapt_woi_sum;  // sum of per-sample WOI ratios
+
+  // Per-Adapt-window counters (size = num_warps; reset at each Adapt start).
+  std::vector<uint64_t> adapt_issue;
+  std::vector<uint64_t> adapt_stall;
+
+  // Diagnostics
+  uint64_t             decides_total;     // count of Adapt-window completions
+  uint64_t             decides_valid;     // decides where WOI was non-trivial
+  uint64_t             decides_skipped;   // decides where WOI < 2 (no meaningful test)
+  uint64_t             decides_concave;   // chose gCAWS branch
+  uint64_t             decides_convex;    // chose RR branch
+  double               decide_meanmax_accum;  // sum of (mean/max) over *valid* decides only
+  double               decide_meanmax_min;
+  double               decide_meanmax_max;
+  uint64_t             gcaws_exec_cycles;
+  uint64_t             rr_exec_cycles;
 
   ipaws_state_t()
     : phase(iPAWSPhase::Adapt)
     , phase_start_cycle(0)
     , chosen(WarpSchedulePolicy::gCAWS)
-    , adapt_samples(0)
-    , adapt_woi_sum(0.0)
+    , decides_total(0)
+    , decides_valid(0)
+    , decides_skipped(0)
+    , decides_concave(0)
+    , decides_convex(0)
+    , decide_meanmax_accum(0.0)
+    , decide_meanmax_min(1.0)
+    , decide_meanmax_max(0.0)
+    , gcaws_exec_cycles(0)
+    , rr_exec_cycles(0)
   {}
 };
 
@@ -180,8 +202,6 @@ private:
   int select_ipaws_warp();
 
   void ipaws_sample_and_step();
-
-  double compute_woi_ratio() const;
 
   void update_ready_timestamps();
 

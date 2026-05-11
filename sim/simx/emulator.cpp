@@ -12,6 +12,7 @@
 // limitations under the License.
 
 #include <iostream>
+#include <iomanip>
 #include <stdlib.h>
 #include <unistd.h>
 #include <math.h>
@@ -31,6 +32,24 @@
 #include "local_mem.h"
 
 using namespace vortex;
+
+// iPAWS tuning macros hoisted above the Emulator destructor so its
+// diagnostic printout can reference them.
+#ifndef VORTEX_IPAWS_ADAPT_CYCLES
+#define VORTEX_IPAWS_ADAPT_CYCLES   1024
+#endif
+#ifndef VORTEX_IPAWS_EXECUTE_CYCLES
+#define VORTEX_IPAWS_EXECUTE_CYCLES 16384
+#endif
+#ifndef VORTEX_IPAWS_WOI_RATIO
+#define VORTEX_IPAWS_WOI_RATIO      0.5
+#endif
+#ifndef VORTEX_IPAWS_CONCAVE_TH
+#define VORTEX_IPAWS_CONCAVE_TH     0.4
+#endif
+#ifndef VORTEX_IPAWS_USE_CACP
+#define VORTEX_IPAWS_USE_CACP       1
+#endif
 
 namespace {
 
@@ -122,6 +141,27 @@ Emulator::Emulator(const Arch &arch, const DCRS &dcrs, Core* core)
 
 Emulator::~Emulator() {
   this->cout_flush();
+  if (schedule_policy_ == WarpSchedulePolicy::iPAWS) {
+    auto& s = ipaws_state_;
+    double avg_meanmax = (s.decides_valid > 0)
+                         ? (s.decide_meanmax_accum / s.decides_valid)
+                         : 0.0;
+    double min_meanmax = (s.decides_valid > 0) ? s.decide_meanmax_min : 0.0;
+    double max_meanmax = (s.decides_valid > 0) ? s.decide_meanmax_max : 0.0;
+    std::cerr << "IPAWS_STATS: decides=" << s.decides_total
+              << " valid=" << s.decides_valid
+              << " skipped=" << s.decides_skipped
+              << " concave=" << s.decides_concave
+              << " convex=" << s.decides_convex
+              << " mm_avg=" << std::fixed << std::setprecision(3) << avg_meanmax
+              << " mm_min=" << min_meanmax
+              << " mm_max=" << max_meanmax
+              << " gcaws_exec_cycles=" << s.gcaws_exec_cycles
+              << " rr_exec_cycles=" << s.rr_exec_cycles
+              << " test=mean/max<0.5"
+              << " use_cacp=" << (VORTEX_IPAWS_USE_CACP ? 1 : 0)
+              << std::endl;
+  }
 }
 
 void Emulator::reset() {
@@ -162,6 +202,8 @@ void Emulator::reset() {
     cpl.criticality = 0;
   }
   ipaws_state_ = ipaws_state_t();
+  ipaws_state_.adapt_issue.assign(arch_.num_warps(), 0);
+  ipaws_state_.adapt_stall.assign(arch_.num_warps(), 0);
   suppress_critical_push_ = false;
 
   // activate first warp and thread
@@ -335,61 +377,37 @@ int Emulator::select_gcaws_warp() {
   return selected_warp;
 }
 
-// iPAWS tuning constants. Adapt phase samples the criticality distribution;
-// Execute phase runs the chosen scheduler for IPAWS_EXECUTE_CYCLES.
-//   IPAWS_WOI_RATIO    : fraction of median below which a warp is a WOI.
-//   IPAWS_CONCAVE_TH   : avg WOI ratio above this => concave => gCAWS.
-// All four are overridable at build time via VORTEX_IPAWS_*.
-#ifndef VORTEX_IPAWS_ADAPT_CYCLES
-#define VORTEX_IPAWS_ADAPT_CYCLES   1024
-#endif
-#ifndef VORTEX_IPAWS_EXECUTE_CYCLES
-#define VORTEX_IPAWS_EXECUTE_CYCLES 16384
-#endif
-#ifndef VORTEX_IPAWS_WOI_RATIO
-#define VORTEX_IPAWS_WOI_RATIO      0.5
-#endif
-#ifndef VORTEX_IPAWS_CONCAVE_TH
-#define VORTEX_IPAWS_CONCAVE_TH     0.4
-#endif
-// When 0, iPAWS picks between *gCAWS without CACP* and RR; when 1 (default)
-// the concave branch keeps CACP enabled. Used to isolate iPAWS's decision
-// quality from CACP-side effects.
-#ifndef VORTEX_IPAWS_USE_CACP
-#define VORTEX_IPAWS_USE_CACP       1
-#endif
+// iPAWS tuning constants.
+// VORTEX_IPAWS_* macros are defined at the top of the file (see header
+// comment near `using namespace vortex;`).
 namespace {
 constexpr uint64_t IPAWS_ADAPT_CYCLES   = VORTEX_IPAWS_ADAPT_CYCLES;
 constexpr uint64_t IPAWS_EXECUTE_CYCLES = VORTEX_IPAWS_EXECUTE_CYCLES;
-constexpr double   IPAWS_WOI_RATIO      = VORTEX_IPAWS_WOI_RATIO;
-constexpr double   IPAWS_CONCAVE_TH     = VORTEX_IPAWS_CONCAVE_TH;
 constexpr bool     IPAWS_USE_CACP       = (VORTEX_IPAWS_USE_CACP != 0);
 }
 
-double Emulator::compute_woi_ratio() const {
-  // Collect criticality of active warps.
-  std::vector<uint64_t> crits;
-  crits.reserve(arch_.num_warps());
-  for (size_t wid = 0, nw = arch_.num_warps(); wid < nw; ++wid) {
-    if (!active_warps_.test(wid)) continue;
-    crits.push_back(warp_cpl_.at(wid).criticality);
+int Emulator::select_ipaws_warp() {
+  auto& s = ipaws_state_;
+  if (s.phase == iPAWSPhase::Adapt) {
+    // Probe with GTO. The chosen warp gets an issue credit; every other
+    // ready warp accumulates a "ready-but-not-issued" stall.
+    int chosen = select_gto_warp();
+    if (chosen >= 0) {
+      ++s.adapt_issue.at(chosen);
+      for (uint32_t w = 0, nw = arch_.num_warps(); w < nw; ++w) {
+        if (static_cast<int>(w) == chosen) continue;
+        if (!active_warps_.test(w)) continue;
+        if (stalled_warps_.test(w)) continue;
+        ++s.adapt_stall.at(w);
+      }
+    }
+    return chosen;
   }
-  if (crits.size() < 2)
-    return 0.0;
-
-  // Median (nth_element gives O(n)).
-  size_t mid = crits.size() / 2;
-  std::nth_element(crits.begin(), crits.begin() + mid, crits.end());
-  uint64_t median = crits.at(mid);
-  if (median == 0)
-    return 0.0;
-
-  double thr = static_cast<double>(median) * IPAWS_WOI_RATIO;
-  size_t woi = 0;
-  for (auto c : crits) {
-    if (static_cast<double>(c) < thr) ++woi;
+  // Execute phase: dispatch the policy chosen at last Decide.
+  if (s.chosen == WarpSchedulePolicy::RR) {
+    return select_rr_warp();
   }
-  return static_cast<double>(woi) / crits.size();
+  return select_gcaws_warp();
 }
 
 void Emulator::ipaws_sample_and_step() {
@@ -399,60 +417,85 @@ void Emulator::ipaws_sample_and_step() {
 
   switch (s.phase) {
   case iPAWSPhase::Adapt: {
-    // Sample the current criticality distribution.
-    s.adapt_woi_sum += compute_woi_ratio();
-    ++s.adapt_samples;
-    if (elapsed >= IPAWS_ADAPT_CYCLES) {
-      double avg_woi = (s.adapt_samples > 0)
-                       ? (s.adapt_woi_sum / s.adapt_samples)
-                       : 0.0;
-      // Concave (skewed) -> few warps dominate criticality -> gCAWS.
-      // Convex (uniform) -> RR.  In either branch we force CACP off when
-      // IPAWS_USE_CACP is disabled, so that iPAWS's decisions can be
-      // evaluated independently of the cache-side policy.
-      if (avg_woi >= IPAWS_CONCAVE_TH) {
-        s.chosen = WarpSchedulePolicy::gCAWS;
-        suppress_critical_push_ = !IPAWS_USE_CACP;
-        if (suppress_critical_push_ && core_) {
-          core_->set_critical_warp(-1);
-        }
-      } else {
-        s.chosen = WarpSchedulePolicy::RR;
-        suppress_critical_push_ = true;
-        if (core_) {
-          critical_warp_ = -1;
-          core_->set_critical_warp(-1);
-        }
-      }
-      s.phase = iPAWSPhase::Execute;
-      s.phase_start_cycle = now;
-      s.adapt_samples = 0;
-      s.adapt_woi_sum = 0.0;
+    if (elapsed < IPAWS_ADAPT_CYCLES) break;
+
+    // iPAWS Algorithm 1 evaluation.
+    //   iscore[w] = adapt_issue[w] + adapt_stall[w]
+    //   WOI       = active warps that participated (iscore > 0).
+    //   concave   = iscore_sum < |WOI| * iscore_max / 2  (mean/max < 0.5).
+    uint64_t iscore_sum = 0;
+    uint64_t iscore_max = 0;
+    size_t   woi_size   = 0;
+    for (uint32_t w = 0, nw = arch_.num_warps(); w < nw; ++w) {
+      if (!active_warps_.test(w)) continue;
+      uint64_t iscore = s.adapt_issue.at(w) + s.adapt_stall.at(w);
+      if (iscore == 0) continue;  // WOI filter
+      iscore_sum += iscore;
+      if (iscore > iscore_max) iscore_max = iscore;
+      ++woi_size;
     }
+
+    bool concave = false;
+    bool valid = (woi_size >= 2 && iscore_max > 0);
+    double meanmax = 0.0;
+    if (valid) {
+      uint64_t threshold = static_cast<uint64_t>(woi_size) * iscore_max / 2;
+      concave = (iscore_sum < threshold);
+      meanmax = static_cast<double>(iscore_sum)
+              / (static_cast<double>(woi_size) * static_cast<double>(iscore_max));
+    }
+
+    ++s.decides_total;
+    if (valid) {
+      ++s.decides_valid;
+      s.decide_meanmax_accum += meanmax;
+      if (meanmax < s.decide_meanmax_min) s.decide_meanmax_min = meanmax;
+      if (meanmax > s.decide_meanmax_max) s.decide_meanmax_max = meanmax;
+    } else {
+      ++s.decides_skipped;
+    }
+
+    if (concave) {
+      s.chosen = WarpSchedulePolicy::gCAWS;
+      ++s.decides_concave;
+      suppress_critical_push_ = !IPAWS_USE_CACP;
+      if (suppress_critical_push_ && core_) {
+        core_->set_critical_warp(-1);
+      }
+    } else {
+      s.chosen = WarpSchedulePolicy::RR;
+      ++s.decides_convex;
+      suppress_critical_push_ = true;
+      if (core_) {
+        critical_warp_ = -1;
+        core_->set_critical_warp(-1);
+      }
+    }
+
+    s.phase = iPAWSPhase::Execute;
+    s.phase_start_cycle = now;
+    std::fill(s.adapt_issue.begin(), s.adapt_issue.end(), 0);
+    std::fill(s.adapt_stall.begin(), s.adapt_stall.end(), 0);
     break;
   }
   case iPAWSPhase::Execute: {
+    if (s.chosen == WarpSchedulePolicy::gCAWS)
+      ++s.gcaws_exec_cycles;
+    else
+      ++s.rr_exec_cycles;
     if (elapsed >= IPAWS_EXECUTE_CYCLES) {
       s.phase = iPAWSPhase::Adapt;
       s.phase_start_cycle = now;
-      s.adapt_samples = 0;
-      s.adapt_woi_sum = 0.0;
+      // Quiesce the cache-side CACP signal before the next GTO probe so the
+      // dcache does not carry over a stale critical-warp from the previous
+      // Execute window.
+      suppress_critical_push_ = true;
+      critical_warp_ = -1;
+      if (core_) core_->set_critical_warp(-1);
     }
     break;
   }
   }
-}
-
-int Emulator::select_ipaws_warp() {
-  // During Adapt phase we still need to make forward progress; default to
-  // gCAWS so critical-warp tracking stays warm.
-  auto effective = (ipaws_state_.phase == iPAWSPhase::Execute)
-                   ? ipaws_state_.chosen
-                   : WarpSchedulePolicy::gCAWS;
-  if (effective == WarpSchedulePolicy::RR) {
-    return select_rr_warp();
-  }
-  return select_gcaws_warp();
 }
 
 instr_trace_t* Emulator::step() {

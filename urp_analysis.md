@@ -93,11 +93,21 @@ iPAWS는 두 단계 상태 기계로 동작한다.
 
 ## 실험 인프라 (worklogs/)
 
-- `worklogs/bench_sweep.sh "<bench> [args...]" ...` : 6개 정책 (RR / GTO /
-  gCAWS_noCACP / gCAWS_CACP / **iPAWS_noCACP** / iPAWS_CACP) 으로 한 번씩 빌드 후
-  주어진 벤치마크들을 돌리고 결과를 summary로 정리. 워크로드별 입력 인자는 인자로 전달.
-- `worklogs/exp_E_cacp_reserved.sh` : gCAWS 고정, CACP 예약 way 0/1/2/3/4 스윕.
-- `worklogs/exp_F_ipaws_threshold.sh` : iPAWS 고정, concave threshold 0.30~0.75 스윕.
+```
+worklogs/
+├── scripts/
+│   ├── bench_sweep.sh          # 메인 스윕: RR / GTO / gCAWS / iPAWS (4종)
+│   └── exp_cacp_ablation.sh    # CACP 예약 way 0~4 스윕 (ablation 전용)
+└── runs/                        # 모든 실행 결과 (timestamped)
+    ├── run1_warps16_phase1.log
+    ├── run1_warps16_summary.txt
+    └── run2_warps32_v1/         # 첫 warps=32 baseline
+```
+
+- `worklogs/scripts/bench_sweep.sh "<bench> [args...]" ...` : 4개 정책으로
+  한 번씩 빌드 후 주어진 벤치마크를 돌리고 summary 정리.
+- `worklogs/scripts/exp_cacp_ablation.sh` : gCAWS 고정, CACP 예약 way 0~4 스윕.
+  RTL에서는 CACP를 빼기로 했으므로 이 스크립트는 ablation 보고용으로만 사용.
 
 기본 BASE 환경: `cores=1, warps=32, threads=32, DCACHE_NUM_WAYS=8`. 작은 input은
 cache 압박이 없어 정책 차이가 묻히므로, sweep에서는 다음 input을 권장한다.
@@ -167,14 +177,19 @@ cache 압박이 없어 정책 차이가 묻히므로, sweep에서는 다음 inpu
 
 ---
 
-## 다음 액션 (P0/P1/P2)
+## 다음 액션 (decided 2026-05-11)
 
-- **(P0)** 입력 규모 + warp 수 확대 — Run 2에서 검증 중. 끝나면 결과를 위에 패치.
-- **(P1)** iPAWS = gCAWS_noCACP ↔ RR 분리 평가 — Run 2의 `iPAWS_noCACP` 항목.
-  BFS에서 1.800 근처 (≈ gCAWS_noCACP) 가 나와야 분류기가 제대로 작동했다는 신호.
-- **(P2)** CACP 살릴 길 찾기:
-  - reservation way 수 스윕 (`exp_E_cacp_reserved.sh`).
-  - 가설: warp/way 비율이 충분히 커지면 (Run 2 환경) 50% reservation도
-    더 이상 conflict miss를 폭증시키지 않을 수 있음.
-- **(P3)** iPAWS concave threshold 튜닝 (`exp_F_ipaws_threshold.sh`).
-  BFS가 RR로 분류되도록 임계를 올리는 게 도움이 되는지 검증.
+CACP는 RTL 타겟에서 **제외**한다. 다음 두 가지 이유:
+- 실험 결과 모든 워크로드에서 손해 (Run 2 표 참조).
+- FPGA 면적 비용 (SHCT BRAM + 라인당 메타데이터 + wid/pc 버스 + way partition
+  로직) 이 작은 SM 환경에서 정당화되지 않음.
+
+따라서 RTL 타겟은 **gCAWS scheduler + iPAWS{gCAWS ↔ RR} 적응**.
+
+진행 중:
+- **(A)** iPAWS 분류기를 iPAWS 논문 Algorithm 1 그대로 (Adapt 동안 GTO probe,
+  WOI filtering, `iscore_sum < |WOI| × iscore_max / 2` 테스트) 로 재구현.
+- **(B)** Run 3 sweep — Run 2 와 동일 config에서 새 분류기 검증.
+- **(C)** CACP 관련 코드 정리 / LRU 캐시 복귀 (RTL prep).
+
+`scripts/exp_cacp_ablation.sh` 는 위 결정의 근거로 ablation 보고할 때만 사용.
