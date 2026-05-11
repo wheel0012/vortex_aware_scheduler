@@ -13,10 +13,10 @@ BENCH_ENTRIES=("$@")
 if [ ${#BENCH_ENTRIES[@]} -eq 0 ]; then
   BENCH_ENTRIES=(bfs sgemm3 spmv)
 fi
-ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 BUILD_DIR="$ROOT_DIR/build"
 
-BASE_FLAGS="-DDCACHE_NUM_WAYS=8 -DNUM_CORES=1 -DNUM_WARPS=16 -DNUM_THREADS=16 -DPERF_ENABLE -DVORTEX_SCHED=3"
+BASE_FLAGS="-DDCACHE_NUM_WAYS=8 -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DPERF_ENABLE -DVORTEX_SCHED=3"
 
 # label cacp_enable cacp_reserved
 COMBOS=(
@@ -27,7 +27,7 @@ COMBOS=(
   "RESV4   1 4"
 )
 
-LOG_ROOT="$ROOT_DIR/worklogs/exp_E_$(date +%Y%m%d_%H%M%S)"
+LOG_ROOT="$ROOT_DIR/worklogs/runs/exp_cacp_$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$LOG_ROOT"
 
 build_one() {

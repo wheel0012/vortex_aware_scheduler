@@ -16,21 +16,20 @@ BENCH_ENTRIES=("$@")
 if [ ${#BENCH_ENTRIES[@]} -eq 0 ]; then
   BENCH_ENTRIES=(bfs)
 fi
-ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 BUILD_DIR="$ROOT_DIR/build"
 
 # Configs to compare. Format: "label sched cacp ipaws_use_cacp"
 # sched: 1=GTO 2=RR 3=gCAWS 4=iPAWS
-# cacp:  global CACP enable for the dcache config
-# ipaws_use_cacp: only meaningful for iPAWS; 0 isolates the iPAWS decision
-#                 from CACP side-effects.
+# cacp:  global CACP enable for the dcache config (kept at 0; CACP is not
+#        part of the RTL target — use scripts/exp_cacp_ablation.sh for the
+#        CACP ablation study).
+# ipaws_use_cacp: only relevant if cacp=1; left at 0 for consistency.
 COMBOS=(
-  "RR             2 0 1"
-  "GTO            1 0 1"
-  "gCAWS_noCACP   3 0 1"
-  "gCAWS_CACP     3 1 1"
-  "iPAWS_noCACP   4 1 0"
-  "iPAWS_CACP     4 1 1"
+  "RR     2 0 0"
+  "GTO    1 0 0"
+  "gCAWS  3 0 0"
+  "iPAWS  4 0 0"
 )
 
 # Base config: 8-way dcache, Vortex-paper warp/thread/core count.
@@ -96,7 +95,7 @@ summarize_bench() {
   } | tee "$out"
 }
 
-LOG_ROOT="$ROOT_DIR/worklogs/sweep_$(date +%Y%m%d_%H%M%S)"
+LOG_ROOT="$ROOT_DIR/worklogs/runs/sweep_$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$LOG_ROOT"
 
 echo "Sweep entries: ${BENCH_ENTRIES[*]}"

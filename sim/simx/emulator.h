@@ -88,8 +88,11 @@ enum class WarpSchedulePolicy {
 
 // iPAWS adapts between gCAWS and RR by following the original iPAWS
 // Algorithm 1:
-//   - Adapt phase: probe with GTO. For each cycle track per-warp issue and
-//                  "ready-but-not-issued" stall counts. iscore[w] = issue + stall.
+//   - Adapt phase: probe with GTO. For each cycle the GTO-chosen warp gets
+//                  +1 issue; every other active warp gets +1 stall (whether
+//                  it was ready-but-passed-over or suspended at a barrier).
+//                  iscore[w] = adapt_issue[w] + adapt_stall[w]
+//                  matches the paper's iscore = inst_i + btime_i.
 //   - Decide:      Restrict to WOI (warps that participated). If
 //                    iscore_sum < |WOI| * iscore_max / 2  (i.e. mean/max < 0.5)
 //                  the distribution is concave -> pick gCAWS. Otherwise convex

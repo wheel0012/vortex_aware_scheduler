@@ -162,18 +162,48 @@ cache 압박이 없어 정책 차이가 묻히므로, sweep에서는 다음 inpu
 
 → 입력 규모만 키워도 IPC가 3~5배 향상. cache 압박이 비로소 발생.
 
-### Run 2 — 재설계된 baseline (진행 중)
+### Run 2 — 재설계된 baseline (2026-05-11)
 
 조건: `warps=32, threads=32, DCACHE_NUM_WAYS=8`
 입력: `bfs (graph4k)`, `sgemm3 -n128`, `spmv Dubcova3.mtx`
-정책 6종: RR / GTO / gCAWS_noCACP / gCAWS_CACP / **iPAWS_noCACP** / iPAWS_CACP
+iPAWS: criticality 기반 WOI 분류기 (구버전; closed-loop 문제 있음)
 
-> iPAWS_noCACP는 본 프로젝트가 새로 추가한 `VORTEX_IPAWS_USE_CACP=0` 빌드 모드.
-> gCAWS 분기에서도 critical_warp 정보를 dcache로 push하지 않아 (Emulator의
-> `suppress_critical_push_` 플래그가 select_gcaws_warp의 propagate 호출을 차단)
-> iPAWS의 분류기 자체의 효과만 평가한다.
+| Bench | RR | GTO | gCAWS_noCACP | gCAWS_CACP | iPAWS_noCACP | iPAWS_CACP |
+|---|---|---|---|---|---|---|
+| bfs | **1.358** | 1.345 | 1.300 | 1.269 | 1.309 | 1.309 |
+| sgemm3 | **4.238** | 4.210 | 4.129 | 3.959 | 3.479 | 3.479 |
+| spmv | 4.294 | 4.290 | **4.340** | 4.274 | 4.218 | 4.218 |
 
-결과는 sweep 완료 후 본 섹션에 채울 예정.
+발견:
+1. **gCAWS 단독 vs RR**: warps=32에선 BFS/sgemm3에서 RR이 우세. gCAWS는 spmv에서만 +1% IPC. Run 1의 gCAWS 우위가 사라짐 — warp 수 늘리면 RR의 parallelism이 충분.
+2. **CACP 모든 워크로드에서 손해** (−1.5~−7.5% IPC). 8-way에서도 50% 예약은 비-critical partition 협소.
+3. **iPAWS_noCACP ≡ iPAWS_CACP (소수점 6자리까지 동일)**: criticality-WOI 분류기는 closed-loop 문제로 항상 RR을 선택, 그래서 CACP-on/off 차이가 안 보임.
+
+이 결과를 토대로 다음 결정:
+- **CACP는 RTL 타겟에서 제외**.
+- **iPAWS 분류기는 paper Algorithm 1 (Adapt 동안 GTO probe, mean/max<0.5)로 재구현**.
+
+### Run 3 — 새 iPAWS 분류기 검증 (2026-05-11)
+
+조건: Run 2와 동일. iPAWS만 새 분류기로 교체. CACP off 통일.
+정책 4종: RR / GTO / gCAWS / **iPAWS**(=새 분류기)
+
+| Bench | RR | GTO | gCAWS | **iPAWS** | iPAWS 결정 |
+|---|---|---|---|---|---|
+| bfs | 1.358 | 1.345 | 1.300 | **1.360** | RR 100% (16/16) — best match ✅ |
+| sgemm3 | **4.238** | 4.210 | 4.129 | 4.207 | RR 99% (373/377), gCAWS 1% (4) — near-best ✅ |
+| spmv | 4.294 | 4.290 | **4.340** | 4.290 | RR 100% (903/903) — gCAWS 기회 놓침 ❌ |
+
+`IPAWS_STATS` 분석:
+- **bfs**: decides=16, valid=5, skipped=11. mm 범위 [0.669, 0.840] — 5번의 valid 모두 convex. 11번은 woi_size<2 (barrier-stalled warp이 WOI에서 제외).
+- **sgemm3**: decides=377, valid=341, skipped=36, mm_avg=0.784, mm_min=0.394. 일부 윈도우가 concave 진입 → 작은 gCAWS 비율 (1%).
+- **spmv**: decides=903, valid=902, skipped=1, mm_avg=1.000, mm_min=0.794. **분포가 거의 완전 균등** → 항상 RR. 실제로 gCAWS가 spmv에서 이긴 이유는 분포 모양이 아니라 다른 mechanism (예: cache reuse 패턴).
+
+요약: 분류기 정직성은 검증됨. BFS/sgemm3 best 정책 정확히 매치. spmv는 분류기가 잡을 수 있는 신호 자체가 없음.
+
+#### Run 3에서 드러난 후속 이슈
+
+`skipped=11` (BFS) 의 원인: 현재 구현은 `stalled_warps_.test(w)` true (= barrier 대기) 인 warp을 stall 카운트에서 제외함. 그 결과 barrier-heavy 윈도우는 woi_size<2 가 되어 분류 자체가 skip됨. 논문의 `iscore = inst + btime`에 맞게 barrier wait도 stall로 카운트하는 patch가 필요 (Run 4 검증).
 
 ---
 
@@ -186,10 +216,12 @@ CACP는 RTL 타겟에서 **제외**한다. 다음 두 가지 이유:
 
 따라서 RTL 타겟은 **gCAWS scheduler + iPAWS{gCAWS ↔ RR} 적응**.
 
-진행 중:
-- **(A)** iPAWS 분류기를 iPAWS 논문 Algorithm 1 그대로 (Adapt 동안 GTO probe,
-  WOI filtering, `iscore_sum < |WOI| × iscore_max / 2` 테스트) 로 재구현.
-- **(B)** Run 3 sweep — Run 2 와 동일 config에서 새 분류기 검증.
-- **(C)** CACP 관련 코드 정리 / LRU 캐시 복귀 (RTL prep).
+완료:
+- **(A)** ✅ iPAWS 분류기를 paper Algorithm 1로 재구현 (commit d1feaf27).
+- **(B)** ✅ Run 3 sweep — 새 분류기 검증. BFS/sgemm3 best 매치, spmv 1% 손해.
 
-`scripts/exp_cacp_ablation.sh` 는 위 결정의 근거로 ablation 보고할 때만 사용.
+진행 중:
+- **(C)** Barrier wait를 iscore에 포함하는 1줄 patch — Run 4로 검증 예정.
+- **(D)** CACP 관련 코드 정리 / LRU 캐시 복귀 (RTL prep). 별도 PR로 진행.
+
+`scripts/exp_cacp_ablation.sh` 는 CACP 드롭 결정 근거로 ablation 보고할 때만 사용.

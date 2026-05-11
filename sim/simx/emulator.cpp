@@ -389,17 +389,19 @@ constexpr bool     IPAWS_USE_CACP       = (VORTEX_IPAWS_USE_CACP != 0);
 int Emulator::select_ipaws_warp() {
   auto& s = ipaws_state_;
   if (s.phase == iPAWSPhase::Adapt) {
-    // Probe with GTO. The chosen warp gets an issue credit; every other
-    // ready warp accumulates a "ready-but-not-issued" stall.
+    // Probe with GTO. The chosen warp gets an issue credit. Every other
+    // active warp accumulates a "did-not-issue" cycle, regardless of why
+    // (ready-but-passed-over OR stalled at a barrier / scoreboard). This
+    // makes iscore = inst + btime match the iPAWS paper's score, where
+    // btime captures barrier-wait time.
     int chosen = select_gto_warp();
     if (chosen >= 0) {
       ++s.adapt_issue.at(chosen);
-      for (uint32_t w = 0, nw = arch_.num_warps(); w < nw; ++w) {
-        if (static_cast<int>(w) == chosen) continue;
-        if (!active_warps_.test(w)) continue;
-        if (stalled_warps_.test(w)) continue;
-        ++s.adapt_stall.at(w);
-      }
+    }
+    for (uint32_t w = 0, nw = arch_.num_warps(); w < nw; ++w) {
+      if (static_cast<int>(w) == chosen) continue;
+      if (!active_warps_.test(w)) continue;
+      ++s.adapt_stall.at(w);
     }
     return chosen;
   }
