@@ -79,7 +79,23 @@ struct wspawn_t {
 enum class WarpSchedulePolicy {
   Static,
   GTO,
-  RR
+  RR,
+  gCAWS
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
+// Per-warp criticality tracking for CAWA (Lee & Wu, ISCA 2015).
+//   nCriticality = nInst * CPI_avg + nStall
+//   nInst   : instruction-count disparity vs. fastest warp
+//   CPI_avg : per-warp average CPI
+//   nStall  : accumulated stall cycles (scoreboard + ibuffer)
+struct warp_cpl_t {
+  uint64_t instr_count;
+  uint64_t stall_cycles;
+  uint64_t criticality;
+
+  warp_cpl_t() : instr_count(0), stall_cycles(0), criticality(0) {}
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -126,7 +142,11 @@ private:
 
   int select_rr_warp();
 
+  int select_gcaws_warp();
+
   void update_ready_timestamps();
+
+  void update_cpl_counters();
 
   void decode(uint32_t code, uint32_t wid, uint64_t uuid);
 
@@ -168,7 +188,9 @@ private:
   uint64_t    schedule_cycle_;
   int         greedy_warp_;
   int         rr_last_warp_;
+  int         critical_warp_;
   std::vector<uint64_t> ready_timestamps_;
+  std::vector<warp_cpl_t> warp_cpl_;
   std::vector<WarpMask> barriers_;
   std::unordered_map<int, std::stringstream> print_bufs_;
   MemoryUnit  mmu_;

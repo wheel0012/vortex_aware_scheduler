@@ -38,7 +38,8 @@ namespace {
 // WarpSchedulePolicy::Static
 // WarpSchedulePolicy::RR
 // WarpSchedulePolicy::GTO
-constexpr WarpSchedulePolicy kDefaultSchedulePolicy = WarpSchedulePolicy::Static;
+// WarpSchedulePolicy::gCAWS
+constexpr WarpSchedulePolicy kDefaultSchedulePolicy = WarpSchedulePolicy::gCAWS;
 
 } // namespace
 
@@ -93,7 +94,9 @@ Emulator::Emulator(const Arch &arch, const DCRS &dcrs, Core* core)
     , schedule_cycle_(0)
     , greedy_warp_(-1)
     , rr_last_warp_(-1)
+    , critical_warp_(-1)
     , ready_timestamps_(arch.num_warps(), 0)
+    , warp_cpl_(arch.num_warps())
     , barriers_(arch.num_barriers(), 0)
     , ipdom_size_(arch.num_threads()-1)
   #ifdef EXT_TCU_ENABLE
@@ -141,7 +144,13 @@ void Emulator::reset() {
   schedule_cycle_ = 0;
   greedy_warp_ = -1;
   rr_last_warp_ = -1;
+  critical_warp_ = -1;
   std::fill(ready_timestamps_.begin(), ready_timestamps_.end(), 0);
+  for (auto& cpl : warp_cpl_) {
+    cpl.instr_count = 0;
+    cpl.stall_cycles = 0;
+    cpl.criticality = 0;
+  }
 
   // activate first warp and thread
   active_warps_.set(0);
@@ -238,6 +247,78 @@ int Emulator::select_rr_warp() {
   return -1;
 }
 
+void Emulator::update_cpl_counters() {
+  // 1. Accumulate stall cycles for active-but-stalled warps.
+  for (size_t wid = 0, nw = arch_.num_warps(); wid < nw; ++wid) {
+    if (active_warps_.test(wid) && stalled_warps_.test(wid)) {
+      warp_cpl_.at(wid).stall_cycles++;
+    }
+  }
+
+  // 2. Find the leading warp (highest instr_count) among active warps.
+  uint64_t max_inst = 0;
+  for (size_t wid = 0, nw = arch_.num_warps(); wid < nw; ++wid) {
+    if (!active_warps_.test(wid)) continue;
+    max_inst = std::max(max_inst, warp_cpl_.at(wid).instr_count);
+  }
+
+  // 3. Recompute nCriticality = nInst * CPI_avg + nStall.
+  for (size_t wid = 0, nw = arch_.num_warps(); wid < nw; ++wid) {
+    if (!active_warps_.test(wid)) continue;
+    auto& cpl = warp_cpl_.at(wid);
+    uint64_t nInst = max_inst - cpl.instr_count;
+    // CPI_avg approximation: elapsed cycles / committed instructions.
+    // Floor at 1 to avoid zeroing out the instruction-disparity term for
+    // a warp that just started.
+    uint64_t cpi_avg = (cpl.instr_count > 0)
+        ? std::max<uint64_t>(1, schedule_cycle_ / cpl.instr_count)
+        : 1;
+    cpl.criticality = nInst * cpi_avg + cpl.stall_cycles;
+  }
+}
+
+int Emulator::select_gcaws_warp() {
+  // Greedy phase: stay on the current critical warp while it is ready.
+  if (critical_warp_ >= 0) {
+    uint32_t wid = static_cast<uint32_t>(critical_warp_);
+    if (active_warps_.test(wid) && !stalled_warps_.test(wid)) {
+      return critical_warp_;
+    }
+  }
+
+  // Pick the ready warp with the highest criticality score.
+  // Tie-break with the oldest ready timestamp (GTO fallback).
+  int selected_warp = -1;
+  uint64_t best_crit = 0;
+  uint64_t best_ts = std::numeric_limits<uint64_t>::max();
+
+  for (size_t wid = 0, nw = arch_.num_warps(); wid < nw; ++wid) {
+    if (!active_warps_.test(wid)) continue;
+    if (stalled_warps_.test(wid)) continue;
+
+    uint64_t crit = warp_cpl_.at(wid).criticality;
+    uint64_t ts = ready_timestamps_.at(wid);
+    if (ts == 0) ts = std::numeric_limits<uint64_t>::max();
+
+    bool take = false;
+    if (selected_warp < 0) {
+      take = true;
+    } else if (crit > best_crit) {
+      take = true;
+    } else if (crit == best_crit && ts < best_ts) {
+      take = true;
+    }
+    if (take) {
+      selected_warp = static_cast<int>(wid);
+      best_crit = crit;
+      best_ts = ts;
+    }
+  }
+
+  critical_warp_ = selected_warp;
+  return selected_warp;
+}
+
 instr_trace_t* Emulator::step() {
   int scheduled_warp = -1;
 
@@ -254,9 +335,13 @@ instr_trace_t* Emulator::step() {
     stalled_warps_.reset(0);
   }
 
-  if (WarpSchedulePolicy::GTO == schedule_policy_) {
+  if (WarpSchedulePolicy::GTO == schedule_policy_
+      || WarpSchedulePolicy::gCAWS == schedule_policy_) {
     ++schedule_cycle_;
     update_ready_timestamps();
+  }
+  if (WarpSchedulePolicy::gCAWS == schedule_policy_) {
+    update_cpl_counters();
   }
 
   // find next ready warp according to policy
@@ -269,6 +354,9 @@ instr_trace_t* Emulator::step() {
     break;
   case WarpSchedulePolicy::RR:
     scheduled_warp = select_rr_warp();
+    break;
+  case WarpSchedulePolicy::gCAWS:
+    scheduled_warp = select_gcaws_warp();
     break;
   default:
     assert(false);
@@ -310,6 +398,9 @@ instr_trace_t* Emulator::step() {
 
   // Execute
   auto trace = this->execute(*instr, scheduled_warp);
+
+  // Track committed instruction count for CPL.
+  warp_cpl_.at(scheduled_warp).instr_count++;
 
   return trace;
 }

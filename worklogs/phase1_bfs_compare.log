@@ -1,0 +1,36 @@
+=== gCAWS ===
+PERF: scheduler idle=88067 (86%)
+PERF: scheduler stalls=0 (0%)
+PERF: ibuffer stalls=59249 (57%)
+PERF: scoreboard stalls=86585 (84%) (alu=5%, lsu=94%, csrs=0%, wctl=0%, fpu=0%)
+PERF: operands stalls=1007 (0%)
+PERF: ifetches=14216
+PERF: loads=43835
+PERF: stores=23141
+PERF: ifetch latency=5 cycles
+PERF: load latency=40 cycles
+PERF: instrs=218435, cycles=102183, IPC=2.137684
+=== RR ===
+PERF: scheduler idle=90577 (86%)
+PERF: scheduler stalls=0 (0%)
+PERF: ibuffer stalls=56009 (53%)
+PERF: scoreboard stalls=88299 (84%) (alu=3%, lsu=96%, csrs=0%, wctl=0%, fpu=0%)
+PERF: operands stalls=1007 (0%)
+PERF: ifetches=14216
+PERF: loads=43835
+PERF: stores=23141
+PERF: ifetch latency=5 cycles
+PERF: load latency=44 cycles
+PERF: instrs=218435, cycles=104693, IPC=2.086434
+=== gCAWS (rerun for record) ===
+PERF: scheduler idle=86601 (85%)
+PERF: scheduler stalls=0 (0%)
+PERF: ibuffer stalls=46651 (46%)
+PERF: scoreboard stalls=84391 (83%) (alu=5%, lsu=94%, csrs=0%, wctl=0%, fpu=0%)
+PERF: operands stalls=1007 (0%)
+PERF: ifetches=14216
+PERF: loads=43835
+PERF: stores=23141
+PERF: ifetch latency=5 cycles
+PERF: load latency=36 cycles
+PERF: instrs=218435, cycles=100717, IPC=2.168800
