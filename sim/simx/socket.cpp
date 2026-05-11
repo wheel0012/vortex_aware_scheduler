@@ -49,13 +49,18 @@ Socket::Socket(const SimContext& ctx,
   });
 
   snprintf(sname, 100, "%s-dcaches", this->name().c_str());
-  // CACP way reservation: half the associativity is reserved for the
-  // critical warp (clamped to 1..A-1). VORTEX_CACP_ENABLE=0 forces it off.
+  // VORTEX_CACP_ENABLE=0 forces CACP off; VORTEX_CACP_RESERVED selects how
+  // many ways out of A are reserved for the critical warp (default A/2).
 #ifndef VORTEX_CACP_ENABLE
 #define VORTEX_CACP_ENABLE 1
 #endif
+#ifndef VORTEX_CACP_RESERVED
+#define VORTEX_CACP_RESERVED (DCACHE_NUM_WAYS / 2)
+#endif
   bool cacp_enable = (DCACHE_NUM_WAYS >= 2) && (VORTEX_CACP_ENABLE != 0);
-  uint32_t cacp_reserved = cacp_enable ? (DCACHE_NUM_WAYS / 2) : 0;
+  uint32_t cacp_reserved = cacp_enable ? VORTEX_CACP_RESERVED : 0;
+  if (cacp_reserved >= DCACHE_NUM_WAYS)
+    cacp_reserved = DCACHE_NUM_WAYS - 1;
   dcaches_ = CacheCluster::Create(sname, cores_per_socket, NUM_DCACHES, CacheSim::Config{
     !DCACHE_ENABLED,
     log2ceil(DCACHE_SIZE),  // C

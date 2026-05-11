@@ -165,8 +165,7 @@ Scheduling) 를 결합한 적응형 스케줄러를 구현하는 것을 목표�
 1. **Phase 1**: gCAWS warp 스케줄러
 2. **Phase 2**: CACP 캐시 관리 (way reservation + SHiP-CB)
 3. **Phase 3**: iPAWS 상태 기계 (gCAWS ↔ RR 적응)
-4. **Phase 4**: RTL 구현
-5. **Phase 5**: FPGA 평가
+
 
 ### Phase 1: gCAWS 스케줄러 (simx 에뮬레이터)
 
@@ -210,7 +209,7 @@ CACP 바이어스: critical warp의 fill은 SHCT 예측 무시하고 RRPV=0(near
 Pipeline 확장: LsuReq/MemReq에 wid, pc 추가 → LSU → coalescer → adapter → cache 전 경로 전달
 Control plane: emulator → core → socket → cache_cluster → cache_sim의 set_critical_warp() 체인
 
-### Phase 3: iPAWS 상태 기계 (gCAWS+CACP ↔ RR 적응)
+### Phase 3: iPAWS 도입 (gCAWS+CACP ↔ RR 적응)
 
 iPAWS는 두 단계 상태 기계로 동작합니다.
 
@@ -239,4 +238,53 @@ cd build
 make -C sim/simx -j$(nproc)
 ./ci/blackbox.sh --driver=simx --app=bfs --perf=2 --cores=1 --warps=16 --threads=16
 ```
+
+### Build-time 옵션 (정책/CACP/iPAWS 튜닝)
+
+소스를 건드리지 않고 빌드 시 `CONFIGS=...` 로 다음 매크로를 넘기면 정책과
+캐시-사이드 동작을 골라 비교할 수 있다.
+
+| 매크로 | 값 | 기본값 | 설명 |
+|---|---|---|---|
+| `VORTEX_SCHED` | 0/1/2/3/4 | 4 | Static / GTO / RR / gCAWS / iPAWS |
+| `VORTEX_CACP_ENABLE` | 0/1 | 1 | dcache의 CACP(way reservation + RRPV bias) 전역 토글 |
+| `VORTEX_CACP_RESERVED` | 0..A−1 | A/2 | CACP가 critical warp용으로 예약하는 way 개수 |
+| `VORTEX_IPAWS_USE_CACP` | 0/1 | 1 | 0이면 iPAWS의 gCAWS 분기에서도 CACP를 끔 (iPAWS 의사결정 단독 평가용) |
+| `VORTEX_IPAWS_ADAPT_CYCLES` | int | 1024 | iPAWS Adapt phase 길이 |
+| `VORTEX_IPAWS_EXECUTE_CYCLES` | int | 16384 | iPAWS Execute phase 길이 |
+| `VORTEX_IPAWS_WOI_RATIO` | float | 0.5 | median × 비율 미만이면 WOI |
+| `VORTEX_IPAWS_CONCAVE_TH` | float | 0.4 | 평균 WOI 비율 ≥ 이 값이면 concave (gCAWS 선택) |
+
+## URP 실험 인프라 (worklogs/)
+
+- `worklogs/bench_sweep.sh "<bench> [args...]" ...` : 5 + 1개 정책 (RR / GTO /
+  gCAWS_noCACP / gCAWS_CACP / **iPAWS_noCACP** / iPAWS_CACP) 으로 한 번씩 빌드 후
+  주어진 벤치마크들을 돌리고 결과를 summary로 정리. 워크로드별 입력 인자는 인자로 전달.
+- `worklogs/exp_E_cacp_reserved.sh` : gCAWS 고정, CACP 예약 way 0/1/2/3/4 스윕.
+- `worklogs/exp_F_ipaws_threshold.sh` : iPAWS 고정, concave threshold 0.30~0.75 스윕.
+
+기본 BASE 환경: `cores=1, warps=32, threads=32, DCACHE_NUM_WAYS=8`. 작은 input은
+cache 압박이 없어 정책 차이가 묻히므로, sweep에서는 다음 input을 권장:
+- `bfs` (graph4k.txt, 기본)
+- `sgemm3 -n128` (3×128²×4B ≈ 192 KB)
+- `spmv -i $(pwd)/tests/opencl/spmv/Dubcova3.mtx,...vec`
+
+### Phase 3 후속 실험 메모
+
+초기 sweep (warps=16 / 8-way / 기본 input) 에서 발견된 사실:
+1. **gCAWS scheduler 단독**은 bfs에서 +1.2%, 다른 워크로드에서는 ≤ GTO. CAWA가
+   가정한 criticality skew가 워크로드 의존적임이 재현됨.
+2. **CACP가 모든 워크로드에서 손해 (−4 ~ −7.5% IPC)**. 후속 진단으로는 (a)
+   warp 수가 너무 적어 (4-way 또는 8-way × 16 warp) 비-critical partition이
+   너무 좁아지고, (b) 입력이 dcache보다 훨씬 작아 capacity miss가 없음.
+3. **iPAWS의 의사결정 자체는 작동**: sgemm3 에서 RR 분기 선택 → gCAWS_noCACP 대비
+   IPC 회복. 그러나 BFS는 항상 concave로 잡혀 CACP의 손해를 그대로 떠안음.
+
+이를 분리·검증하기 위한 두 갈래의 후속 실험:
+- **(P0)** 입력 규모 + warp 수 확대 (`warps=32, threads=32`, sgemm3 `-n128`,
+  spmv `Dubcova3.mtx`). 스팟 테스트에서 sgemm3 IPC 1.18 → **5.72**, spmv 1.77 → **3.20**.
+- **(P1)** `VORTEX_IPAWS_USE_CACP=0`으로 iPAWS = gCAWS_noCACP ↔ RR로 분리하여
+  iPAWS 분류기 자체의 효과만 평가. (이 build flag로 emulator가 gCAWS 분기에서도
+  cache로 critical_warp를 push 하지 않도록 `suppress_critical_push_`를 설정.)
+- **(P2)** `exp_E_cacp_reserved.sh`로 CACP가 살아남는 reservation 비율 탐색.
 

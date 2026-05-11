@@ -231,6 +231,7 @@ private:
   std::vector<uint64_t> ready_timestamps_;
   std::vector<warp_cpl_t> warp_cpl_;
   ipaws_state_t ipaws_state_;
+  bool suppress_critical_push_;  // when true, gCAWS does not propagate critical_warp to caches
   std::vector<WarpMask> barriers_;
   std::unordered_map<int, std::stringstream> print_bufs_;
   MemoryUnit  mmu_;

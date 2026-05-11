@@ -106,6 +106,7 @@ Emulator::Emulator(const Arch &arch, const DCRS &dcrs, Core* core)
     , critical_warp_(-1)
     , ready_timestamps_(arch.num_warps(), 0)
     , warp_cpl_(arch.num_warps())
+    , suppress_critical_push_(false)
     , barriers_(arch.num_barriers(), 0)
     , ipdom_size_(arch.num_threads()-1)
   #ifdef EXT_TCU_ENABLE
@@ -161,6 +162,7 @@ void Emulator::reset() {
     cpl.criticality = 0;
   }
   ipaws_state_ = ipaws_state_t();
+  suppress_critical_push_ = false;
 
   // activate first warp and thread
   active_warps_.set(0);
@@ -327,7 +329,7 @@ int Emulator::select_gcaws_warp() {
   }
 
   critical_warp_ = selected_warp;
-  if (selected_warp != prev_critical && core_) {
+  if (selected_warp != prev_critical && core_ && !suppress_critical_push_) {
     core_->set_critical_warp(selected_warp);
   }
   return selected_warp;
@@ -337,11 +339,31 @@ int Emulator::select_gcaws_warp() {
 // Execute phase runs the chosen scheduler for IPAWS_EXECUTE_CYCLES.
 //   IPAWS_WOI_RATIO    : fraction of median below which a warp is a WOI.
 //   IPAWS_CONCAVE_TH   : avg WOI ratio above this => concave => gCAWS.
+// All four are overridable at build time via VORTEX_IPAWS_*.
+#ifndef VORTEX_IPAWS_ADAPT_CYCLES
+#define VORTEX_IPAWS_ADAPT_CYCLES   1024
+#endif
+#ifndef VORTEX_IPAWS_EXECUTE_CYCLES
+#define VORTEX_IPAWS_EXECUTE_CYCLES 16384
+#endif
+#ifndef VORTEX_IPAWS_WOI_RATIO
+#define VORTEX_IPAWS_WOI_RATIO      0.5
+#endif
+#ifndef VORTEX_IPAWS_CONCAVE_TH
+#define VORTEX_IPAWS_CONCAVE_TH     0.4
+#endif
+// When 0, iPAWS picks between *gCAWS without CACP* and RR; when 1 (default)
+// the concave branch keeps CACP enabled. Used to isolate iPAWS's decision
+// quality from CACP-side effects.
+#ifndef VORTEX_IPAWS_USE_CACP
+#define VORTEX_IPAWS_USE_CACP       1
+#endif
 namespace {
-constexpr uint64_t IPAWS_ADAPT_CYCLES   = 1024;
-constexpr uint64_t IPAWS_EXECUTE_CYCLES = 16384;
-constexpr double   IPAWS_WOI_RATIO      = 0.5;
-constexpr double   IPAWS_CONCAVE_TH     = 0.4;
+constexpr uint64_t IPAWS_ADAPT_CYCLES   = VORTEX_IPAWS_ADAPT_CYCLES;
+constexpr uint64_t IPAWS_EXECUTE_CYCLES = VORTEX_IPAWS_EXECUTE_CYCLES;
+constexpr double   IPAWS_WOI_RATIO      = VORTEX_IPAWS_WOI_RATIO;
+constexpr double   IPAWS_CONCAVE_TH     = VORTEX_IPAWS_CONCAVE_TH;
+constexpr bool     IPAWS_USE_CACP       = (VORTEX_IPAWS_USE_CACP != 0);
 }
 
 double Emulator::compute_woi_ratio() const {
@@ -384,12 +406,19 @@ void Emulator::ipaws_sample_and_step() {
       double avg_woi = (s.adapt_samples > 0)
                        ? (s.adapt_woi_sum / s.adapt_samples)
                        : 0.0;
-      // Concave (skewed) -> few warps dominate criticality -> gCAWS+CACP.
-      // Convex (uniform) -> RR; also disable CACP for fairness.
+      // Concave (skewed) -> few warps dominate criticality -> gCAWS.
+      // Convex (uniform) -> RR.  In either branch we force CACP off when
+      // IPAWS_USE_CACP is disabled, so that iPAWS's decisions can be
+      // evaluated independently of the cache-side policy.
       if (avg_woi >= IPAWS_CONCAVE_TH) {
         s.chosen = WarpSchedulePolicy::gCAWS;
+        suppress_critical_push_ = !IPAWS_USE_CACP;
+        if (suppress_critical_push_ && core_) {
+          core_->set_critical_warp(-1);
+        }
       } else {
         s.chosen = WarpSchedulePolicy::RR;
+        suppress_critical_push_ = true;
         if (core_) {
           critical_warp_ = -1;
           core_->set_critical_warp(-1);
