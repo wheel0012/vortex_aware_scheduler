@@ -39,7 +39,8 @@ namespace {
 // WarpSchedulePolicy::RR
 // WarpSchedulePolicy::GTO
 // WarpSchedulePolicy::gCAWS
-constexpr WarpSchedulePolicy kDefaultSchedulePolicy = WarpSchedulePolicy::gCAWS;
+// WarpSchedulePolicy::iPAWS  (adapts between gCAWS+CACP and RR)
+constexpr WarpSchedulePolicy kDefaultSchedulePolicy = WarpSchedulePolicy::iPAWS;
 
 } // namespace
 
@@ -151,6 +152,7 @@ void Emulator::reset() {
     cpl.stall_cycles = 0;
     cpl.criticality = 0;
   }
+  ipaws_state_ = ipaws_state_t();
 
   // activate first warp and thread
   active_warps_.set(0);
@@ -323,6 +325,99 @@ int Emulator::select_gcaws_warp() {
   return selected_warp;
 }
 
+// iPAWS tuning constants. Adapt phase samples the criticality distribution;
+// Execute phase runs the chosen scheduler for IPAWS_EXECUTE_CYCLES.
+//   IPAWS_WOI_RATIO    : fraction of median below which a warp is a WOI.
+//   IPAWS_CONCAVE_TH   : avg WOI ratio above this => concave => gCAWS.
+namespace {
+constexpr uint64_t IPAWS_ADAPT_CYCLES   = 1024;
+constexpr uint64_t IPAWS_EXECUTE_CYCLES = 16384;
+constexpr double   IPAWS_WOI_RATIO      = 0.5;
+constexpr double   IPAWS_CONCAVE_TH     = 0.4;
+}
+
+double Emulator::compute_woi_ratio() const {
+  // Collect criticality of active warps.
+  std::vector<uint64_t> crits;
+  crits.reserve(arch_.num_warps());
+  for (size_t wid = 0, nw = arch_.num_warps(); wid < nw; ++wid) {
+    if (!active_warps_.test(wid)) continue;
+    crits.push_back(warp_cpl_.at(wid).criticality);
+  }
+  if (crits.size() < 2)
+    return 0.0;
+
+  // Median (nth_element gives O(n)).
+  size_t mid = crits.size() / 2;
+  std::nth_element(crits.begin(), crits.begin() + mid, crits.end());
+  uint64_t median = crits.at(mid);
+  if (median == 0)
+    return 0.0;
+
+  double thr = static_cast<double>(median) * IPAWS_WOI_RATIO;
+  size_t woi = 0;
+  for (auto c : crits) {
+    if (static_cast<double>(c) < thr) ++woi;
+  }
+  return static_cast<double>(woi) / crits.size();
+}
+
+void Emulator::ipaws_sample_and_step() {
+  auto& s = ipaws_state_;
+  uint64_t now = schedule_cycle_;
+  uint64_t elapsed = now - s.phase_start_cycle;
+
+  switch (s.phase) {
+  case iPAWSPhase::Adapt: {
+    // Sample the current criticality distribution.
+    s.adapt_woi_sum += compute_woi_ratio();
+    ++s.adapt_samples;
+    if (elapsed >= IPAWS_ADAPT_CYCLES) {
+      double avg_woi = (s.adapt_samples > 0)
+                       ? (s.adapt_woi_sum / s.adapt_samples)
+                       : 0.0;
+      // Concave (skewed) -> few warps dominate criticality -> gCAWS+CACP.
+      // Convex (uniform) -> RR; also disable CACP for fairness.
+      if (avg_woi >= IPAWS_CONCAVE_TH) {
+        s.chosen = WarpSchedulePolicy::gCAWS;
+      } else {
+        s.chosen = WarpSchedulePolicy::RR;
+        if (core_) {
+          critical_warp_ = -1;
+          core_->set_critical_warp(-1);
+        }
+      }
+      s.phase = iPAWSPhase::Execute;
+      s.phase_start_cycle = now;
+      s.adapt_samples = 0;
+      s.adapt_woi_sum = 0.0;
+    }
+    break;
+  }
+  case iPAWSPhase::Execute: {
+    if (elapsed >= IPAWS_EXECUTE_CYCLES) {
+      s.phase = iPAWSPhase::Adapt;
+      s.phase_start_cycle = now;
+      s.adapt_samples = 0;
+      s.adapt_woi_sum = 0.0;
+    }
+    break;
+  }
+  }
+}
+
+int Emulator::select_ipaws_warp() {
+  // During Adapt phase we still need to make forward progress; default to
+  // gCAWS so critical-warp tracking stays warm.
+  auto effective = (ipaws_state_.phase == iPAWSPhase::Execute)
+                   ? ipaws_state_.chosen
+                   : WarpSchedulePolicy::gCAWS;
+  if (effective == WarpSchedulePolicy::RR) {
+    return select_rr_warp();
+  }
+  return select_gcaws_warp();
+}
+
 instr_trace_t* Emulator::step() {
   int scheduled_warp = -1;
 
@@ -340,12 +435,17 @@ instr_trace_t* Emulator::step() {
   }
 
   if (WarpSchedulePolicy::GTO == schedule_policy_
-      || WarpSchedulePolicy::gCAWS == schedule_policy_) {
+      || WarpSchedulePolicy::gCAWS == schedule_policy_
+      || WarpSchedulePolicy::iPAWS == schedule_policy_) {
     ++schedule_cycle_;
     update_ready_timestamps();
   }
-  if (WarpSchedulePolicy::gCAWS == schedule_policy_) {
+  if (WarpSchedulePolicy::gCAWS == schedule_policy_
+      || WarpSchedulePolicy::iPAWS == schedule_policy_) {
     update_cpl_counters();
+  }
+  if (WarpSchedulePolicy::iPAWS == schedule_policy_) {
+    ipaws_sample_and_step();
   }
 
   // find next ready warp according to policy
@@ -361,6 +461,9 @@ instr_trace_t* Emulator::step() {
     break;
   case WarpSchedulePolicy::gCAWS:
     scheduled_warp = select_gcaws_warp();
+    break;
+  case WarpSchedulePolicy::iPAWS:
+    scheduled_warp = select_ipaws_warp();
     break;
   default:
     assert(false);

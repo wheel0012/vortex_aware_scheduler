@@ -204,7 +204,36 @@ CACP는 두 메커니즘으로 구성됩니다.
 - L1 D-cache: 16 KB, 4-way (기본) → CACP는 way=2를 critical에 예약
 - 결과: BFS 4K 그래프 기준 `simx`가 정상 종료, 정합성 PASS.
 
-### 빌드 & 실행 (CACP 켜진 상태)
+Way reservation: dcache의 way 절반(DCACHE_NUM_WAYS/2)을 critical warp 전용으로 예약 — non-critical warp은 reserved way 못 evict
+SHiP-CB: PC signature → SHCT(1024×3bit) → RRIP insertion (RRPV=0/2/3)
+CACP 바이어스: critical warp의 fill은 SHCT 예측 무시하고 RRPV=0(near)
+Pipeline 확장: LsuReq/MemReq에 wid, pc 추가 → LSU → coalescer → adapter → cache 전 경로 전달
+Control plane: emulator → core → socket → cache_cluster → cache_sim의 set_critical_warp() 체인
+
+### Phase 3: iPAWS 상태 기계 (gCAWS+CACP ↔ RR 적응)
+
+iPAWS는 두 단계 상태 기계로 동작합니다.
+
+1. **Adapt phase (1024 cycles)**: 매 사이클 active warp들의 criticality
+   분포를 샘플링. WOI(Warps of Interest) = criticality < median × 0.5 인 warp.
+   샘플 WOI 비율의 평균을 누적.
+2. **Decide**: 평균 WOI 비율 ≥ 0.4 → 분포가 skewed(concave) → **gCAWS+CACP**
+   선택. 그렇지 않으면 uniform(convex) → **RR** 선택 (`critical_warp_=-1`로
+   세팅하여 CACP 자동 비활성).
+3. **Execute phase (16384 cycles)**: 선택된 정책 실행. 종료 후 다시 Adapt로
+   복귀.
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `sim/simx/emulator.h` | `WarpSchedulePolicy::iPAWS` enum, `iPAWSPhase` enum, `ipaws_state_t` 구조체. 메서드 `select_ipaws_warp()`, `ipaws_sample_and_step()`, `compute_woi_ratio()` 선언. |
+| `sim/simx/emulator.cpp` | `compute_woi_ratio()` (active warp criticality → nth_element 기반 median → WOI 비율), `ipaws_sample_and_step()` (Adapt 샘플 수집/Decide 전환/Execute 카운트다운), `select_ipaws_warp()` (현재 phase에 따라 gCAWS/RR로 디스패치). 기본 정책을 `iPAWS`로 변경. RR phase 진입 시 `core_->set_critical_warp(-1)` 호출. |
+
+튜닝 상수 (`sim/simx/emulator.cpp` 익명 namespace):
+- `IPAWS_ADAPT_CYCLES=1024`, `IPAWS_EXECUTE_CYCLES=16384`
+- `IPAWS_WOI_RATIO=0.5` (median 대비 WOI threshold 배율)
+- `IPAWS_CONCAVE_TH=0.4` (concave 분류 임계 WOI 비율)
+
+### 빌드 & 실행 (iPAWS / CACP 모두 활성 상태)
 ```sh
 cd build
 make -C sim/simx -j$(nproc)

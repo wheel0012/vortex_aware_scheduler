@@ -80,7 +80,40 @@ enum class WarpSchedulePolicy {
   Static,
   GTO,
   RR,
-  gCAWS
+  gCAWS,
+  iPAWS
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
+// iPAWS adapts between criticality-aware (gCAWS+CACP) and uniform (RR)
+// scheduling based on the runtime distribution of warp criticality.
+//
+//   - Adapt phase: sample the criticality distribution across active warps;
+//                  count the fraction of warps that fall below
+//                  (median_criticality * IPAWS_WOI_RATIO) — these are the
+//                  Warps-of-Interest (WOI) for the criticality view.
+//                  A high WOI fraction means a skewed (concave) pattern.
+//   - Execute phase: run the chosen policy for IPAWS_EXECUTE_CYCLES.
+enum class iPAWSPhase {
+  Adapt,
+  Execute
+};
+
+struct ipaws_state_t {
+  iPAWSPhase           phase;
+  uint64_t             phase_start_cycle;
+  WarpSchedulePolicy   chosen;       // policy selected during Execute
+  uint64_t             adapt_samples;
+  double               adapt_woi_sum;  // sum of per-sample WOI ratios
+
+  ipaws_state_t()
+    : phase(iPAWSPhase::Adapt)
+    , phase_start_cycle(0)
+    , chosen(WarpSchedulePolicy::gCAWS)
+    , adapt_samples(0)
+    , adapt_woi_sum(0.0)
+  {}
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -144,6 +177,12 @@ private:
 
   int select_gcaws_warp();
 
+  int select_ipaws_warp();
+
+  void ipaws_sample_and_step();
+
+  double compute_woi_ratio() const;
+
   void update_ready_timestamps();
 
   void update_cpl_counters();
@@ -191,6 +230,7 @@ private:
   int         critical_warp_;
   std::vector<uint64_t> ready_timestamps_;
   std::vector<warp_cpl_t> warp_cpl_;
+  ipaws_state_t ipaws_state_;
   std::vector<WarpMask> barriers_;
   std::unordered_map<int, std::stringstream> print_bufs_;
   MemoryUnit  mmu_;
