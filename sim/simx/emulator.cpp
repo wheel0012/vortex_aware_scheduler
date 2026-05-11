@@ -35,12 +35,20 @@ using namespace vortex;
 namespace {
 
 // Choose one schedule policy here for simx:
-// WarpSchedulePolicy::Static
-// WarpSchedulePolicy::RR
-// WarpSchedulePolicy::GTO
-// WarpSchedulePolicy::gCAWS
-// WarpSchedulePolicy::iPAWS  (adapts between gCAWS+CACP and RR)
-constexpr WarpSchedulePolicy kDefaultSchedulePolicy = WarpSchedulePolicy::iPAWS;
+// VORTEX_SCHED build define selects the default scheduler:
+//   0 = Static, 1 = GTO, 2 = RR, 3 = gCAWS, 4 = iPAWS  (default = iPAWS)
+#ifndef VORTEX_SCHED
+#define VORTEX_SCHED 4
+#endif
+
+constexpr WarpSchedulePolicy kSchedTable[] = {
+  WarpSchedulePolicy::Static,
+  WarpSchedulePolicy::GTO,
+  WarpSchedulePolicy::RR,
+  WarpSchedulePolicy::gCAWS,
+  WarpSchedulePolicy::iPAWS
+};
+constexpr WarpSchedulePolicy kDefaultSchedulePolicy = kSchedTable[VORTEX_SCHED];
 
 } // namespace
 
