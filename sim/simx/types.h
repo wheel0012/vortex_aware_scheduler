@@ -908,6 +908,8 @@ struct LsuReq {
   bool     write;
   uint32_t tag;
   uint32_t cid;
+  uint32_t wid;
+  uint64_t pc;
   uint64_t uuid;
 
   LsuReq(uint32_t size)
@@ -916,6 +918,8 @@ struct LsuReq {
     , write(false)
     , tag(0)
     , cid(0)
+    , wid(0)
+    , pc(0)
     , uuid(0)
   {}
 
@@ -967,6 +971,8 @@ struct MemReq {
   AddrType type;
   uint32_t tag;
   uint32_t cid;
+  uint32_t wid;
+  uint64_t pc;
   uint64_t uuid;
 
   MemReq(uint64_t _addr = 0,
@@ -980,6 +986,8 @@ struct MemReq {
     , type(_type)
     , tag(_tag)
     , cid(_cid)
+    , wid(0)
+    , pc(0)
     , uuid(_uuid)
   {}
 

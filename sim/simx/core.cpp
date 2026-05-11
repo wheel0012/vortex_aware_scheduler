@@ -20,6 +20,7 @@
 #include "arch.h"
 #include "mem.h"
 #include "core.h"
+#include "socket.h"
 #include "debug.h"
 #include "constants.h"
 
@@ -460,6 +461,11 @@ bool Core::barrier(uint32_t bar_id, uint32_t count, uint32_t wid) {
 
 bool Core::wspawn(uint32_t num_warps, Word nextPC) {
   return emulator_.wspawn(num_warps, nextPC);
+}
+
+void Core::set_critical_warp(int wid) {
+  if (socket_)
+    socket_->set_critical_warp(wid);
 }
 
 void Core::attach_ram(RAM* ram) {

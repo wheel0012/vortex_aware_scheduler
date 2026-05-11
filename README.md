@@ -141,6 +141,7 @@ echo "source <build-path>/ci/toolchain_env.sh" >> ~/.bashrc
 - `WarpSchedulePolicy::Static` : 기존 priority 방식
 - `WarpSchedulePolicy::RR` : round-robin
 - `WarpSchedulePolicy::GTO` : greedy-then-oldest
+- `WarpSchedulePolicy::gCAWS` : greedy criticality-aware (CAWA, Lee & Wu ISCA'15)
 
 ### 빌드
 ```sh
@@ -153,3 +154,60 @@ make -C sim/simx -j$(nproc)
 ```sh
 ./ci/blackbox.sh --driver=simx --app=sgemm3 --cores=32 --warps=32 --threads=32 --l2cache --perf=1
 ```
+
+## URP 프로젝트 변경 사항 (CAWA 기반 iPAWS 구현)
+
+본 프로젝트는 Vortex에 CAWA (Coordinated Criticality-Aware Warp Acceleration,
+Lee & Wu, ISCA 2015) 와 iPAWS (Instruction-issue Pattern-based Adaptive Warp
+Scheduling) 를 결합한 적응형 스케줄러를 구현하는 것을 목표로 합니다.
+
+전체 로드맵
+1. **Phase 1**: gCAWS warp 스케줄러
+2. **Phase 2**: CACP 캐시 관리 (way reservation + SHiP-CB)
+3. **Phase 3**: iPAWS 상태 기계 (gCAWS ↔ RR 적응)
+4. **Phase 4**: RTL 구현
+5. **Phase 5**: FPGA 평가
+
+### Phase 1: gCAWS 스케줄러 (simx 에뮬레이터)
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `sim/simx/emulator.h` | `WarpSchedulePolicy::gCAWS` enum, `warp_cpl_t` 구조체(`instr_count`/`stall_cycles`/`criticality`), 멤버 `critical_warp_`, `warp_cpl_`, 메서드 `select_gcaws_warp()`, `update_cpl_counters()` 선언. |
+| `sim/simx/emulator.cpp` | `update_cpl_counters()`로 매 사이클 stall/instr 카운터 갱신, 그리고 `nInst*CPI_avg + nStall` 공식으로 criticality 계산. `select_gcaws_warp()`는 greedy 단계(현 critical warp 유지) → highest-criticality + oldest-ready tie-break 순으로 선택. 기본 정책을 `gCAWS`로 설정. |
+
+### Phase 2: CACP (CAWA의 캐시 관리 기법)
+
+CACP는 두 메커니즘으로 구성됩니다.
+
+1. **Way reservation (way partitioning)**: critical warp 전용으로 cache way의
+   일부(`DCACHE_NUM_WAYS/2`)를 예약. non-critical warp은 reserved way에서 절대 evict 불가.
+2. **SHiP-CB + RRIP 기반 교체 정책**: PC signature → SHCT(1024 × 3-bit 카운터) →
+   삽입 시 RRPV(0=near, 2=long, 3=distant) 결정. 또 hit 시 SHCT++/reused=true,
+   evict 시 reused=false이면 SHCT--.
+3. **CACP 가중치**: critical warp의 insertion은 SHCT 예측을 덮어쓰고 `RRPV=0`(near)로
+   강제하여 cache에 더 오래 머무르도록 함.
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `sim/simx/types.h` / `types.cpp` | `LsuReq` / `MemReq`에 `wid`, `pc` 필드 추가. `LsuMemAdapter::tick()`이 두 필드를 LsuReq → MemReq로 복사. |
+| `sim/simx/func_unit.cpp` | LSU에서 `lsu_req.wid = trace->wid`, `lsu_req.pc = trace->PC` 설정. |
+| `sim/simx/mem_coalescer.cpp` | coalesce 시 in_req의 `wid`/`pc`를 out_req로 복사. |
+| `sim/simx/cache_sim.h` | `CacheSim::Config`에 `cacp_enable`, `cacp_reserved_ways` 필드. `set_critical_warp(int wid)` API 추가. |
+| `sim/simx/cache_sim.cpp` | `line_t`를 LRU 카운터 대신 `signature`/`rrpv`/`reused`로 교체. SHCT 클래스 구현(1024 entry, 3-bit). `set_t::tag_lookup`를 RRIP 기반 victim selection + way-partition로 재작성. `CacheBank`에 `shct_`, `critical_warp_id_` 멤버. 핵심 후크: hit 시 SHCT++/RRPV=0, miss/evict 시 SHCT--, fill 시 critical/SHCT 예측에 따라 RRPV 결정. |
+| `sim/simx/cache_cluster.h` | `set_critical_warp(int wid)`를 내부 모든 `CacheSim`으로 전파. |
+| `sim/simx/socket.{h,cpp}` | dcache용 `set_critical_warp(int wid)`. dcache config에 `cacp_enable=(DCACHE_NUM_WAYS>=2)`, `cacp_reserved_ways=DCACHE_NUM_WAYS/2` 전달. |
+| `sim/simx/core.{h,cpp}` | `Core::set_critical_warp(int wid)`가 socket으로 위임. `core.cpp`에 `socket.h` 포함. |
+| `sim/simx/emulator.cpp` | `select_gcaws_warp()`에서 `critical_warp_`가 변경될 때마다 `core_->set_critical_warp(...)` 호출. |
+
+### 기본 config (Vortex 논문 baseline)
+- cores=1, warps=16, threads=16
+- L1 D-cache: 16 KB, 4-way (기본) → CACP는 way=2를 critical에 예약
+- 결과: BFS 4K 그래프 기준 `simx`가 정상 종료, 정합성 PASS.
+
+### 빌드 & 실행 (CACP 켜진 상태)
+```sh
+cd build
+make -C sim/simx -j$(nproc)
+./ci/blackbox.sh --driver=simx --app=bfs --perf=2 --cores=1 --warps=16 --threads=16
+```
+

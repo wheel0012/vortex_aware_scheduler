@@ -34,6 +34,8 @@ public:
 		bool    write_reponse;  // enable write response
 		uint16_t mshr_size;     // MSHR buffer size
 		uint8_t latency;        // pipeline latency
+		bool    cacp_enable = false;     // CACP way-partitioning
+		uint8_t cacp_reserved_ways = 0;  // ways reserved for the critical warp
 	};
 
 	struct PerfStats {
@@ -81,6 +83,8 @@ public:
 	void reset();
 
 	void tick();
+
+	void set_critical_warp(int wid);
 
 	PerfStats perf_stats() const;
 

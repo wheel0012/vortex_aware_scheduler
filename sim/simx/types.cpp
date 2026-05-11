@@ -150,6 +150,8 @@ void LsuMemAdapter::tick() {
         out_req.type  = get_addr_type(in_req.addrs.at(i));
         out_req.tag   = in_req.tag;
         out_req.cid   = in_req.cid;
+        out_req.wid   = in_req.wid;
+        out_req.pc    = in_req.pc;
         out_req.uuid  = in_req.uuid;
         // send memory request
         ReqOut.at(i).push(out_req, delay_);

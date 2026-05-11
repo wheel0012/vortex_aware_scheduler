@@ -278,6 +278,7 @@ void Emulator::update_cpl_counters() {
 }
 
 int Emulator::select_gcaws_warp() {
+  int prev_critical = critical_warp_;
   // Greedy phase: stay on the current critical warp while it is ready.
   if (critical_warp_ >= 0) {
     uint32_t wid = static_cast<uint32_t>(critical_warp_);
@@ -316,6 +317,9 @@ int Emulator::select_gcaws_warp() {
   }
 
   critical_warp_ = selected_warp;
+  if (selected_warp != prev_critical && core_) {
+    core_->set_critical_warp(selected_warp);
+  }
   return selected_warp;
 }
 
