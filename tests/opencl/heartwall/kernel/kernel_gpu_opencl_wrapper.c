@@ -827,8 +827,8 @@ kernel_gpu_opencl_wrapper(	params_common common,
 	// structures
 	error = clSetKernelArg(	kernel, 
 							0, 
-							sizeof(params_common), 
-							(void *) &common);
+							sizeof(cl_mem), 
+							(void *) &d_common);
 	if (error != CL_SUCCESS) 
 		fatal_CL(error, __LINE__);
 

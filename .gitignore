@@ -38,12 +38,12 @@ sweep_results*
 /tests/opencl/**/*.o
 /tests/opencl/b+tree/penmp
 /tests/opencl/bfs/bfs
-/tests/opencl/heartwall/heartwall
+/tests/opencl/heartwall/heartwall.bin
 /tests/opencl/heartwall/test.avi
 /tests/opencl/hotspot/hotspot
 /tests/opencl/sgemm3/sgemm3
 /tests/opencl/spmv/spmv
-/tests/opencl/srad/srad
+/tests/opencl/srad/srad.bin
 
 # Regression/kernel run artifacts
 /tests/regression/**/.depend

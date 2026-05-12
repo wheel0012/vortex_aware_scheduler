@@ -22,6 +22,7 @@ SchedulerCCWS::SchedulerCCWS(size_t num_warps)
   , vta_(num_warps)
   , base_lls_(VX_CCWS_BASE_LLS)
   , lld_score_(VX_CCWS_LLD_SCORE)
+  , k_throttle_(VX_CCWS_K_THROTTLE)
   , cutoff_(VX_CCWS_LLS_CUTOFF)
   , lls_decay_period_(VX_CCWS_LLS_DECAY_PERIOD)
   , lls_decay_step_(VX_CCWS_LLS_DECAY_STEP)
@@ -31,6 +32,8 @@ SchedulerCCWS::SchedulerCCWS(size_t num_warps)
   , throttled_loads_(0)
   , throttled_warps_(0)
   , fallback_issues_(0)
+  , issued_insts_(0)
+  , active_warps_(num_warps)
   , active_issue_candidates_(0)
   , issue_candidate_samples_(0)
   , tick_count_(0)
@@ -38,8 +41,8 @@ SchedulerCCWS::SchedulerCCWS(size_t num_warps)
   , lls_sample_sum_(0)
   , max_lls_(0)
   , active_load_warp_limit_(
-      num_warps ? std::max<size_t>(1,
-        std::min<size_t>(VX_CCWS_MAX_ACTIVE_LOAD_WARPS, num_warps)) : 0)
+      num_warps ? (VX_CCWS_MAX_ACTIVE_LOAD_WARPS == 0 ? num_warps :
+        std::max<size_t>(1, std::min<size_t>(VX_CCWS_MAX_ACTIVE_LOAD_WARPS, num_warps))) : 0)
 {
 }
 
@@ -48,14 +51,19 @@ bool SchedulerCCWS::can_issue_warp(size_t wid) const {
     return true;
 
   uint64_t total_lls = this->cumulative_lls();
+  uint64_t cutoff = this->cutoff_value();
 
   // No detected lost locality.
   // Do not throttle.
-  if (total_lls == 0)
+  if (this->dynamic_llds_enabled()) {
+    if (total_lls <= cutoff)
+      return true;
+  } else if (total_lls == 0) {
     return true;
+  }
 
   // If a cumulative cutoff is set and the whole core is below it, keep all loads enabled.
-  if (cutoff_ > 0 && total_lls <= static_cast<uint64_t>(cutoff_))
+  if (!this->dynamic_llds_enabled() && cutoff_ > 0 && total_lls <= static_cast<uint64_t>(cutoff_))
     return true;
 
   // Allow only the high-LLS prefix selected by cumulative LLS.
@@ -75,11 +83,15 @@ void SchedulerCCWS::on_l1_miss(size_t wid, uint64_t line_addr) {
   auto it = std::find(entries.begin(), entries.end(), line_addr);
 
   if (it != entries.end()) {
-    // VTA hit = lost locality detected
-    entries.erase(it);          // 중요
+    // VTA hit = lost locality detected.
+    entries.erase(it);
     ++vta_hits_;
 
-    lls_.at(wid) = std::max<int>(lls_.at(wid), lld_score_);
+    uint64_t score = static_cast<uint64_t>(std::max<int>(base_lls_, lls_.at(wid)));
+    uint64_t updated_score = std::min<uint64_t>(
+        static_cast<uint64_t>(VX_CCWS_MAX_LLS),
+        score + this->llds_value());
+    lls_.at(wid) = static_cast<int>(updated_score);
     max_lls_ = std::max<uint64_t>(max_lls_, static_cast<uint64_t>(lls_.at(wid)));
   }
 }
@@ -121,6 +133,10 @@ void SchedulerCCWS::tick() {
   ++lls_samples_;
 }
 
+void SchedulerCCWS::set_active_warps(uint64_t active_warps) {
+  active_warps_ = std::min<uint64_t>(active_warps, lls_.size());
+}
+
 void SchedulerCCWS::reset_warp(size_t wid) {
   if (wid >= lls_.size())
     return;
@@ -138,6 +154,8 @@ void SchedulerCCWS::reset() {
   throttled_loads_ = 0;
   throttled_warps_ = 0;
   fallback_issues_ = 0;
+  issued_insts_ = 0;
+  active_warps_ = lls_.size();
   active_issue_candidates_ = 0;
   issue_candidate_samples_ = 0;
   tick_count_ = 0;
@@ -149,6 +167,10 @@ void SchedulerCCWS::reset() {
 void SchedulerCCWS::record_issue_candidates(uint64_t candidates) {
   active_issue_candidates_ += candidates;
   ++issue_candidate_samples_;
+}
+
+void SchedulerCCWS::record_issue() {
+  ++issued_insts_;
 }
 
 void SchedulerCCWS::record_throttled_load() {
@@ -179,9 +201,37 @@ SchedulerCCWS::PerfStats SchedulerCCWS::perf_stats() const {
 }
 
 
+bool SchedulerCCWS::dynamic_llds_enabled() const {
+  return VX_CCWS_DYNAMIC_LLDS != 0;
+}
+
+uint64_t SchedulerCCWS::llds_value() const {
+  if (!this->dynamic_llds_enabled())
+    return static_cast<uint64_t>(std::max<int>(base_lls_, lld_score_));
+
+  if (issued_insts_ == 0)
+    return static_cast<uint64_t>(base_lls_);
+
+  double lost_locality_rate = static_cast<double>(vta_hits_) / static_cast<double>(issued_insts_);
+  double llds = lost_locality_rate * static_cast<double>(k_throttle_) * static_cast<double>(this->cutoff_value());
+  return static_cast<uint64_t>(std::max<double>(static_cast<double>(base_lls_), llds));
+}
+
+uint64_t SchedulerCCWS::cutoff_value() const {
+  if (cutoff_ > 0)
+    return static_cast<uint64_t>(cutoff_);
+
+  if (this->dynamic_llds_enabled())
+    return static_cast<uint64_t>(std::max<int>(1, base_lls_)) * std::max<uint64_t>(1, active_warps_);
+
+  return 0;
+}
+
 uint64_t SchedulerCCWS::lls_value(size_t wid) const {
   if (wid >= lls_.size())
     return 0;
+  if (this->dynamic_llds_enabled())
+    return static_cast<uint64_t>(std::max<int>(base_lls_, lls_.at(wid)));
   return static_cast<uint64_t>(std::max<int>(0, lls_.at(wid) - base_lls_));
 }
 
@@ -199,9 +249,10 @@ size_t SchedulerCCWS::active_load_warp_limit() const {
 
   size_t hard_limit = active_load_warp_limit_;
 
-  if (cutoff_ <= 0)
+  if (!this->dynamic_llds_enabled() && cutoff_ <= 0)
     return hard_limit;
 
+  uint64_t cutoff = this->cutoff_value();
   uint64_t cumulative = 0;
   size_t selected = 0;
   for (size_t rank = 0; rank < lls_.size(); ++rank) {
@@ -216,13 +267,13 @@ size_t SchedulerCCWS::active_load_warp_limit() const {
       break;
 
     uint64_t score = this->lls_value(ranked_wid);
-    if (selected != 0 && cumulative + score > static_cast<uint64_t>(cutoff_))
+    if (selected != 0 && cumulative + score > cutoff)
       break;
 
     cumulative += score;
     ++selected;
 
-    if (cumulative == static_cast<uint64_t>(cutoff_))
+    if (cumulative == cutoff)
       break;
   }
 

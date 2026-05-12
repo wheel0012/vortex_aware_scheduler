@@ -1,6 +1,7 @@
-EXE := srad
+EXE := srad.bin
 KERNEL_SRCS := kernel/kernel_gpu_opencl.cl
-OPTS ?= 100 0.5 502 458
+OPTS ?= 1 0.5 16 16
+KERNEL_DIM ?= -DRD_WG_SIZE_0=8
 
 include ../rodinia.mk
 

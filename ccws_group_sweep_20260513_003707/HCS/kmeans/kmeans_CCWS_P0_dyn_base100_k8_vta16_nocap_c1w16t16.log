@@ -1,0 +1,49 @@
+CONFIGS=-DDCACHE_SIZE=32768 -DDCACHE_NUM_WAYS=8 -DVX_SCHED_POLICY=WarpSchedulePolicy::CCWS      -DVX_CCWS_DYNAMIC_LLDS=1      -DVX_CCWS_BASE_LLS=100      -DVX_CCWS_K_THROTTLE=8      -DVX_CCWS_VTA_SIZE=16      -DVX_CCWS_LLS_CUTOFF=0      -DVX_CCWS_MAX_ACTIVE_LOAD_WARPS=0      -DVX_CCWS_LLS_DECAY_PERIOD=1      -DVX_CCWS_LLS_DECAY_STEP=1  -DNUM_CORES=1 -DNUM_WARPS=16 -DNUM_THREADS=16 -DPERF_ENABLE 
+Running: CONFIGS="-DDCACHE_SIZE=32768 -DDCACHE_NUM_WAYS=8 -DVX_SCHED_POLICY=WarpSchedulePolicy::CCWS      -DVX_CCWS_DYNAMIC_LLDS=1      -DVX_CCWS_BASE_LLS=100      -DVX_CCWS_K_THROTTLE=8      -DVX_CCWS_VTA_SIZE=16      -DVX_CCWS_LLS_CUTOFF=0      -DVX_CCWS_MAX_ACTIVE_LOAD_WARPS=0      -DVX_CCWS_LLS_DECAY_PERIOD=1      -DVX_CCWS_LLS_DECAY_STEP=1  -DNUM_CORES=1 -DNUM_WARPS=16 -DNUM_THREADS=16 -DPERF_ENABLE " make -C ./ci/../runtime/simx > /dev/null
+Running: make -C "./ci/../tests/opencl/kmeans" run-simx
+make: Entering directory '/home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/kmeans'
+LD_LIBRARY_PATH=/home/ltj/tools/pocl/lib:/home/ltj/2026urp/vortex_aware_scheduler/runtime:/home/ltj/tools/llvm-vortex/lib: POCL_VORTEX_XLEN=64 LLVM_PREFIX=/home/ltj/tools/llvm-vortex POCL_VORTEX_BINTOOL="OBJCOPY=/home/ltj/tools/llvm-vortex/bin/llvm-objcopy /home/ltj/2026urp/vortex_aware_scheduler/kernel/scripts/vxbin.py" POCL_VORTEX_CFLAGS="-march=rv64imafd -mabi=lp64d -O3 -mcmodel=medany --sysroot=/home/ltj/tools/riscv64-gnu-toolchain/riscv64-unknown-elf --gcc-toolchain=/home/ltj/tools/riscv64-gnu-toolchain -fno-rtti -fno-exceptions -nostartfiles -nostdlib -fdata-sections -ffunction-sections -I/home/ltj/2026urp/vortex_aware_scheduler/hw -I/home/ltj/2026urp/vortex_aware_scheduler/kernel/include -DXLEN_64 -DNDEBUG -DDCACHE_SIZE=32768 -DDCACHE_NUM_WAYS=8 -DVX_SCHED_POLICY=WarpSchedulePolicy::CCWS      -DVX_CCWS_DYNAMIC_LLDS=1      -DVX_CCWS_BASE_LLS=100      -DVX_CCWS_K_THROTTLE=8      -DVX_CCWS_VTA_SIZE=16      -DVX_CCWS_LLS_CUTOFF=0      -DVX_CCWS_MAX_ACTIVE_LOAD_WARPS=0      -DVX_CCWS_LLS_DECAY_PERIOD=1      -DVX_CCWS_LLS_DECAY_STEP=1  -DNUM_CORES=1 -DNUM_WARPS=16 -DNUM_THREADS=16 -DPERF_ENABLE  -Xclang -target-feature -Xclang +vortex -Xclang -target-feature -Xclang +zicond -mllvm -disable-loop-idiom-all	" POCL_VORTEX_LDFLAGS="-Wl,-Bstatic,--gc-sections,-T/home/ltj/2026urp/vortex_aware_scheduler/kernel/scripts/link64.ld,--defsym=STARTUP_ADDR=0x80000000 /home/ltj/2026urp/vortex_aware_scheduler/kernel/libvortex.a -L/home/ltj/tools/libc64/lib -lm -lc /home/ltj/tools/libcrt64/lib/baremetal/libclang_rt.builtins-riscv64.a" VORTEX_DRIVER=simx ./kmeans -f100 -p100
+WG size of kernel_swap = 1, WG size of kernel_kmeans = 1 
+
+I/O completed
+
+Number of objects: 100
+Number of features: 100
+iterated 2 times
+Number of Iteration: 1
+PERF: core0: lmem reads=0
+PERF: core0: lmem writes=0
+PERF: core0: lmem bank stalls=0 (utilization=0%)
+PERF: core0: icache reads=40098
+PERF: core0: icache read misses=0 (hit ratio=100%)
+PERF: core0: icache mshr stalls=0 (utilization=0%)
+PERF: core0: dcache reads=17770
+PERF: core0: dcache writes=6819
+PERF: core0: dcache read misses=5156 (hit ratio=70%)
+PERF: core0: dcache write misses=6377 (hit ratio=6%)
+PERF: core0: dcache bank stalls=19603 (utilization=55%)
+PERF: core0: dcache mshr stalls=0 (utilization=100%)
+PERF: core0: coalescer misses=26262 (hit ratio=-2147483648%)
+PERF: scheduler idle=148063 (78%)
+PERF: scheduler stalls=0 (0%)
+PERF: ibuffer stalls=49903 (26%)
+PERF: scoreboard stalls=133922 (71%) (alu=20%, lsu=68%, csrs=0%, wctl=0%, fpu=11%)
+PERF: operands stalls=3773 (2%)
+PERF: ifetches=40098
+PERF: loads=104904
+PERF: stores=8920
+PERF: ifetch latency=5 cycles
+PERF: load latency=25 cycles
+PERF: ccws vta inserts=5156
+PERF: ccws vta hits=282
+PERF: ccws throttled loads=34
+PERF: ccws throttled warps=0
+PERF: ccws fallback issues=33
+PERF: ccws avg active issue candidates=1.370
+PERF: ccws avg lls=151.949
+PERF: ccws max lls=15052
+PERF: memory requests=10813 (reads=3962, writes=6851)
+PERF: memory latency=121 cycles
+PERF: memory bank stalls=3 (utilization=99%)
+PERF: instrs=569485, cycles=188161, IPC=3.026584
+make: Leaving directory '/home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/kmeans'

@@ -1,0 +1,11 @@
+CONFIGS=-DDCACHE SIZE=16384 -DDCACHE NUM WAYS=4 -DVX_SCHED_POLICY=WarpSchedulePolicy::CCWS            -DVX_CCWS_DYNAMIC_LLDS=1            -DVX_CCWS_BASE_LLS=100            -DVX_CCWS_K_THROTTLE=8            -DVX_CCWS_VTA_SIZE=16            -DVX_CCWS_LLS_CUTOFF=0            -DVX_CCWS_MAX_ACTIVE_LOAD_WARPS=4            -DVX_CCWS_LLS_DECAY_PERIOD=4            -DVX_CCWS_LLS_DECAY_STEP=1  -DNUM_CORES=1 -DNUM_WARPS=16 -DNUM_THREADS=16 -DPERF_ENABLE 
+Running: CONFIGS="-DDCACHE SIZE=16384 -DDCACHE NUM WAYS=4 -DVX_SCHED_POLICY=WarpSchedulePolicy::CCWS            -DVX_CCWS_DYNAMIC_LLDS=1            -DVX_CCWS_BASE_LLS=100            -DVX_CCWS_K_THROTTLE=8            -DVX_CCWS_VTA_SIZE=16            -DVX_CCWS_LLS_CUTOFF=0            -DVX_CCWS_MAX_ACTIVE_LOAD_WARPS=4            -DVX_CCWS_LLS_DECAY_PERIOD=4            -DVX_CCWS_LLS_DECAY_STEP=1  -DNUM_CORES=1 -DNUM_WARPS=16 -DNUM_THREADS=16 -DPERF_ENABLE " make -C ./ci/../runtime/simx > /dev/null
+g++: warning: SIZE=16384: linker input file unused because linking not done
+g++: error: SIZE=16384: linker input file not found: No such file or directory
+g++: warning: NUM: linker input file unused because linking not done
+g++: error: NUM: linker input file not found: No such file or directory
+g++: warning: WAYS=4: linker input file unused because linking not done
+g++: error: WAYS=4: linker input file not found: No such file or directory
+make[1]: *** [Makefile:80: /home/ltj/2026urp/vortex_aware_scheduler/runtime/simx/../obj/common/util.o] Error 1
+make: *** [Makefile:35: /home/ltj/2026urp/vortex_aware_scheduler/runtime/simx/../libsimx.so] Error 2
+Error building driver: ./ci/../runtime/simx

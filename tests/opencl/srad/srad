@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+set -e
+
+DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+
+if [ "$#" -eq 0 ]; then
+  set -- 100 0.5 502 458
+fi
+
+exec make -C "$DIR" run-simx OPTS="$*"

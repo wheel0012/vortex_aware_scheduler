@@ -1,0 +1,11 @@
+CONFIGS=-DDCACHE SIZE=8192 -DDCACHE NUM WAYS=2 -DVX_SCHED_POLICY=WarpSchedulePolicy::GTO  -DNUM_CORES=1 -DNUM_WARPS=16 -DNUM_THREADS=16 -DPERF_ENABLE 
+Running: CONFIGS="-DDCACHE SIZE=8192 -DDCACHE NUM WAYS=2 -DVX_SCHED_POLICY=WarpSchedulePolicy::GTO  -DNUM_CORES=1 -DNUM_WARPS=16 -DNUM_THREADS=16 -DPERF_ENABLE " make -C ./ci/../runtime/simx > /dev/null
+g++: warning: SIZE=8192: linker input file unused because linking not done
+g++: error: SIZE=8192: linker input file not found: No such file or directory
+g++: warning: NUM: linker input file unused because linking not done
+g++: error: NUM: linker input file not found: No such file or directory
+g++: warning: WAYS=2: linker input file unused because linking not done
+g++: error: WAYS=2: linker input file not found: No such file or directory
+make[1]: *** [Makefile:80: /home/ltj/2026urp/vortex_aware_scheduler/runtime/simx/../obj/common/util.o] Error 1
+make: *** [Makefile:35: /home/ltj/2026urp/vortex_aware_scheduler/runtime/simx/../libsimx.so] Error 2
+Error building driver: ./ci/../runtime/simx

@@ -1,0 +1,103 @@
+CONFIGS=-DDCACHE_SIZE=4096 -DDCACHE_NUM_WAYS=2 -DVX_SCHED_POLICY=WarpSchedulePolicy::GTO  -DNUM_CORES=2 -DNUM_WARPS=32 -DNUM_THREADS=16 -DPERF_ENABLE 
+Running: CONFIGS="-DDCACHE_SIZE=4096 -DDCACHE_NUM_WAYS=2 -DVX_SCHED_POLICY=WarpSchedulePolicy::GTO  -DNUM_CORES=2 -DNUM_WARPS=32 -DNUM_THREADS=16 -DPERF_ENABLE " make -C ./ci/../runtime/simx > /dev/null
+Running: make -C "./ci/../tests/opencl/bfs" run-simx
+make: Entering directory '/home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/bfs'
+LD_LIBRARY_PATH=/home/ltj/tools/pocl/lib:/home/ltj/2026urp/vortex_aware_scheduler/runtime:/home/ltj/tools/llvm-vortex/lib: POCL_VORTEX_XLEN=64 LLVM_PREFIX=/home/ltj/tools/llvm-vortex POCL_VORTEX_BINTOOL="OBJCOPY=/home/ltj/tools/llvm-vortex/bin/llvm-objcopy /home/ltj/2026urp/vortex_aware_scheduler/kernel/scripts/vxbin.py" POCL_VORTEX_CFLAGS="-march=rv64imafd -mabi=lp64d -O3 -mcmodel=medany --sysroot=/home/ltj/tools/riscv64-gnu-toolchain/riscv64-unknown-elf --gcc-toolchain=/home/ltj/tools/riscv64-gnu-toolchain -fno-rtti -fno-exceptions -nostartfiles -nostdlib -fdata-sections -ffunction-sections -I/home/ltj/2026urp/vortex_aware_scheduler/hw -I/home/ltj/2026urp/vortex_aware_scheduler/kernel/include -DXLEN_64 -DNDEBUG -DDCACHE_SIZE=4096 -DDCACHE_NUM_WAYS=2 -DVX_SCHED_POLICY=WarpSchedulePolicy::GTO  -DNUM_CORES=2 -DNUM_WARPS=32 -DNUM_THREADS=16 -DPERF_ENABLE  -Xclang -target-feature -Xclang +vortex -Xclang -target-feature -Xclang +zicond -mllvm -disable-loop-idiom-all	" POCL_VORTEX_LDFLAGS="-Wl,-Bstatic,--gc-sections,-T/home/ltj/2026urp/vortex_aware_scheduler/kernel/scripts/link64.ld,--defsym=STARTUP_ADDR=0x80000000 /home/ltj/2026urp/vortex_aware_scheduler/kernel/libvortex.a -L/home/ltj/tools/libc64/lib -lm -lc /home/ltj/tools/libcrt64/lib/baremetal/libclang_rt.builtins-riscv64.a" VORTEX_DRIVER=simx ./bfs /home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/bfs/graph4k.txt
+enter demo main
+Reading File
+Reading File completed!
+_clInit()
+clReleaseKernel()
+clReleaseKernel()
+clReleaseProgram()
+clReleaseCommandQueue()
+PERF: core0: scheduler idle=408175 (96%)
+PERF: core0: scheduler stalls=0 (0%)
+PERF: core0: ibuffer stalls=307490 (72%)
+PERF: core0: scoreboard stalls=590990 (139%) (alu=0%, lsu=99%, csrs=0%, wctl=0%, fpu=0%)
+PERF: core0: operands stalls=787 (0%)
+PERF: core0: ifetches=14483
+PERF: core0: ifetch latency=33 cycles
+PERF: core0: loads=33372
+PERF: core0: load latency=312 cycles
+PERF: core0: stores=26236
+PERF: core0: ccws vta inserts=0
+PERF: core0: ccws vta hits=0
+PERF: core0: ccws throttled loads=0
+PERF: core0: ccws throttled warps=0
+PERF: core0: ccws fallback issues=0
+PERF: core0: ccws avg active issue candidates=0.000
+PERF: core0: ccws avg lls=0.000
+PERF: core0: ccws max lls=0
+PERF: core0: lmem reads=0
+PERF: core0: lmem writes=0
+PERF: core0: lmem bank stalls=0 (utilization=0%)
+PERF: core0: icache reads=28966
+PERF: core0: icache read misses=0 (hit ratio=100%)
+PERF: core0: icache mshr stalls=0 (utilization=0%)
+PERF: core0: dcache reads=29240
+PERF: core0: dcache writes=41784
+PERF: core0: dcache read misses=24280 (hit ratio=16%)
+PERF: core0: dcache write misses=40324 (hit ratio=3%)
+PERF: core0: dcache bank stalls=336181 (utilization=17%)
+PERF: core0: dcache mshr stalls=146654 (utilization=30%)
+PERF: core0: coalescer misses=301244 (hit ratio=-2147483648%)
+PERF: core0: instrs=218033, cycles=422658, IPC=0.515862
+PERF: core1: scheduler idle=408175 (96%)
+PERF: core1: scheduler stalls=0 (0%)
+PERF: core1: ibuffer stalls=250505 (59%)
+PERF: core1: scoreboard stalls=570291 (134%) (alu=0%, lsu=99%, csrs=0%, wctl=0%, fpu=0%)
+PERF: core1: operands stalls=787 (0%)
+PERF: core1: ifetches=14483
+PERF: core1: ifetch latency=32 cycles
+PERF: core1: loads=33372
+PERF: core1: load latency=263 cycles
+PERF: core1: stores=26236
+PERF: core1: ccws vta inserts=0
+PERF: core1: ccws vta hits=0
+PERF: core1: ccws throttled loads=0
+PERF: core1: ccws throttled warps=0
+PERF: core1: ccws fallback issues=0
+PERF: core1: ccws avg active issue candidates=0.000
+PERF: core1: ccws avg lls=0.000
+PERF: core1: ccws max lls=0
+PERF: core1: lmem reads=0
+PERF: core1: lmem writes=0
+PERF: core1: lmem bank stalls=0 (utilization=0%)
+PERF: core1: icache reads=28966
+PERF: core1: icache read misses=0 (hit ratio=100%)
+PERF: core1: icache mshr stalls=0 (utilization=0%)
+PERF: core1: dcache reads=29240
+PERF: core1: dcache writes=41784
+PERF: core1: dcache read misses=24280 (hit ratio=16%)
+PERF: core1: dcache write misses=40324 (hit ratio=3%)
+PERF: core1: dcache bank stalls=336181 (utilization=17%)
+PERF: core1: dcache mshr stalls=146654 (utilization=30%)
+PERF: core1: coalescer misses=300074 (hit ratio=-2147483648%)
+PERF: core1: instrs=218033, cycles=422658, IPC=0.515862
+PERF: scheduler idle=816350 (96%)
+PERF: scheduler stalls=0 (0%)
+PERF: ibuffer stalls=557995 (66%)
+PERF: scoreboard stalls=1161281 (137%) (alu=0%, lsu=99%, csrs=0%, wctl=0%, fpu=0%)
+PERF: operands stalls=1574 (0%)
+PERF: ifetches=28966
+PERF: loads=66744
+PERF: stores=52472
+PERF: ifetch latency=33 cycles
+PERF: load latency=288 cycles
+PERF: ccws vta inserts=0
+PERF: ccws vta hits=0
+PERF: ccws throttled loads=0
+PERF: ccws throttled warps=0
+PERF: ccws fallback issues=0
+PERF: ccws avg active issue candidates=0.000
+PERF: ccws avg lls=0.000
+PERF: ccws max lls=0
+PERF: memory requests=65345 (reads=23497, writes=41848)
+PERF: memory latency=275 cycles
+PERF: memory bank stalls=38 (utilization=99%)
+PERF: instrs=436066, cycles=422658, IPC=1.031723
+clReleaseContext()
+clReleaseDevice()
+Passed!
+make: Leaving directory '/home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/bfs'

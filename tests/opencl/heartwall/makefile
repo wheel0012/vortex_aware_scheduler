@@ -1,7 +1,7 @@
-EXE := heartwall
+EXE := heartwall.bin
 KERNEL_SRCS := kernel/kernel_gpu_opencl.cl
-OPTS ?= 20
-KERNEL_DIM ?= -DRD_WG_SIZE_0=1
+OPTS ?= 2
+KERNEL_DIM ?= -DRD_WG_SIZE_0=8
 
 include ../rodinia.mk
 

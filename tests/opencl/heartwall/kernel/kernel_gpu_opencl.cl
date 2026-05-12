@@ -18,7 +18,7 @@
 
 __kernel void 
 kernel_gpu_opencl(	// structures
-					params_common d_common,					// 0
+					__global params_common* d_common_ptr,	// 0
 
 					// common_change
 					__global fp* d_frame,					// 1	INPUT
@@ -71,6 +71,7 @@ kernel_gpu_opencl(	// structures
 					__global fp* checksum)					// 33	OUTPUT	100
 
 {
+	params_common d_common = d_common_ptr[0];
 
 	//======================================================================================================================================================150
 	//	COMMON VARIABLES

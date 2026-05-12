@@ -1,0 +1,75 @@
+CONFIGS=-DDCACHE_SIZE=32768 -DDCACHE_NUM_WAYS=8 -DVX_SCHED_POLICY=WarpSchedulePolicy::GTO  -DNUM_CORES=1 -DNUM_WARPS=16 -DNUM_THREADS=16 -DPERF_ENABLE 
+Running: CONFIGS="-DDCACHE_SIZE=32768 -DDCACHE_NUM_WAYS=8 -DVX_SCHED_POLICY=WarpSchedulePolicy::GTO  -DNUM_CORES=1 -DNUM_WARPS=16 -DNUM_THREADS=16 -DPERF_ENABLE " make -C ./ci/../runtime/simx > /dev/null
+Running: make -C "./ci/../tests/opencl/kmeans" run-simx
+make: Entering directory '/home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/kmeans'
+g++ -std=c++17 -Wall -Wextra -Wfatal-errors -Wno-deprecated-declarations -Wno-unused-parameter -Wno-narrowing -pthread -I/home/ltj/tools/pocl/include -DDCACHE_SIZE=32768 -DDCACHE_NUM_WAYS=8 -DVX_SCHED_POLICY=WarpSchedulePolicy::GTO  -DNUM_CORES=1 -DNUM_WARPS=16 -DNUM_THREADS=16 -DPERF_ENABLE  -O2 -DNDEBUG -MM /home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/kmeans/main.cc /home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/kmeans/read_input.c /home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/kmeans/rmse.c /home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/kmeans/kmeans_clustering.c /home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/kmeans/cluster.c /home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/kmeans/getopt.c > .depend;
+g++ -std=c++17 -Wall -Wextra -Wfatal-errors -Wno-deprecated-declarations -Wno-unused-parameter -Wno-narrowing -pthread -I/home/ltj/tools/pocl/include -DDCACHE_SIZE=32768 -DDCACHE_NUM_WAYS=8 -DVX_SCHED_POLICY=WarpSchedulePolicy::GTO  -DNUM_CORES=1 -DNUM_WARPS=16 -DNUM_THREADS=16 -DPERF_ENABLE  -O2 -DNDEBUG -c /home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/kmeans/main.cc -o main.cc.o
+In file included from /home/ltj/tools/pocl/include/CL/cl.h:20,
+                 from /home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/kmeans/main.cc:24:
+/home/ltj/tools/pocl/include/CL/cl_version.h:22:104: note: ‘#pragma message: cl_version.h: CL_TARGET_OPENCL_VERSION is not defined. Defaulting to 300 (OpenCL 3.0)’
+   22 | #pragma message("cl_version.h: CL_TARGET_OPENCL_VERSION is not defined. Defaulting to 300 (OpenCL 3.0)")
+      |                                                                                                        ^
+/home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/kmeans/main.cc: In function ‘int initialize(int)’:
+/home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/kmeans/main.cc:60:10: warning: unused variable ‘size’ [-Wunused-variable]
+   60 |   size_t size;
+      |          ^~~~
+/home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/kmeans/main.cc: In function ‘int allocate(int, int, int, float**)’:
+/home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/kmeans/main.cc:231:27: warning: ISO C++ forbids converting a string constant to ‘char*’ [-Wwrite-strings]
+  231 |   char *kernel_kmeans_c = "kmeans_kernel_c";
+      |                           ^~~~~~~~~~~~~~~~~
+/home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/kmeans/main.cc:232:23: warning: ISO C++ forbids converting a string constant to ‘char*’ [-Wwrite-strings]
+  232 |   char *kernel_swap = "kmeans_swap";
+      |                       ^~~~~~~~~~~~~
+/home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/kmeans/main.cc:202:10: warning: unused variable ‘binary_status’ [-Wunused-variable]
+  202 |   cl_int binary_status = 0;
+      |          ^~~~~~~~~~~~~
+/home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/kmeans/main.cc: In function ‘int kmeansOCL(float**, int, int, int, int*, float**, int*, float**)’:
+/home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/kmeans/main.cc:350:13: warning: unused variable ‘k’ [-Wunused-variable]
+  350 |   int i, j, k;
+      |             ^
+g++ -std=c++17 -Wall -Wextra -Wfatal-errors -Wno-deprecated-declarations -Wno-unused-parameter -Wno-narrowing -pthread -I/home/ltj/tools/pocl/include -DDCACHE_SIZE=32768 -DDCACHE_NUM_WAYS=8 -DVX_SCHED_POLICY=WarpSchedulePolicy::GTO  -DNUM_CORES=1 -DNUM_WARPS=16 -DNUM_THREADS=16 -DPERF_ENABLE  -O2 -DNDEBUG main.cc.o read_input.c.o rmse.c.o kmeans_clustering.c.o cluster.c.o getopt.c.o -Wl,-rpath,/home/ltj/tools/llvm-vortex/lib -L/home/ltj/2026urp/vortex_aware_scheduler/runtime -lvortex -L/home/ltj/tools/pocl/lib -lOpenCL -o kmeans
+LD_LIBRARY_PATH=/home/ltj/tools/pocl/lib:/home/ltj/2026urp/vortex_aware_scheduler/runtime:/home/ltj/tools/llvm-vortex/lib: POCL_VORTEX_XLEN=64 LLVM_PREFIX=/home/ltj/tools/llvm-vortex POCL_VORTEX_BINTOOL="OBJCOPY=/home/ltj/tools/llvm-vortex/bin/llvm-objcopy /home/ltj/2026urp/vortex_aware_scheduler/kernel/scripts/vxbin.py" POCL_VORTEX_CFLAGS="-march=rv64imafd -mabi=lp64d -O3 -mcmodel=medany --sysroot=/home/ltj/tools/riscv64-gnu-toolchain/riscv64-unknown-elf --gcc-toolchain=/home/ltj/tools/riscv64-gnu-toolchain -fno-rtti -fno-exceptions -nostartfiles -nostdlib -fdata-sections -ffunction-sections -I/home/ltj/2026urp/vortex_aware_scheduler/hw -I/home/ltj/2026urp/vortex_aware_scheduler/kernel/include -DXLEN_64 -DNDEBUG -DDCACHE_SIZE=32768 -DDCACHE_NUM_WAYS=8 -DVX_SCHED_POLICY=WarpSchedulePolicy::GTO  -DNUM_CORES=1 -DNUM_WARPS=16 -DNUM_THREADS=16 -DPERF_ENABLE  -Xclang -target-feature -Xclang +vortex -Xclang -target-feature -Xclang +zicond -mllvm -disable-loop-idiom-all	" POCL_VORTEX_LDFLAGS="-Wl,-Bstatic,--gc-sections,-T/home/ltj/2026urp/vortex_aware_scheduler/kernel/scripts/link64.ld,--defsym=STARTUP_ADDR=0x80000000 /home/ltj/2026urp/vortex_aware_scheduler/kernel/libvortex.a -L/home/ltj/tools/libc64/lib -lm -lc /home/ltj/tools/libcrt64/lib/baremetal/libclang_rt.builtins-riscv64.a" VORTEX_DRIVER=simx ./kmeans -f100 -p100
+WG size of kernel_swap = 1, WG size of kernel_kmeans = 1 
+
+I/O completed
+
+Number of objects: 100
+Number of features: 100
+iterated 2 times
+Number of Iteration: 1
+PERF: core0: lmem reads=0
+PERF: core0: lmem writes=0
+PERF: core0: lmem bank stalls=0 (utilization=0%)
+PERF: core0: icache reads=40098
+PERF: core0: icache read misses=0 (hit ratio=100%)
+PERF: core0: icache mshr stalls=0 (utilization=0%)
+PERF: core0: dcache reads=17770
+PERF: core0: dcache writes=6819
+PERF: core0: dcache read misses=5156 (hit ratio=70%)
+PERF: core0: dcache write misses=6377 (hit ratio=6%)
+PERF: core0: dcache bank stalls=19603 (utilization=55%)
+PERF: core0: dcache mshr stalls=0 (utilization=100%)
+PERF: core0: coalescer misses=26262 (hit ratio=-2147483648%)
+PERF: scheduler idle=148063 (78%)
+PERF: scheduler stalls=0 (0%)
+PERF: ibuffer stalls=49903 (26%)
+PERF: scoreboard stalls=133922 (71%) (alu=20%, lsu=68%, csrs=0%, wctl=0%, fpu=11%)
+PERF: operands stalls=3773 (2%)
+PERF: ifetches=40098
+PERF: loads=104904
+PERF: stores=8920
+PERF: ifetch latency=5 cycles
+PERF: load latency=25 cycles
+PERF: ccws vta inserts=0
+PERF: ccws vta hits=0
+PERF: ccws throttled loads=0
+PERF: ccws throttled warps=0
+PERF: ccws fallback issues=0
+PERF: ccws avg active issue candidates=0.000
+PERF: ccws avg lls=0.000
+PERF: ccws max lls=0
+PERF: memory requests=10813 (reads=3962, writes=6851)
+PERF: memory latency=121 cycles
+PERF: memory bank stalls=3 (utilization=99%)
+PERF: instrs=569485, cycles=188161, IPC=3.026584
+make: Leaving directory '/home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/kmeans'

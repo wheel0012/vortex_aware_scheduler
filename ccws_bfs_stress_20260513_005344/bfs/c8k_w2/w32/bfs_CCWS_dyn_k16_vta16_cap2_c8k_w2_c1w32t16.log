@@ -1,0 +1,52 @@
+CONFIGS=-DDCACHE_SIZE=8192 -DDCACHE_NUM_WAYS=2 -DVX_SCHED_POLICY=WarpSchedulePolicy::CCWS            -DVX_CCWS_DYNAMIC_LLDS=1            -DVX_CCWS_BASE_LLS=100            -DVX_CCWS_K_THROTTLE=16            -DVX_CCWS_VTA_SIZE=16            -DVX_CCWS_LLS_CUTOFF=0            -DVX_CCWS_MAX_ACTIVE_LOAD_WARPS=2            -DVX_CCWS_LLS_DECAY_PERIOD=4            -DVX_CCWS_LLS_DECAY_STEP=1  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=16 -DPERF_ENABLE 
+Running: CONFIGS="-DDCACHE_SIZE=8192 -DDCACHE_NUM_WAYS=2 -DVX_SCHED_POLICY=WarpSchedulePolicy::CCWS            -DVX_CCWS_DYNAMIC_LLDS=1            -DVX_CCWS_BASE_LLS=100            -DVX_CCWS_K_THROTTLE=16            -DVX_CCWS_VTA_SIZE=16            -DVX_CCWS_LLS_CUTOFF=0            -DVX_CCWS_MAX_ACTIVE_LOAD_WARPS=2            -DVX_CCWS_LLS_DECAY_PERIOD=4            -DVX_CCWS_LLS_DECAY_STEP=1  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=16 -DPERF_ENABLE " make -C ./ci/../runtime/simx > /dev/null
+Running: make -C "./ci/../tests/opencl/bfs" run-simx
+make: Entering directory '/home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/bfs'
+LD_LIBRARY_PATH=/home/ltj/tools/pocl/lib:/home/ltj/2026urp/vortex_aware_scheduler/runtime:/home/ltj/tools/llvm-vortex/lib: POCL_VORTEX_XLEN=64 LLVM_PREFIX=/home/ltj/tools/llvm-vortex POCL_VORTEX_BINTOOL="OBJCOPY=/home/ltj/tools/llvm-vortex/bin/llvm-objcopy /home/ltj/2026urp/vortex_aware_scheduler/kernel/scripts/vxbin.py" POCL_VORTEX_CFLAGS="-march=rv64imafd -mabi=lp64d -O3 -mcmodel=medany --sysroot=/home/ltj/tools/riscv64-gnu-toolchain/riscv64-unknown-elf --gcc-toolchain=/home/ltj/tools/riscv64-gnu-toolchain -fno-rtti -fno-exceptions -nostartfiles -nostdlib -fdata-sections -ffunction-sections -I/home/ltj/2026urp/vortex_aware_scheduler/hw -I/home/ltj/2026urp/vortex_aware_scheduler/kernel/include -DXLEN_64 -DNDEBUG -DDCACHE_SIZE=8192 -DDCACHE_NUM_WAYS=2 -DVX_SCHED_POLICY=WarpSchedulePolicy::CCWS            -DVX_CCWS_DYNAMIC_LLDS=1            -DVX_CCWS_BASE_LLS=100            -DVX_CCWS_K_THROTTLE=16            -DVX_CCWS_VTA_SIZE=16            -DVX_CCWS_LLS_CUTOFF=0            -DVX_CCWS_MAX_ACTIVE_LOAD_WARPS=2            -DVX_CCWS_LLS_DECAY_PERIOD=4            -DVX_CCWS_LLS_DECAY_STEP=1  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=16 -DPERF_ENABLE  -Xclang -target-feature -Xclang +vortex -Xclang -target-feature -Xclang +zicond -mllvm -disable-loop-idiom-all	" POCL_VORTEX_LDFLAGS="-Wl,-Bstatic,--gc-sections,-T/home/ltj/2026urp/vortex_aware_scheduler/kernel/scripts/link64.ld,--defsym=STARTUP_ADDR=0x80000000 /home/ltj/2026urp/vortex_aware_scheduler/kernel/libvortex.a -L/home/ltj/tools/libc64/lib -lm -lc /home/ltj/tools/libcrt64/lib/baremetal/libclang_rt.builtins-riscv64.a" VORTEX_DRIVER=simx ./bfs /home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/bfs/graph4k.txt
+enter demo main
+Reading File
+Reading File completed!
+_clInit()
+clReleaseKernel()
+clReleaseKernel()
+clReleaseProgram()
+clReleaseCommandQueue()
+PERF: core0: lmem reads=0
+PERF: core0: lmem writes=0
+PERF: core0: lmem bank stalls=0 (utilization=0%)
+PERF: core0: icache reads=19731
+PERF: core0: icache read misses=0 (hit ratio=100%)
+PERF: core0: icache mshr stalls=0 (utilization=0%)
+PERF: core0: dcache reads=19228
+PERF: core0: dcache writes=23452
+PERF: core0: dcache read misses=12632 (hit ratio=34%)
+PERF: core0: dcache write misses=18351 (hit ratio=21%)
+PERF: core0: dcache bank stalls=181741 (utilization=19%)
+PERF: core0: dcache mshr stalls=0 (utilization=100%)
+PERF: core0: coalescer misses=381670 (hit ratio=-2147483648%)
+PERF: scheduler idle=222346 (91%)
+PERF: scheduler stalls=0 (0%)
+PERF: ibuffer stalls=139695 (57%)
+PERF: scoreboard stalls=374019 (154%) (alu=1%, lsu=98%, csrs=0%, wctl=0%, fpu=0%)
+PERF: operands stalls=1171 (0%)
+PERF: ifetches=19731
+PERF: loads=51804
+PERF: stores=30332
+PERF: ifetch latency=5 cycles
+PERF: load latency=102 cycles
+PERF: ccws vta inserts=12632
+PERF: ccws vta hits=1890
+PERF: ccws throttled loads=18078
+PERF: ccws throttled warps=0
+PERF: ccws fallback issues=2947
+PERF: ccws avg active issue candidates=6.418
+PERF: ccws avg lls=8400.523
+PERF: ccws max lls=1000000
+PERF: memory requests=35486 (reads=12002, writes=23484)
+PERF: memory latency=154 cycles
+PERF: memory bank stalls=6 (utilization=99%)
+PERF: instrs=302001, cycles=242077, IPC=1.247541
+clReleaseContext()
+clReleaseDevice()
+Passed!
+make: Leaving directory '/home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/bfs'

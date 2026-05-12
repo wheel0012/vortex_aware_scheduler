@@ -1,0 +1,7 @@
+benchmark,policy,config_name,cache_name,cores,warps,threads,status,logfile
+bfs,GTO,baseline_gto,c8k_w1,2,32,16,FAIL,ccws_bfs_stress_20260513_013441/bfs/c8k_w1/w32/bfs_GTO_baseline_gto_c8k_w1_c2w32t16.log
+bfs,CCWS,dyn_k16_vta32_cap4,c8k_w1,2,32,16,FAIL,ccws_bfs_stress_20260513_013441/bfs/c8k_w1/w32/bfs_CCWS_dyn_k16_vta32_cap4_c8k_w1_c2w32t16.log
+bfs,CCWS,dyn_k16_vta32_cap8,c8k_w1,2,32,16,FAIL,ccws_bfs_stress_20260513_013441/bfs/c8k_w1/w32/bfs_CCWS_dyn_k16_vta32_cap8_c8k_w1_c2w32t16.log
+bfs,GTO,baseline_gto,c4k_w2,2,32,16,PASS,ccws_bfs_stress_20260513_013441/bfs/c4k_w2/w32/bfs_GTO_baseline_gto_c4k_w2_c2w32t16.log
+bfs,CCWS,dyn_k16_vta32_cap4,c4k_w2,2,32,16,PASS,ccws_bfs_stress_20260513_013441/bfs/c4k_w2/w32/bfs_CCWS_dyn_k16_vta32_cap4_c4k_w2_c2w32t16.log
+bfs,CCWS,dyn_k16_vta32_cap8,c4k_w2,2,32,16,PASS,ccws_bfs_stress_20260513_013441/bfs/c4k_w2/w32/bfs_CCWS_dyn_k16_vta32_cap8_c4k_w2_c2w32t16.log

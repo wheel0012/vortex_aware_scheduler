@@ -1,0 +1,74 @@
+CONFIGS=-DDCACHE_SIZE=32768 -DDCACHE_NUM_WAYS=8 -DVX_SCHED_POLICY=WarpSchedulePolicy::CCWS      -DVX_CCWS_DYNAMIC_LLDS=1      -DVX_CCWS_BASE_LLS=100      -DVX_CCWS_K_THROTTLE=8      -DVX_CCWS_VTA_SIZE=16      -DVX_CCWS_LLS_CUTOFF=0      -DVX_CCWS_MAX_ACTIVE_LOAD_WARPS=8      -DVX_CCWS_LLS_DECAY_PERIOD=1      -DVX_CCWS_LLS_DECAY_STEP=1  -DNUM_CORES=1 -DNUM_WARPS=16 -DNUM_THREADS=16 -DPERF_ENABLE 
+Running: CONFIGS="-DDCACHE_SIZE=32768 -DDCACHE_NUM_WAYS=8 -DVX_SCHED_POLICY=WarpSchedulePolicy::CCWS      -DVX_CCWS_DYNAMIC_LLDS=1      -DVX_CCWS_BASE_LLS=100      -DVX_CCWS_K_THROTTLE=8      -DVX_CCWS_VTA_SIZE=16      -DVX_CCWS_LLS_CUTOFF=0      -DVX_CCWS_MAX_ACTIVE_LOAD_WARPS=8      -DVX_CCWS_LLS_DECAY_PERIOD=1      -DVX_CCWS_LLS_DECAY_STEP=1  -DNUM_CORES=1 -DNUM_WARPS=16 -DNUM_THREADS=16 -DPERF_ENABLE " make -C ./ci/../runtime/simx > /dev/null
+Running: make -C "./ci/../tests/opencl/blackscholes" run-simx
+make: Entering directory '/home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/blackscholes'
+LD_LIBRARY_PATH=/home/ltj/tools/pocl/lib:/home/ltj/2026urp/vortex_aware_scheduler/runtime:/home/ltj/tools/llvm-vortex/lib: POCL_VORTEX_XLEN=64 LLVM_PREFIX=/home/ltj/tools/llvm-vortex POCL_VORTEX_BINTOOL="OBJCOPY=/home/ltj/tools/llvm-vortex/bin/llvm-objcopy /home/ltj/2026urp/vortex_aware_scheduler/kernel/scripts/vxbin.py" POCL_VORTEX_CFLAGS="-march=rv64imafd -mabi=lp64d -O3 -mcmodel=medany --sysroot=/home/ltj/tools/riscv64-gnu-toolchain/riscv64-unknown-elf --gcc-toolchain=/home/ltj/tools/riscv64-gnu-toolchain -fno-rtti -fno-exceptions -nostartfiles -nostdlib -fdata-sections -ffunction-sections -I/home/ltj/2026urp/vortex_aware_scheduler/hw -I/home/ltj/2026urp/vortex_aware_scheduler/kernel/include -DXLEN_64 -DNDEBUG -DDCACHE_SIZE=32768 -DDCACHE_NUM_WAYS=8 -DVX_SCHED_POLICY=WarpSchedulePolicy::CCWS      -DVX_CCWS_DYNAMIC_LLDS=1      -DVX_CCWS_BASE_LLS=100      -DVX_CCWS_K_THROTTLE=8      -DVX_CCWS_VTA_SIZE=16      -DVX_CCWS_LLS_CUTOFF=0      -DVX_CCWS_MAX_ACTIVE_LOAD_WARPS=8      -DVX_CCWS_LLS_DECAY_PERIOD=1      -DVX_CCWS_LLS_DECAY_STEP=1  -DNUM_CORES=1 -DNUM_WARPS=16 -DNUM_THREADS=16 -DPERF_ENABLE  -Xclang -target-feature -Xclang +vortex -Xclang -target-feature -Xclang +zicond -mllvm -disable-loop-idiom-all	" POCL_VORTEX_LDFLAGS="-Wl,-Bstatic,--gc-sections,-T/home/ltj/2026urp/vortex_aware_scheduler/kernel/scripts/link64.ld,--defsym=STARTUP_ADDR=0x80000000 /home/ltj/2026urp/vortex_aware_scheduler/kernel/libvortex.a -L/home/ltj/tools/libc64/lib -lm -lc /home/ltj/tools/libcrt64/lib/baremetal/libclang_rt.builtins-riscv64.a" VORTEX_DRIVER=simx ./blackscholes 
+[blackscholes] starting...
+
+WARNING: NVIDIA OpenCL platform not found - defaulting to first platform!
+
+clGetPlatformID...
+Get the Device info and select Device...
+  # of Devices Available = 1
+  Using Device 0: Vortex OpenGPU
+  # of Compute Units = 1
+./blackscholes Starting...
+
+Allocating and initializing host memory...
+Initializing OpenCL...
+WARNING: NVIDIA OpenCL platform not found - defaulting to first platform!
+
+Creating OpenCL memory objects...
+Starting up BlackScholes...
+...creating BlackScholes program
+...building BlackScholes program
+...creating BlackScholes kernels
+Running OpenCL BlackScholes...
+
+
+Reading back OpenCL BlackScholes results...
+Comparing against Host/C++ computation...
+Relative L1 (call, put) = (1.745e-07, 4.769e-08)
+
+Shutting down...
+PERF: core0: lmem reads=0
+PERF: core0: lmem writes=0
+PERF: core0: lmem bank stalls=0 (utilization=0%)
+PERF: core0: icache reads=10625
+PERF: core0: icache read misses=476 (hit ratio=95%)
+PERF: core0: icache mshr stalls=0 (utilization=100%)
+PERF: core0: dcache reads=18195
+PERF: core0: dcache writes=18486
+PERF: core0: dcache read misses=15477 (hit ratio=14%)
+PERF: core0: dcache write misses=18026 (hit ratio=2%)
+PERF: core0: dcache bank stalls=13852 (utilization=72%)
+PERF: core0: dcache mshr stalls=0 (utilization=100%)
+PERF: core0: coalescer misses=17713 (hit ratio=51%)
+PERF: scheduler idle=251218 (95%)
+PERF: scheduler stalls=0 (0%)
+PERF: ibuffer stalls=161104 (61%)
+PERF: scoreboard stalls=206020 (78%) (alu=1%, lsu=96%, csrs=0%, wctl=0%, fpu=1%)
+PERF: operands stalls=985 (0%)
+PERF: ifetches=10625
+PERF: loads=26908
+PERF: stores=20838
+PERF: ifetch latency=55 cycles
+PERF: load latency=180 cycles
+PERF: ccws vta inserts=14770
+PERF: ccws vta hits=1759
+PERF: ccws throttled loads=1215
+PERF: ccws throttled warps=0
+PERF: ccws fallback issues=960
+PERF: ccws avg active issue candidates=2.019
+PERF: ccws avg lls=5160.065
+PERF: ccws max lls=555146
+PERF: memory requests=33732 (reads=15214, writes=18518)
+PERF: memory latency=138 cycles
+PERF: memory bank stalls=5 (utilization=99%)
+PERF: instrs=159207, cycles=261843, IPC=0.608025
+[blackscholes] test results...
+PASSED
+
+> exiting in 3 seconds: 3...2...1...done!
+
+make: Leaving directory '/home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/blackscholes'

@@ -1,0 +1,64 @@
+CONFIGS=-DDCACHE_SIZE=32768 -DDCACHE_NUM_WAYS=8 -DVX_SCHED_POLICY=WarpSchedulePolicy::CCWS      -DVX_CCWS_DYNAMIC_LLDS=1      -DVX_CCWS_BASE_LLS=100      -DVX_CCWS_K_THROTTLE=8      -DVX_CCWS_VTA_SIZE=16      -DVX_CCWS_LLS_CUTOFF=0      -DVX_CCWS_MAX_ACTIVE_LOAD_WARPS=0      -DVX_CCWS_LLS_DECAY_PERIOD=1      -DVX_CCWS_LLS_DECAY_STEP=1  -DNUM_CORES=1 -DNUM_WARPS=16 -DNUM_THREADS=16 -DPERF_ENABLE 
+Running: CONFIGS="-DDCACHE_SIZE=32768 -DDCACHE_NUM_WAYS=8 -DVX_SCHED_POLICY=WarpSchedulePolicy::CCWS      -DVX_CCWS_DYNAMIC_LLDS=1      -DVX_CCWS_BASE_LLS=100      -DVX_CCWS_K_THROTTLE=8      -DVX_CCWS_VTA_SIZE=16      -DVX_CCWS_LLS_CUTOFF=0      -DVX_CCWS_MAX_ACTIVE_LOAD_WARPS=0      -DVX_CCWS_LLS_DECAY_PERIOD=1      -DVX_CCWS_LLS_DECAY_STEP=1  -DNUM_CORES=1 -DNUM_WARPS=16 -DNUM_THREADS=16 -DPERF_ENABLE " make -C ./ci/../runtime/simx > /dev/null
+make: Warning: File '/home/ltj/2026urp/vortex_aware_scheduler/runtime/simx/../libsimx.so' has modification time 0.098 s in the future
+make[1]: Warning: File '/home/ltj/2026urp/vortex_aware_scheduler/runtime/simx/../libsimx.so' has modification time 0.085 s in the future
+make[1]: warning:  Clock skew detected.  Your build may be incomplete.
+make: warning:  Clock skew detected.  Your build may be incomplete.
+Running: make -C "./ci/../tests/regression/vecadd" run-simx
+make: Entering directory '/home/ltj/2026urp/vortex_aware_scheduler/tests/regression/vecadd'
+LD_LIBRARY_PATH=/home/ltj/2026urp/vortex_aware_scheduler/runtime: VORTEX_DRIVER=simx ./vecadd -n64
+open device connection
+number of points: 64
+data type: float
+buffer size: 256 bytes
+allocate device memory
+dev_src0=0x10000
+dev_src1=0x10100
+dev_dst=0x10200
+allocate host buffers
+upload source buffer0
+upload source buffer1
+Upload kernel binary
+upload kernel argument
+start device
+wait for completion
+download destination buffer
+verify result
+cleanup
+PERF: core0: lmem reads=0
+PERF: core0: lmem writes=0
+PERF: core0: lmem bank stalls=0 (utilization=0%)
+PERF: core0: icache reads=3702
+PERF: core0: icache read misses=327 (hit ratio=91%)
+PERF: core0: icache mshr stalls=0 (utilization=100%)
+PERF: core0: dcache reads=2464
+PERF: core0: dcache writes=6191
+PERF: core0: dcache read misses=2258 (hit ratio=8%)
+PERF: core0: dcache write misses=6167 (hit ratio=0%)
+PERF: core0: dcache bank stalls=2233 (utilization=79%)
+PERF: core0: dcache mshr stalls=0 (utilization=100%)
+PERF: core0: coalescer misses=4236 (hit ratio=51%)
+PERF: scheduler idle=55058 (93%)
+PERF: scheduler stalls=0 (0%)
+PERF: ibuffer stalls=4420 (7%)
+PERF: scoreboard stalls=33565 (57%) (alu=2%, lsu=96%, csrs=0%, wctl=0%, fpu=0%)
+PERF: operands stalls=154 (0%)
+PERF: ifetches=3702
+PERF: loads=3216
+PERF: stores=8279
+PERF: ifetch latency=71 cycles
+PERF: load latency=148 cycles
+PERF: ccws vta inserts=2028
+PERF: ccws vta hits=97
+PERF: ccws throttled loads=0
+PERF: ccws throttled warps=0
+PERF: ccws fallback issues=0
+PERF: ccws avg active issue candidates=3.361
+PERF: ccws avg lls=112.869
+PERF: ccws max lls=2720
+PERF: memory requests=8486 (reads=2263, writes=6223)
+PERF: memory latency=119 cycles
+PERF: memory bank stalls=3 (utilization=99%)
+PERF: instrs=52992, cycles=58760, IPC=0.901838
+PASSED!
+make: Leaving directory '/home/ltj/2026urp/vortex_aware_scheduler/tests/regression/vecadd'

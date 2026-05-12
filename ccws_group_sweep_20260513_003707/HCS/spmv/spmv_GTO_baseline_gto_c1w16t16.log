@@ -1,0 +1,55 @@
+CONFIGS=-DDCACHE_SIZE=32768 -DDCACHE_NUM_WAYS=8 -DVX_SCHED_POLICY=WarpSchedulePolicy::GTO  -DNUM_CORES=1 -DNUM_WARPS=16 -DNUM_THREADS=16 -DPERF_ENABLE 
+Running: CONFIGS="-DDCACHE_SIZE=32768 -DDCACHE_NUM_WAYS=8 -DVX_SCHED_POLICY=WarpSchedulePolicy::GTO  -DNUM_CORES=1 -DNUM_WARPS=16 -DNUM_THREADS=16 -DPERF_ENABLE " make -C ./ci/../runtime/simx > /dev/null
+Running: make -C "./ci/../tests/opencl/spmv" run-simx
+make: Entering directory '/home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/spmv'
+LD_LIBRARY_PATH=/home/ltj/tools/pocl/lib:/home/ltj/2026urp/vortex_aware_scheduler/runtime:/home/ltj/tools/llvm-vortex/lib: POCL_VORTEX_XLEN=64 LLVM_PREFIX=/home/ltj/tools/llvm-vortex POCL_VORTEX_BINTOOL="OBJCOPY=/home/ltj/tools/llvm-vortex/bin/llvm-objcopy /home/ltj/2026urp/vortex_aware_scheduler/kernel/scripts/vxbin.py" POCL_VORTEX_CFLAGS="-march=rv64imafd -mabi=lp64d -O3 -mcmodel=medany --sysroot=/home/ltj/tools/riscv64-gnu-toolchain/riscv64-unknown-elf --gcc-toolchain=/home/ltj/tools/riscv64-gnu-toolchain -fno-rtti -fno-exceptions -nostartfiles -nostdlib -fdata-sections -ffunction-sections -I/home/ltj/2026urp/vortex_aware_scheduler/hw -I/home/ltj/2026urp/vortex_aware_scheduler/kernel/include -DXLEN_64 -DNDEBUG -DDCACHE_SIZE=32768 -DDCACHE_NUM_WAYS=8 -DVX_SCHED_POLICY=WarpSchedulePolicy::GTO  -DNUM_CORES=1 -DNUM_WARPS=16 -DNUM_THREADS=16 -DPERF_ENABLE  -Xclang -target-feature -Xclang +vortex -Xclang -target-feature -Xclang +zicond -mllvm -disable-loop-idiom-all	" POCL_VORTEX_LDFLAGS="-Wl,-Bstatic,--gc-sections,-T/home/ltj/2026urp/vortex_aware_scheduler/kernel/scripts/link64.ld,--defsym=STARTUP_ADDR=0x80000000 /home/ltj/2026urp/vortex_aware_scheduler/kernel/libvortex.a -L/home/ltj/tools/libc64/lib -lm -lc /home/ltj/tools/libcrt64/lib/baremetal/libclang_rt.builtins-riscv64.a" VORTEX_DRIVER=simx ./spmv -i /home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/spmv/1138_bus.mtx,/home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/spmv/1138_bus.vec
+CUDA accelerated sparse matrix vector multiplication****
+Original version by Li-Wen Chang <lchang20@illinois.edu> and Shengzhao Wu<wu14@illinois.edu>
+This version maintained by Chris Rodrigues  ***********
+Converting COO to JDS format (1138x1138)
+4054 matrix entries, warp size = 32, row padding align = 1, pack size = 1
+
+Padding data....1152 rows, 36 groups
+Allocating data space: 4448 entries (8.857914% padding)
+Finished converting.
+JDS format has 1152 columns, 18 rows.
+nz_count_len = 36
+grid size=1152, block size=1, dim=1138
+PERF: core0: lmem reads=0
+PERF: core0: lmem writes=0
+PERF: core0: lmem bank stalls=0 (utilization=0%)
+PERF: core0: icache reads=13405
+PERF: core0: icache read misses=414 (hit ratio=96%)
+PERF: core0: icache mshr stalls=0 (utilization=100%)
+PERF: core0: dcache reads=12370
+PERF: core0: dcache writes=10441
+PERF: core0: dcache read misses=5880 (hit ratio=52%)
+PERF: core0: dcache write misses=9181 (hit ratio=12%)
+PERF: core0: dcache bank stalls=6600 (utilization=77%)
+PERF: core0: dcache mshr stalls=0 (utilization=100%)
+PERF: core0: coalescer misses=9604 (hit ratio=57%)
+PERF: scheduler idle=116228 (89%)
+PERF: scheduler stalls=0 (0%)
+PERF: ibuffer stalls=43653 (33%)
+PERF: scoreboard stalls=87461 (67%) (alu=7%, lsu=92%, csrs=0%, wctl=0%, fpu=0%)
+PERF: operands stalls=922 (0%)
+PERF: ifetches=13405
+PERF: loads=42410
+PERF: stores=13792
+PERF: ifetch latency=52 cycles
+PERF: load latency=50 cycles
+PERF: ccws vta inserts=0
+PERF: ccws vta hits=0
+PERF: ccws throttled loads=0
+PERF: ccws throttled warps=0
+PERF: ccws fallback issues=0
+PERF: ccws avg active issue candidates=0.000
+PERF: ccws avg lls=0.000
+PERF: ccws max lls=0
+PERF: memory requests=15677 (reads=5204, writes=10473)
+PERF: memory latency=88 cycles
+PERF: memory bank stalls=2 (utilization=99%)
+PERF: instrs=205539, cycles=129633, IPC=1.585545
+PASSED!
+Timer Wall Time: 0.000000
+make: Leaving directory '/home/ltj/2026urp/vortex_aware_scheduler/tests/opencl/spmv'
