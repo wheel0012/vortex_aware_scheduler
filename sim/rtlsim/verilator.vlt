@@ -1,0 +1,9 @@
+`verilator_config
+
+lint_off -rule BLKANDNBLK -file "/home/ltj/2026urp/vortex_aware_scheduler/third_party/cvfpu/*"
+lint_off -rule UNOPTFLAT -file "/home/ltj/2026urp/vortex_aware_scheduler/third_party/cvfpu/*"
+lint_off -file "/home/ltj/2026urp/vortex_aware_scheduler/third_party/cvfpu/*"
+
+lint_off -rule BLKANDNBLK -file "/home/ltj/2026urp/vortex_aware_scheduler/third_party/hardfloat/*"
+lint_off -rule UNOPTFLAT -file "/home/ltj/2026urp/vortex_aware_scheduler/third_party/hardfloat/*"
+lint_off -file "/home/ltj/2026urp/vortex_aware_scheduler/third_party/hardfloat/*"

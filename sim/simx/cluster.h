@@ -69,6 +69,10 @@ public:
 
   PerfStats perf_stats() const;
 
+  Socket* socket(uint32_t socket_id) const {
+    return sockets_.at(socket_id).get();
+  }
+
 private:
   uint32_t                    cluster_id_;
   ProcessorImpl*              processor_;

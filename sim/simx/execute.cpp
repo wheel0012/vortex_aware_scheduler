@@ -23,6 +23,8 @@
 #include <util.h>
 #include <rvfloats.h>
 #include "emulator.h"
+#include "instr_trace.h"
+#include "scheduler_ccws.h"
 #include "instr.h"
 #include "core.h"
 #include "types.h"

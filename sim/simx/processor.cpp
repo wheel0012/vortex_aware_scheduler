@@ -13,6 +13,7 @@
 
 #include "processor.h"
 #include "processor_impl.h"
+#include "socket.h"
 
 using namespace vortex;
 
@@ -149,6 +150,119 @@ void ProcessorImpl::dcr_write(uint32_t addr, uint32_t value) {
   dcrs_.write(addr, value);
 }
 
+int ProcessorImpl::mpm_query(uint32_t addr, uint32_t core_id, uint64_t* value) const {
+  uint32_t offset = addr - VX_CSR_MPM_BASE;
+  if (offset > 31 || core_id >= arch_.num_cores())
+    return -1;
+
+  uint32_t cores_per_cluster = NUM_SOCKETS * arch_.socket_size();
+  uint32_t cluster_id = core_id / cores_per_cluster;
+  uint32_t local_core_id = core_id % cores_per_cluster;
+  uint32_t socket_id = local_core_id / arch_.socket_size();
+  uint32_t socket_core_id = local_core_id % arch_.socket_size();
+
+  auto cluster = clusters_.at(cluster_id).get();
+  auto socket = cluster->socket(socket_id);
+  auto core = socket->core(socket_core_id);
+
+  auto core_perf = core->perf_stats();
+  if (addr == VX_CSR_MCYCLE) {
+    *value = core_perf.cycles;
+    return 0;
+  }
+  if (addr == VX_CSR_MINSTRET) {
+    *value = core_perf.instrs;
+    return 0;
+  }
+
+  auto perf_class = dcrs_.base_dcrs.read(VX_DCR_BASE_MPM_CLASS);
+  switch (perf_class) {
+  case VX_DCR_MPM_CLASS_CORE:
+    switch (addr) {
+    case VX_CSR_MPM_SCHED_ID: *value = core_perf.sched_idle; return 0;
+    case VX_CSR_MPM_SCHED_ST: *value = core_perf.sched_stalls; return 0;
+    case VX_CSR_MPM_IBUF_ST: *value = core_perf.ibuf_stalls; return 0;
+    case VX_CSR_MPM_SCRB_ST: *value = core_perf.scrb_stalls; return 0;
+    case VX_CSR_MPM_OPDS_ST: *value = core_perf.opds_stalls; return 0;
+    case VX_CSR_MPM_SCRB_ALU: *value = core_perf.scrb_alu; return 0;
+    case VX_CSR_MPM_SCRB_FPU: *value = core_perf.scrb_fpu; return 0;
+    case VX_CSR_MPM_SCRB_LSU: *value = core_perf.scrb_lsu; return 0;
+    case VX_CSR_MPM_SCRB_SFU: *value = core_perf.scrb_sfu; return 0;
+  #ifdef EXT_TCU_ENABLE
+    case VX_CSR_MPM_SCRB_TCU: *value = core_perf.scrb_tcu; return 0;
+  #endif
+  #ifdef EXT_V_ENABLE
+    case VX_CSR_MPM_SCRB_VPU: *value = core_perf.scrb_vpu; return 0;
+  #endif
+    case VX_CSR_MPM_SCRB_CSRS: *value = core_perf.scrb_csrs; return 0;
+    case VX_CSR_MPM_SCRB_WCTL: *value = core_perf.scrb_wctl; return 0;
+    case VX_CSR_MPM_IFETCHES: *value = core_perf.ifetches; return 0;
+    case VX_CSR_MPM_LOADS: *value = core_perf.loads; return 0;
+    case VX_CSR_MPM_STORES: *value = core_perf.stores; return 0;
+    case VX_CSR_MPM_IFETCH_LT: *value = core_perf.ifetch_latency; return 0;
+    case VX_CSR_MPM_LOAD_LT: *value = core_perf.load_latency; return 0;
+    case VX_CSR_MPM_CCWS_VTA_INSERTS: *value = core_perf.ccws_vta_inserts; return 0;
+    case VX_CSR_MPM_CCWS_VTA_HITS: *value = core_perf.ccws_vta_hits; return 0;
+    case VX_CSR_MPM_CCWS_THROTTLED_LOADS: *value = core_perf.ccws_throttled_loads; return 0;
+    case VX_CSR_MPM_CCWS_THROTTLED_WARPS: *value = core_perf.ccws_throttled_warps; return 0;
+    case VX_CSR_MPM_CCWS_FALLBACK_ISSUES: *value = core_perf.ccws_fallback_issues; return 0;
+    case VX_CSR_MPM_CCWS_AVG_ACTIVE_ISSUE_CANDIDATES: *value = core_perf.ccws_avg_active_issue_candidates; return 0;
+    case VX_CSR_MPM_CCWS_AVG_LLS: *value = core_perf.ccws_avg_lls; return 0;
+    case VX_CSR_MPM_CCWS_MAX_LLS: *value = core_perf.ccws_max_lls; return 0;
+    default:
+      break;
+    }
+    break;
+  case VX_DCR_MPM_CLASS_MEM: {
+    auto proc_perf = this->perf_stats();
+    auto cluster_perf = cluster->perf_stats();
+    auto socket_perf = socket->perf_stats();
+    auto lmem_perf = core->local_mem()->perf_stats();
+    uint64_t coalescer_misses = 0;
+    for (uint32_t i = 0; i < NUM_LSU_BLOCKS; ++i) {
+      coalescer_misses += core->mem_coalescer(i)->perf_stats().misses;
+    }
+    switch (addr) {
+    case VX_CSR_MPM_ICACHE_READS: *value = socket_perf.icache.reads; return 0;
+    case VX_CSR_MPM_ICACHE_MISS_R: *value = socket_perf.icache.read_misses; return 0;
+    case VX_CSR_MPM_ICACHE_MSHR_ST: *value = socket_perf.icache.mshr_stalls; return 0;
+    case VX_CSR_MPM_DCACHE_READS: *value = socket_perf.dcache.reads; return 0;
+    case VX_CSR_MPM_DCACHE_WRITES: *value = socket_perf.dcache.writes; return 0;
+    case VX_CSR_MPM_DCACHE_MISS_R: *value = socket_perf.dcache.read_misses; return 0;
+    case VX_CSR_MPM_DCACHE_MISS_W: *value = socket_perf.dcache.write_misses; return 0;
+    case VX_CSR_MPM_DCACHE_BANK_ST: *value = socket_perf.dcache.bank_stalls; return 0;
+    case VX_CSR_MPM_DCACHE_MSHR_ST: *value = socket_perf.dcache.mshr_stalls; return 0;
+    case VX_CSR_MPM_L2CACHE_READS: *value = cluster_perf.l2cache.reads; return 0;
+    case VX_CSR_MPM_L2CACHE_WRITES: *value = cluster_perf.l2cache.writes; return 0;
+    case VX_CSR_MPM_L2CACHE_MISS_R: *value = cluster_perf.l2cache.read_misses; return 0;
+    case VX_CSR_MPM_L2CACHE_MISS_W: *value = cluster_perf.l2cache.write_misses; return 0;
+    case VX_CSR_MPM_L2CACHE_BANK_ST: *value = cluster_perf.l2cache.bank_stalls; return 0;
+    case VX_CSR_MPM_L2CACHE_MSHR_ST: *value = cluster_perf.l2cache.mshr_stalls; return 0;
+    case VX_CSR_MPM_L3CACHE_READS: *value = proc_perf.l3cache.reads; return 0;
+    case VX_CSR_MPM_L3CACHE_WRITES: *value = proc_perf.l3cache.writes; return 0;
+    case VX_CSR_MPM_L3CACHE_MISS_R: *value = proc_perf.l3cache.read_misses; return 0;
+    case VX_CSR_MPM_L3CACHE_MISS_W: *value = proc_perf.l3cache.write_misses; return 0;
+    case VX_CSR_MPM_L3CACHE_BANK_ST: *value = proc_perf.l3cache.bank_stalls; return 0;
+    case VX_CSR_MPM_L3CACHE_MSHR_ST: *value = proc_perf.l3cache.mshr_stalls; return 0;
+    case VX_CSR_MPM_MEM_READS: *value = proc_perf.mem_reads; return 0;
+    case VX_CSR_MPM_MEM_WRITES: *value = proc_perf.mem_writes; return 0;
+    case VX_CSR_MPM_MEM_LT: *value = proc_perf.mem_latency; return 0;
+    case VX_CSR_MPM_MEM_BANK_ST: *value = proc_perf.memsim.bank_stalls; return 0;
+    case VX_CSR_MPM_LMEM_READS: *value = lmem_perf.reads; return 0;
+    case VX_CSR_MPM_LMEM_WRITES: *value = lmem_perf.writes; return 0;
+    case VX_CSR_MPM_LMEM_BANK_ST: *value = lmem_perf.bank_stalls; return 0;
+    case VX_CSR_MPM_COALESCER_MISS: *value = coalescer_misses; return 0;
+    default:
+      break;
+    }
+  } break;
+  default:
+    break;
+  }
+  *value = 0;
+  return 0;
+}
+
 ProcessorImpl::PerfStats ProcessorImpl::perf_stats() const {
   ProcessorImpl::PerfStats perf;
   perf.mem_reads   = perf_mem_reads_;
@@ -194,6 +308,10 @@ int Processor::run() {
 
 void Processor::dcr_write(uint32_t addr, uint32_t value) {
   return impl_->dcr_write(addr, value);
+}
+
+int Processor::mpm_query(uint32_t addr, uint32_t core_id, uint64_t* value) const {
+  return impl_->mpm_query(addr, core_id, value);
 }
 
 #ifdef VM_ENABLE

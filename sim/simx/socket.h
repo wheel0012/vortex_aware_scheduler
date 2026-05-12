@@ -71,6 +71,10 @@ public:
 
   PerfStats perf_stats() const;
 
+  Core* core(uint32_t core_id) const {
+    return cores_.at(core_id).get();
+  }
+
   bool is_dcache_mshr_pressured(uint32_t threshold) const;
 
   uint32_t dcache_mshr_occupancy() const;

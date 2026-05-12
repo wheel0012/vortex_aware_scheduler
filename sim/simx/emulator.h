@@ -20,6 +20,7 @@
 #include <mem.h>
 #include "types.h"
 #include "instr.h"
+#include "scheduler_ccws.h"
 #ifdef EXT_TCU_ENABLE
 #include "tensor_unit.h"
 #endif
@@ -79,6 +80,7 @@ struct wspawn_t {
 enum class WarpSchedulePolicy {
   Static,
   GTO,
+  CCWS,
   RR
 };
 
@@ -110,6 +112,12 @@ public:
 
   bool wspawn(uint32_t num_warps, Word nextPC);
 
+  SchedulerCCWS::PerfStats ccws_perf_stats() const;
+
+  void ccws_on_l1_miss(uint32_t wid, uint64_t line_addr);
+
+  void ccws_on_l1_eviction(uint32_t wid, uint64_t line_addr);
+
   int get_exitcode() const;
 
   void dcache_read(void* data, uint64_t addr, uint32_t size);
@@ -126,7 +134,15 @@ private:
 
   int select_rr_warp();
 
+  int select_ccws_warp();
+
+  int select_oldest_ready(int excluded_warp, bool skip_load_warps, bool allow_blocked_loads = false);
+
+  bool is_ready_warp(uint32_t wid) const;
+
   void update_ready_timestamps();
+  
+  uint64_t count_ready_warps() const;
 
   bool warp_head_is_load(uint32_t wid);
 
@@ -188,6 +204,7 @@ private:
 #endif
 
   PoolAllocator<Instr, 64> instr_pool_;
+  SchedulerCCWS* ccws_;
 };
 
 }

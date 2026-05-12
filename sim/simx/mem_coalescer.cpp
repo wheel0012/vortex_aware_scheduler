@@ -141,6 +141,7 @@ void MemCoalescer::tick() {
   out_req.write = in_req.write;
   out_req.addrs = out_addrs;
   out_req.cid = in_req.cid;
+  out_req.wid = in_req.wid;
   out_req.uuid = in_req.uuid;
 
   // send memory request

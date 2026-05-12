@@ -101,6 +101,20 @@ Socket::Socket(const SimContext& ctx,
     cores_.at(i) = Core::Create(core_id, this, arch, dcrs);
   }
 
+  dcaches_->set_ccws_callbacks(
+    [this](uint32_t cid, uint32_t wid, uint64_t line_addr) {
+      uint32_t core_idx = cid - socket_id_ * cores_.size();
+      if (core_idx < cores_.size()) {
+        cores_.at(core_idx)->ccws_on_l1_miss(wid, line_addr);
+      }
+    },
+    [this](uint32_t cid, uint32_t wid, uint64_t line_addr) {
+      uint32_t core_idx = cid - socket_id_ * cores_.size();
+      if (core_idx < cores_.size()) {
+        cores_.at(core_idx)->ccws_on_l1_eviction(wid, line_addr);
+      }
+    });
+
   // connect cores to caches
   for (uint32_t i = 0; i < cores_per_socket; ++i) {
     cores_.at(i)->icache_req_ports.at(0).bind(&icaches_->CoreReqPorts.at(i).at(0));

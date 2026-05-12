@@ -141,6 +141,7 @@ echo "source <build-path>/ci/toolchain_env.sh" >> ~/.bashrc
 - `WarpSchedulePolicy::Static` : 기존 priority 방식
 - `WarpSchedulePolicy::RR` : round-robin
 - `WarpSchedulePolicy::GTO` : greedy-then-oldest
+- `WarpSchedulePolicy::CCWS` : cache-conscious warp scheduling
 
 ### 빌드
 ```sh
@@ -180,4 +181,24 @@ CONFIGS="-DVX_GTO_MSHR_AWARE=0" ./ci/blackbox.sh --driver=simx --app=sgemm3 --co
   - 튜닝 예시(`NUM/DEN/COOLDOWN` 지정)
 ```sh
 CONFIGS="-DVX_GTO_MSHR_AWARE=1 -DVX_GTO_MSHR_PRESSURE_NUM=7 -DVX_GTO_MSHR_PRESSURE_DEN=8 -DVX_GTO_MSHR_LOAD_COOLDOWN=4" ./ci/blackbox.sh --driver=simx --app=sgemm3 --cores=32 --warps=32 --threads=32 --l2cache --perf=1
+```
+
+### CCWS scheduler 설정 안내
+CONFIGS에 
+```sh
+-DVX_SCHED_POLICY=WarpSchedulePolicy::CCWS 추가
+```
+
+- 주요 튜닝 파라미터:
+  - `VX_CCWS_VTA_SIZE=8`: warp별 VTA entry 수
+  - `VX_CCWS_LLD_SCORE=10`: VTA hit 시 부여할 lost-locality score
+  - `VX_CCWS_LLS_DECAY_PERIOD=1`: 몇 tick마다 LLS를 감소시킬지 설정, `0`이면 decay 비활성화
+  - `VX_CCWS_LLS_DECAY_STEP=1`: decay 시 LLS 감소량
+  - `VX_CCWS_LLS_CUTOFF=0`: cumulative LLS cutoff, `0`이면 고정 top-K 모드
+  - `VX_CCWS_MAX_ACTIVE_LOAD_WARPS=4`: cumulative cutoff가 고른 schedulable warp 수의 상한
+  - `VX_CCWS_GATE_WHOLE_WARP=0`: `0`이면 load-only gating, `1`이면 whole-warp gating
+
+- 튜닝 예시:
+```sh
+CONFIGS="-DVX_SCHED_POLICY=WarpSchedulePolicy::CCWS -DVX_CCWS_VTA_SIZE=16 -DVX_CCWS_LLD_SCORE=20 -DVX_CCWS_LLS_DECAY_PERIOD=2 -DVX_CCWS_LLS_DECAY_STEP=1 -DVX_CCWS_MAX_ACTIVE_LOAD_WARPS=8" ./ci/blackbox.sh --driver=simx --app=sgemm3 --cores=32 --warps=32 --threads=32 --l2cache --perf=3
 ```

@@ -69,6 +69,14 @@ public:
     uint64_t stores;
     uint64_t ifetch_latency;
     uint64_t load_latency;
+    uint64_t ccws_vta_inserts;
+	    uint64_t ccws_vta_hits;
+	    uint64_t ccws_throttled_loads;
+	    uint64_t ccws_throttled_warps;
+	    uint64_t ccws_fallback_issues;
+    uint64_t ccws_avg_active_issue_candidates;
+    uint64_t ccws_avg_lls;
+    uint64_t ccws_max_lls;
 
     PerfStats()
       : cycles(0)
@@ -96,6 +104,14 @@ public:
       , stores(0)
       , ifetch_latency(0)
       , load_latency(0)
+      , ccws_vta_inserts(0)
+	      , ccws_vta_hits(0)
+	      , ccws_throttled_loads(0)
+	      , ccws_throttled_warps(0)
+	      , ccws_fallback_issues(0)
+      , ccws_avg_active_issue_candidates(0)
+      , ccws_avg_lls(0)
+      , ccws_max_lls(0)
     {}
   };
 
@@ -176,6 +192,14 @@ public:
   }
 
   const PerfStats& perf_stats() const;
+
+  void ccws_on_l1_miss(uint32_t wid, uint64_t line_addr) {
+    emulator_.ccws_on_l1_miss(wid, line_addr);
+  }
+
+  void ccws_on_l1_eviction(uint32_t wid, uint64_t line_addr) {
+    emulator_.ccws_on_l1_eviction(wid, line_addr);
+  }
 
   int get_exitcode() const;
 

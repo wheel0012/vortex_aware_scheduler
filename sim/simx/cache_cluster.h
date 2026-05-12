@@ -115,6 +115,12 @@ public:
 		return (this->mshr_occupancy() >= threshold);
 	}
 
+	void set_ccws_callbacks(CacheSim::CCWSCallback miss_callback, CacheSim::CCWSCallback eviction_callback) {
+		for (auto cache : caches_) {
+			cache->set_ccws_callbacks(miss_callback, eviction_callback);
+		}
+	}
+
 private:
   std::vector<CacheSim::Ptr> caches_;
 };

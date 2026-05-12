@@ -104,11 +104,13 @@ struct params_t {
 
 struct line_t {
 	uint64_t tag;
+	uint32_t owner_wid;
 	uint32_t lru_ctr;
 	bool     valid;
 	bool     dirty;
 
 	void reset() {
+		owner_wid = 0;
 		valid = false;
 		dirty = false;
 	}
@@ -168,6 +170,7 @@ struct bank_req_t {
 	uint32_t cid;
 	uint64_t req_tag;
 	uint64_t uuid;
+	uint32_t wid;
 	ReqType  type;
 	bool     write;
 
@@ -349,6 +352,11 @@ public:
 		return perf_stats_;
 	}
 
+	void set_ccws_callbacks(CacheSim::CCWSCallback miss_callback, CacheSim::CCWSCallback eviction_callback) {
+		miss_callback_ = miss_callback;
+		eviction_callback_ = eviction_callback;
+	}
+
 	uint32_t mshr_occupancy() const {
 		return pending_mshr_size_;
 	}
@@ -382,6 +390,8 @@ private:
 				auto& line  = set.lines.at(entry.line_id);
 				line.valid  = true;
 				line.tag    = entry.bank_req.addr_tag;
+				line.owner_wid = entry.bank_req.wid;
+				line.dirty = entry.bank_req.write && config_.write_back;
 				mshr_.dequeue(&bank_req);
 				--pending_mshr_size_;
 				pipe_req_->push(bank_req);
@@ -408,6 +418,7 @@ private:
 				bank_req.addr_tag = params_.addr_tag(core_req.addr);
 				bank_req.req_tag = core_req.tag;
 				bank_req.write = core_req.write;
+				bank_req.wid = core_req.wid;
 				pipe_req_->push(bank_req);
 				if (core_req.write)
 					++perf_stats_.writes;
@@ -428,6 +439,15 @@ private:
 		case bank_req_t::None:
 			break;
 		case bank_req_t::Replay: {
+			if (bank_req.write && config_.write_back) {
+				auto& set = sets_.at(bank_req.set_id);
+				int free_line_id = -1;
+				int repl_line_id = -1;
+				int hit_line_id = set.tag_lookup(bank_req.addr_tag, &free_line_id, &repl_line_id);
+				if (hit_line_id != -1) {
+					set.lines.at(hit_line_id).dirty = true;
+				}
+			}
 			// send core response
 			if (!bank_req.write || config_.write_reponse) {
 				MemRsp core_rsp{bank_req.req_tag, bank_req.cid, bank_req.uuid};
@@ -452,6 +472,7 @@ private:
 						mem_req.addr  = params_.mem_addr(bank_id_, bank_req.set_id, bank_req.addr_tag);
 						mem_req.write = true;
 						mem_req.cid   = bank_req.cid;
+						mem_req.wid   = bank_req.wid;
 						mem_req.uuid  = bank_req.uuid;
 						this->mem_req_port.push(mem_req);
 						DT(3, this->name() << "-writethrough: " << mem_req);
@@ -469,19 +490,39 @@ private:
 				--pending_mshr_size_;
 			} else {
 				// Miss handling
-				if (bank_req.write)
+				if (bank_req.write) {
 					++perf_stats_.write_misses;
-				else
+				} else {
 					++perf_stats_.read_misses;
+				}
 
-				if (free_line_id == -1 && config_.write_back) {
-					// write back dirty line
+					// Read misses probe CCWS VTA. VTA insertion is driven only by replacement below.
+				if (!bank_req.write && miss_callback_) {
+					uint64_t line_addr = params_.mem_addr(bank_id_, bank_req.set_id, bank_req.addr_tag);
+					miss_callback_(bank_req.cid, bank_req.wid, line_addr);
+				}
+				
+				const bool is_write_through_no_allocate =
+					bank_req.write && !config_.write_back;
+
+				const bool will_allocate_line =
+					!is_write_through_no_allocate;
+
+				// Only real cache allocation can evict an existing line.
+				if (will_allocate_line && free_line_id == -1) {
 					auto& repl_line = set.lines.at(repl_line_id);
-					if (repl_line.dirty) {
+					uint64_t repl_addr = params_.mem_addr(bank_id_, bank_req.set_id, repl_line.tag);
+
+					if (repl_line.valid && eviction_callback_) {
+						eviction_callback_(bank_req.cid, repl_line.owner_wid, repl_addr);
+					}
+
+					if (config_.write_back && repl_line.dirty) {
 						MemReq mem_req;
-						mem_req.addr  = params_.mem_addr(bank_id_, bank_req.set_id, repl_line.tag);
+						mem_req.addr  = repl_addr;
 						mem_req.write = true;
 						mem_req.cid   = bank_req.cid;
+						mem_req.wid   = bank_req.wid;
 						this->mem_req_port.push(mem_req);
 						DT(3, this->name() << "-writeback: " << mem_req);
 						++perf_stats_.evictions;
@@ -495,6 +536,7 @@ private:
 						mem_req.addr  = params_.mem_addr(bank_id_, bank_req.set_id, bank_req.addr_tag);
 						mem_req.write = true;
 						mem_req.cid   = bank_req.cid;
+						mem_req.wid   = bank_req.wid;
 						mem_req.uuid  = bank_req.uuid;
 						this->mem_req_port.push(mem_req);
 						DT(3, this->name() << "-writethrough: " << mem_req);
@@ -521,6 +563,7 @@ private:
 						mem_req.write = false;
 						mem_req.tag   = mshr_id;
 						mem_req.cid   = bank_req.cid;
+						mem_req.wid   = bank_req.wid;
 						mem_req.uuid  = bank_req.uuid;
 						this->mem_req_port.push(mem_req);
 						DT(3, this->name() << "-fill-req: " << mem_req);
@@ -546,6 +589,8 @@ private:
 	TFifo<bank_req_t>::Ptr pipe_req_;
 
 	CacheSim::PerfStats perf_stats_;
+	CacheSim::CCWSCallback miss_callback_;
+	CacheSim::CCWSCallback eviction_callback_;
 
 	uint64_t pending_read_reqs_;
 	uint64_t pending_write_reqs_;
@@ -718,6 +763,14 @@ public:
 		return (this->mshr_occupancy() >= threshold);
 	}
 
+	void set_ccws_callbacks(CacheSim::CCWSCallback miss_callback, CacheSim::CCWSCallback eviction_callback) {
+		if (config_.bypass)
+			return;
+		for (auto& bank : banks_) {
+			bank->set_ccws_callbacks(miss_callback, eviction_callback);
+		}
+	}
+
 private:
 
 	void processBypassResponse(const MemRsp& mem_rsp) {
@@ -792,4 +845,8 @@ uint32_t CacheSim::mshr_capacity() const {
 
 bool CacheSim::is_mshr_pressured(uint32_t threshold) const {
 	return impl_->is_mshr_pressured(threshold);
+}
+
+void CacheSim::set_ccws_callbacks(CCWSCallback miss_callback, CCWSCallback eviction_callback) {
+	impl_->set_ccws_callbacks(miss_callback, eviction_callback);
 }

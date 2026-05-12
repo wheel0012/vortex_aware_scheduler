@@ -21,6 +21,8 @@
 #include <util.h>
 
 #include "emulator.h"
+#include "arch.h"
+#include "scheduler_ccws.h"
 #include "instr_trace.h"
 #include "instr.h"
 #include "dcrs.h"
@@ -38,10 +40,16 @@ namespace {
 // WarpSchedulePolicy::Static
 // WarpSchedulePolicy::RR
 // WarpSchedulePolicy::GTO
-constexpr WarpSchedulePolicy kDefaultSchedulePolicy = WarpSchedulePolicy::GTO;
+// WarpSchedulePolicy::CCWS
+
+#ifndef VX_SCHED_POLICY
+#define VX_SCHED_POLICY WarpSchedulePolicy::Static
+#endif 
+
+constexpr WarpSchedulePolicy kDefaultSchedulePolicy = WarpSchedulePolicy::Static;
 
 #ifndef VX_GTO_MSHR_AWARE
-#define VX_GTO_MSHR_AWARE 1
+#define VX_GTO_MSHR_AWARE 0
 #endif
 
 #ifndef VX_GTO_MSHR_PRESSURE_NUM
@@ -55,6 +63,7 @@ constexpr WarpSchedulePolicy kDefaultSchedulePolicy = WarpSchedulePolicy::GTO;
 #ifndef VX_GTO_MSHR_LOAD_COOLDOWN
 #define VX_GTO_MSHR_LOAD_COOLDOWN 2
 #endif
+
 
 } // namespace
 
@@ -100,12 +109,12 @@ void warp_t::reset(uint64_t startup_addr) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-Emulator::Emulator(const Arch &arch, const DCRS &dcrs, Core* core)
+Emulator::Emulator(const vortex::Arch &arch, const DCRS &dcrs, Core* core)
     : arch_(arch)
     , dcrs_(dcrs)
     , core_(core)
     , warps_(arch.num_warps(), arch.num_threads())
-    , schedule_policy_(kDefaultSchedulePolicy)
+    , schedule_policy_(VX_SCHED_POLICY)
     , schedule_cycle_(0)
     , greedy_warp_(-1)
     , rr_last_warp_(-1)
@@ -113,6 +122,7 @@ Emulator::Emulator(const Arch &arch, const DCRS &dcrs, Core* core)
     , ready_timestamps_(arch.num_warps(), 0)
     , barriers_(arch.num_barriers(), 0)
     , ipdom_size_(arch.num_threads()-1)
+    , ccws_(new SchedulerCCWS(arch.num_warps()))
   #ifdef EXT_TCU_ENABLE
     , tensor_unit_(core->tensor_unit())
   #endif
@@ -126,6 +136,7 @@ Emulator::Emulator(const Arch &arch, const DCRS &dcrs, Core* core)
 
 Emulator::~Emulator() {
   this->cout_flush();
+  delete ccws_;
 }
 
 void Emulator::reset() {
@@ -160,6 +171,7 @@ void Emulator::reset() {
   rr_last_warp_ = -1;
   mshr_load_cooldown_ctr_ = 0;
   std::fill(ready_timestamps_.begin(), ready_timestamps_.end(), 0);
+  ccws_->reset();
 
   // activate first warp and thread
   active_warps_.set(0);
@@ -213,31 +225,6 @@ void Emulator::update_ready_timestamps() {
 }
 
 int Emulator::select_gto_warp() {
-  auto is_ready_warp = [&](uint32_t wid) -> bool {
-    return active_warps_.test(wid) && !stalled_warps_.test(wid);
-  };
-
-  auto select_oldest_ready = [&](int excluded_warp, bool skip_load_warps) -> int {
-    int selected_warp = -1;
-    uint64_t oldest_timestamp = std::numeric_limits<uint64_t>::max();
-    for (size_t wid = 0, nw = arch_.num_warps(); wid < nw; ++wid) {
-      if (static_cast<int>(wid) == excluded_warp)
-        continue;
-      if (!is_ready_warp(wid))
-        continue;
-      if (skip_load_warps && this->warp_head_is_load(wid))
-        continue;
-      auto ts = ready_timestamps_.at(wid);
-      if (ts == 0)
-        continue;
-      if (ts < oldest_timestamp) {
-        oldest_timestamp = ts;
-        selected_warp = wid;
-      }
-    }
-    return selected_warp;
-  };
-
   bool mshr_pressured = false;
   if (VX_GTO_MSHR_AWARE) {
     uint32_t dcache_mshr_capacity = core_->socket()->dcache_mshr_capacity();
@@ -248,7 +235,7 @@ int Emulator::select_gto_warp() {
 
   if (greedy_warp_ >= 0) {
     uint32_t wid = static_cast<uint32_t>(greedy_warp_);
-    if (is_ready_warp(wid) && (!mshr_pressured || !this->warp_head_is_load(wid))) {
+    if (this->is_ready_warp(wid) && (!mshr_pressured || !this->warp_head_is_load(wid))) {
       return greedy_warp_;
     }
   }
@@ -256,7 +243,7 @@ int Emulator::select_gto_warp() {
   int selected_warp = -1;
   if (mshr_pressured) {
     // Under MSHR pressure, temporarily mask LOAD-headed warps.
-    selected_warp = select_oldest_ready(-1, true);
+    selected_warp = this->select_oldest_ready(-1, true);
     // Deadlock prevention: if all ready warps are LOAD-headed, allow the oldest.
     if (-1 == selected_warp) {
       if (mshr_load_cooldown_ctr_ < VX_GTO_MSHR_LOAD_COOLDOWN) {
@@ -265,11 +252,11 @@ int Emulator::select_gto_warp() {
         return -1;
       }
       mshr_load_cooldown_ctr_ = 0;
-      selected_warp = select_oldest_ready(-1, false);
+      selected_warp = this->select_oldest_ready(-1, false);
     }
   } else {
     mshr_load_cooldown_ctr_ = 0;
-    selected_warp = select_oldest_ready(-1, false);
+    selected_warp = this->select_oldest_ready(-1, false);
   }
   greedy_warp_ = selected_warp;
   return selected_warp;
@@ -320,6 +307,93 @@ int Emulator::select_rr_warp() {
   return -1;
 }
 
+int Emulator::select_ccws_warp() {
+  uint64_t ready_count = this->count_ready_warps();
+
+  if (ready_count > 0) {
+    ccws_->record_issue_candidates(ready_count);
+  }
+
+  int selected_warp = this->select_oldest_ready(-1, false, false);
+
+  if (selected_warp < 0) {
+    // ready warp가 있을 때만 CCWS fallback으로 기록
+    if (ready_count > 0) {
+      ccws_->record_fallback_issue();
+    }
+
+    selected_warp = this->select_oldest_ready(-1, false, true);
+  }
+
+  return selected_warp;
+}
+
+bool Emulator::is_ready_warp(uint32_t wid) const {
+  return active_warps_.test(wid) && !stalled_warps_.test(wid);
+}
+
+uint64_t Emulator::count_ready_warps() const {
+  uint64_t count = 0;
+
+  for (size_t wid = 0, nw = arch_.num_warps(); wid < nw; ++wid) {
+    if (this->is_ready_warp(static_cast<uint32_t>(wid))) {
+      ++count;
+    }
+  }
+
+  return count;
+}
+
+int Emulator::select_oldest_ready(int excluded_warp,
+                                  bool skip_load_warps,
+                                  bool allow_blocked_loads) {
+  int selected_warp = -1;
+  uint64_t oldest_timestamp = std::numeric_limits<uint64_t>::max();
+  bool use_ccws = (WarpSchedulePolicy::CCWS == schedule_policy_);
+
+  for (size_t wid = 0, nw = arch_.num_warps(); wid < nw; ++wid) {
+    if (static_cast<int>(wid) == excluded_warp)
+      continue;
+
+    if (!this->is_ready_warp(static_cast<uint32_t>(wid)))
+      continue;
+
+    bool head_is_load = this->warp_head_is_load(static_cast<uint32_t>(wid));
+
+    if (skip_load_warps && head_is_load)
+      continue;
+
+    bool ccws_blocked = false;
+    if (use_ccws && !allow_blocked_loads) {
+#if VX_CCWS_GATE_WHOLE_WARP
+      ccws_blocked = !ccws_->can_issue_warp(wid);
+      if (ccws_blocked) {
+        ccws_->record_throttled_warp();
+      }
+#else
+      ccws_blocked = head_is_load && !ccws_->can_issue_load(wid);
+#endif
+    }
+
+    if (ccws_blocked) {
+      if (head_is_load)
+        ccws_->record_throttled_load();
+      continue;
+    }
+
+    auto ts = ready_timestamps_.at(wid);
+    if (ts == 0)
+      continue;
+
+    if (ts < oldest_timestamp) {
+      oldest_timestamp = ts;
+      selected_warp = static_cast<int>(wid);
+    }
+  }
+
+  return selected_warp;
+}
+
 instr_trace_t* Emulator::step() {
   int scheduled_warp = -1;
 
@@ -336,9 +410,13 @@ instr_trace_t* Emulator::step() {
     stalled_warps_.reset(0);
   }
 
-  if (WarpSchedulePolicy::GTO == schedule_policy_) {
+  if (WarpSchedulePolicy::GTO == schedule_policy_ 
+    || WarpSchedulePolicy::CCWS == schedule_policy_) { // update ready timestamps for GTO and CCWS 
     ++schedule_cycle_;
     update_ready_timestamps();
+    if (WarpSchedulePolicy::CCWS == schedule_policy_) {
+      ccws_->tick(); //lowering LLS of each warp by 1 cycle
+    }
   }
 
   // find next ready warp according to policy
@@ -348,6 +426,9 @@ instr_trace_t* Emulator::step() {
     break;
   case WarpSchedulePolicy::GTO:
     scheduled_warp = select_gto_warp();
+    break;
+  case WarpSchedulePolicy::CCWS:
+    scheduled_warp = select_ccws_warp();
     break;
   case WarpSchedulePolicy::RR:
     scheduled_warp = select_rr_warp();
@@ -426,6 +507,22 @@ bool Emulator::wspawn(uint32_t num_warps, Word nextPC) {
   wspawn_.num_warps = num_warps;
   wspawn_.nextPC = nextPC;
   return false;
+}
+
+SchedulerCCWS::PerfStats Emulator::ccws_perf_stats() const {
+  return ccws_->perf_stats();
+}
+
+void Emulator::ccws_on_l1_miss(uint32_t wid, uint64_t line_addr) {
+  if (WarpSchedulePolicy::CCWS == schedule_policy_) {
+    ccws_->on_l1_miss(wid, line_addr);
+  }
+}
+
+void Emulator::ccws_on_l1_eviction(uint32_t wid, uint64_t line_addr) {
+  if (WarpSchedulePolicy::CCWS == schedule_policy_) {
+    ccws_->on_l1_eviction(wid, line_addr);
+  }
 }
 
 bool Emulator::barrier(uint32_t bar_id, uint32_t count, uint32_t wid) {
@@ -683,6 +780,16 @@ Word Emulator::get_csr(uint32_t addr, uint32_t wid, uint32_t tid) {
         CSR_READ_64(VX_CSR_MPM_STORES, core_perf.stores);
         CSR_READ_64(VX_CSR_MPM_IFETCH_LT, core_perf.ifetch_latency);
         CSR_READ_64(VX_CSR_MPM_LOAD_LT, core_perf.load_latency);
+#ifdef PERF_ENABLE
+        CSR_READ_64(VX_CSR_MPM_CCWS_VTA_INSERTS, core_perf.ccws_vta_inserts);
+        CSR_READ_64(VX_CSR_MPM_CCWS_VTA_HITS, core_perf.ccws_vta_hits);
+        CSR_READ_64(VX_CSR_MPM_CCWS_THROTTLED_LOADS, core_perf.ccws_throttled_loads);
+        CSR_READ_64(VX_CSR_MPM_CCWS_THROTTLED_WARPS, core_perf.ccws_throttled_warps);
+        CSR_READ_64(VX_CSR_MPM_CCWS_FALLBACK_ISSUES, core_perf.ccws_fallback_issues);
+        CSR_READ_64(VX_CSR_MPM_CCWS_AVG_ACTIVE_ISSUE_CANDIDATES, core_perf.ccws_avg_active_issue_candidates);
+        CSR_READ_64(VX_CSR_MPM_CCWS_AVG_LLS, core_perf.ccws_avg_lls);
+        CSR_READ_64(VX_CSR_MPM_CCWS_MAX_LLS, core_perf.ccws_max_lls);
+#endif
         }
       } break;
       case VX_DCR_MPM_CLASS_MEM: {

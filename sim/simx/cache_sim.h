@@ -14,12 +14,15 @@
 #pragma once
 
 #include <simobject.h>
+#include <functional>
 #include "mem_sim.h"
 
 namespace vortex {
 
 class CacheSim : public SimObject<CacheSim> {
 public:
+	using CCWSCallback = std::function<void(uint32_t cid, uint32_t wid, uint64_t line_addr)>;
+
 	struct Config {
 		bool    bypass;         // cache bypass
 		uint8_t C;              // log2 cache size
@@ -89,6 +92,8 @@ public:
 	uint32_t mshr_capacity() const;
 
 	bool is_mshr_pressured(uint32_t threshold) const;
+
+	void set_ccws_callbacks(CCWSCallback miss_callback, CCWSCallback eviction_callback);
 
 private:
 	class Impl;

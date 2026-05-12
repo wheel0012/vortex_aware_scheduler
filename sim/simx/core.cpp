@@ -471,6 +471,17 @@ const Core::PerfStats& Core::perf_stats() const {
   for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
     perf_stats_.opds_stalls += operands_.at(iw)->total_stalls();
   }
+  auto ccws_perf = emulator_.ccws_perf_stats();
+  perf_stats_.ccws_vta_inserts = ccws_perf.vta_inserts;
+  perf_stats_.ccws_vta_hits = ccws_perf.vta_hits;
+  perf_stats_.ccws_throttled_loads = ccws_perf.throttled_loads;
+  perf_stats_.ccws_throttled_warps = ccws_perf.throttled_warps;
+  perf_stats_.ccws_fallback_issues = ccws_perf.fallback_issues;
+  perf_stats_.ccws_avg_active_issue_candidates =
+      static_cast<uint64_t>(ccws_perf.avg_active_issue_candidates * 1000.0 + 0.5);
+  perf_stats_.ccws_avg_lls =
+      static_cast<uint64_t>(ccws_perf.avg_lls * 1000.0 + 0.5);
+  perf_stats_.ccws_max_lls = ccws_perf.max_lls;
   return perf_stats_;
 }
 

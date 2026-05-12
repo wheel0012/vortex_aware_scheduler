@@ -311,6 +311,7 @@ void LsuUnit::tick() {
 			}
 			lsu_req.tag  = tag;
 			lsu_req.cid  = trace->cid;
+			lsu_req.wid  = trace->wid;
 			lsu_req.uuid = trace->uuid;
 
 			// send memory request

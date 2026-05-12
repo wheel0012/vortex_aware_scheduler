@@ -234,6 +234,15 @@ import VX_fpu_pkg::*;
                         `CSR_READ_64(`VX_CSR_MPM_STORES, read_data_ro_w, pipeline_perf.stores);
                         `CSR_READ_64(`VX_CSR_MPM_IFETCH_LT, read_data_ro_w, pipeline_perf.ifetch_latency);
                         `CSR_READ_64(`VX_CSR_MPM_LOAD_LT, read_data_ro_w, pipeline_perf.load_latency);
+                        // PERF: CCWS (simx-only counters)
+                        `CSR_READ_64(`VX_CSR_MPM_CCWS_VTA_INSERTS, read_data_ro_w, PERF_CTR_BITS'(0));
+                        `CSR_READ_64(`VX_CSR_MPM_CCWS_VTA_HITS, read_data_ro_w, PERF_CTR_BITS'(0));
+                        `CSR_READ_64(`VX_CSR_MPM_CCWS_THROTTLED_LOADS, read_data_ro_w, PERF_CTR_BITS'(0));
+                        `CSR_READ_64(`VX_CSR_MPM_CCWS_THROTTLED_WARPS, read_data_ro_w, PERF_CTR_BITS'(0));
+                        `CSR_READ_64(`VX_CSR_MPM_CCWS_FALLBACK_ISSUES, read_data_ro_w, PERF_CTR_BITS'(0));
+                        `CSR_READ_64(`VX_CSR_MPM_CCWS_AVG_ACTIVE_ISSUE_CANDIDATES, read_data_ro_w, PERF_CTR_BITS'(0));
+                        `CSR_READ_64(`VX_CSR_MPM_CCWS_AVG_LLS, read_data_ro_w, PERF_CTR_BITS'(0));
+                        `CSR_READ_64(`VX_CSR_MPM_CCWS_MAX_LLS, read_data_ro_w, PERF_CTR_BITS'(0));
                         default:;
                         endcase
                     end
