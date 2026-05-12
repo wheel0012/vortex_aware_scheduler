@@ -2,9 +2,15 @@
 /.vscode
 *.cache
 *.code-workspace
+*~
+*.bak
+*.orig
+*.swp
+*.swo
 miscs/apptainer/vortex.sif
 *.txt
 sweep_results*
+ccws_*
 
 # Runtime build artifacts
 /runtime/*.so
@@ -38,12 +44,12 @@ sweep_results*
 /tests/opencl/**/*.o
 /tests/opencl/b+tree/penmp
 /tests/opencl/bfs/bfs
-/tests/opencl/heartwall/heartwall.bin
+/tests/opencl/heartwall/heartwall
 /tests/opencl/heartwall/test.avi
 /tests/opencl/hotspot/hotspot
 /tests/opencl/sgemm3/sgemm3
 /tests/opencl/spmv/spmv
-/tests/opencl/srad/srad.bin
+/tests/opencl/srad/srad
 
 # Regression/kernel run artifacts
 /tests/regression/**/.depend

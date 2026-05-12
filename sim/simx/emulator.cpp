@@ -415,7 +415,6 @@ instr_trace_t* Emulator::step() {
     ++schedule_cycle_;
     update_ready_timestamps();
     if (WarpSchedulePolicy::CCWS == schedule_policy_) {
-      ccws_->set_active_warps(active_warps_.count());
       ccws_->tick(); //lowering LLS of each warp by 1 cycle
     }
   }
@@ -440,10 +439,6 @@ instr_trace_t* Emulator::step() {
 
   if (scheduled_warp == -1)
     return nullptr;
-
-  if (WarpSchedulePolicy::CCWS == schedule_policy_) {
-    ccws_->record_issue();
-  }
 
   // get scheduled warp
   auto& warp = warps_.at(scheduled_warp);

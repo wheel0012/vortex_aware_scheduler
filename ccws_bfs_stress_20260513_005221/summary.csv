@@ -1,3 +1,0 @@
-benchmark,policy,config_name,cache_name,cores,warps,threads,status,logfile
-bfs,GTO,baseline_gto,c8k_w2,1,16,16,PASS,ccws_bfs_stress_20260513_005221/bfs/c8k_w2/w16/bfs_GTO_baseline_gto_c8k_w2_c1w16t16.log
-bfs,CCWS,dyn_k8_vta16_cap2,c8k_w2,1,16,16,PASS,ccws_bfs_stress_20260513_005221/bfs/c8k_w2/w16/bfs_CCWS_dyn_k8_vta16_cap2_c8k_w2_c1w16t16.log

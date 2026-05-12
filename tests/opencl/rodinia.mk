@@ -33,7 +33,7 @@ VX_BINTOOL += OBJCOPY=$(LLVM_VORTEX)/bin/llvm-objcopy $(VORTEX_HOME)/kernel/scri
 POCL_CC_FLAGS += LLVM_PREFIX=$(LLVM_VORTEX) POCL_VORTEX_BINTOOL="$(VX_BINTOOL)" POCL_VORTEX_CFLAGS="$(VX_CFLAGS)" POCL_VORTEX_LDFLAGS="$(VX_LDFLAGS)"
 
 HOST_CFLAGS += -O3 -I$(POCL_PATH)/include $(CONFIGS)
-HOST_LDFLAGS += -Wl,--disable-new-dtags -Wl,-rpath,$(POCL_PATH)/lib -Wl,-rpath,$(VORTEX_RT_PATH) -Wl,-rpath,$(LLVM_VORTEX)/lib -L$(VORTEX_RT_PATH) -lvortex -L$(POCL_PATH)/lib -lOpenCL
+HOST_LDFLAGS += -Wl,-rpath,$(LLVM_VORTEX)/lib -L$(VORTEX_RT_PATH) -lvortex -L$(POCL_PATH)/lib -lOpenCL
 RUN_ENV = LD_LIBRARY_PATH=$(POCL_PATH)/lib:$(VORTEX_RT_PATH):$(LLVM_VORTEX)/lib:$(LD_LIBRARY_PATH) $(POCL_CC_FLAGS)
 
 .PHONY: run-simx run-rtlsim clean-kernel

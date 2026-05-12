@@ -24,23 +24,11 @@
 #endif
 
 #ifndef VX_CCWS_BASE_LLS
-#define VX_CCWS_BASE_LLS 100
+#define VX_CCWS_BASE_LLS 0
 #endif
 
 #ifndef VX_CCWS_LLD_SCORE
 #define VX_CCWS_LLD_SCORE 10
-#endif
-
-#ifndef VX_CCWS_DYNAMIC_LLDS
-#define VX_CCWS_DYNAMIC_LLDS 1
-#endif
-
-#ifndef VX_CCWS_K_THROTTLE
-#define VX_CCWS_K_THROTTLE 8
-#endif
-
-#ifndef VX_CCWS_MAX_LLS
-#define VX_CCWS_MAX_LLS 1000000
 #endif
 
 #ifndef VX_CCWS_LLS_CUTOFF
@@ -60,7 +48,7 @@
 #endif
 
 #ifndef VX_CCWS_MAX_ACTIVE_LOAD_WARPS
-#define VX_CCWS_MAX_ACTIVE_LOAD_WARPS 0
+#define VX_CCWS_MAX_ACTIVE_LOAD_WARPS 4
 #endif
 
 #ifndef VX_CCWS_GATE_WHOLE_WARP
@@ -101,11 +89,9 @@ public:
   void on_l1_miss(size_t wid, uint64_t line_addr);
   void on_l1_eviction(size_t owner_wid, uint64_t line_addr);
   void tick();
-  void set_active_warps(uint64_t active_warps);
   void reset_warp(size_t wid);
   void reset();
 	  void record_issue_candidates(uint64_t candidates);
-  void record_issue();
 	  void record_throttled_load();
 	  void record_throttled_warp();
 	  void record_fallback_issue();
@@ -117,7 +103,6 @@ private:
 
   int base_lls_;
   int lld_score_;
-  int k_throttle_;
   int cutoff_;
   int lls_decay_period_;
   int lls_decay_step_;
@@ -127,9 +112,7 @@ private:
 	  uint64_t vta_hits_;
 	  uint64_t throttled_loads_;
 	  uint64_t throttled_warps_;
-  uint64_t fallback_issues_;
-  uint64_t issued_insts_;
-  uint64_t active_warps_;
+	  uint64_t fallback_issues_;
   uint64_t active_issue_candidates_;
   uint64_t issue_candidate_samples_;
   uint64_t tick_count_;
@@ -138,9 +121,6 @@ private:
   uint64_t max_lls_;
   size_t active_load_warp_limit_;
 
-  bool dynamic_llds_enabled() const;
-  uint64_t llds_value() const;
-  uint64_t cutoff_value() const;
   uint64_t lls_value(size_t wid) const;
   uint64_t cumulative_lls() const;
   size_t active_load_warp_limit() const;
