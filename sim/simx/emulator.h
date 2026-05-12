@@ -80,49 +80,63 @@ enum class WarpSchedulePolicy {
   Static,
   GTO,
   RR,
-  gCAWS,
-  iPAWS
+  gCAWS, //gcaws 추가.
+  iPAWS //ipaws 추가.
 };
 
 ///////////////////////////////////////////////////////////////////////////////
 
-// iPAWS adapts between gCAWS and RR by following the original iPAWS
-// Algorithm 1:
-//   - Adapt phase: probe with GTO. For each cycle the GTO-chosen warp gets
-//                  +1 issue; every other active warp gets +1 stall (whether
-//                  it was ready-but-passed-over or suspended at a barrier).
+// iPAWS는 원본 논문 Algorithm 1을 그대로 따라 gCAWS와 RR 사이를 전환함.
+//   - Adapt phase: GTO로 probe한다. gcaws로 probe가 아님. 매 cycle GTO가 선택한 warp는 issue +1,
+//                  그 외의 모든 active warp은 stall +1 (이유 무관 — ready였
+//                  으나 패스됐든, scoreboard/barrier 때문에 대기 중이든).
 //                  iscore[w] = adapt_issue[w] + adapt_stall[w]
-//                  matches the paper's iscore = inst_i + btime_i.
-//   - Decide:      Restrict to WOI (warps that participated). If
-//                    iscore_sum < |WOI| * iscore_max / 2  (i.e. mean/max < 0.5)
-//                  the distribution is concave -> pick gCAWS. Otherwise convex
-//                  -> pick RR.
-//   - Execute phase: run the chosen policy for IPAWS_EXECUTE_CYCLES.
-enum class iPAWSPhase {
+//                  는 논문의 iscore = inst_i + btime_i 와 일치한다.
+//   - Decide:      WOI(이 윈도우에 참여한 warp들) 만 본다. 만약
+//                    iscore_sum < |WOI| × iscore_max / 2   (= mean/max < 0.5)
+//                  이면 분포가 concave → gCAWS 선택. 아니면 convex → RR 선택.
+//   - Execute phase: 선택된 정책을 IPAWS_EXECUTE_CYCLES 동안 실행한다.
+enum class iPAWSPhase { //adapt → (concave) → execute / (convex) → recover → execute
   Adapt,
+  Recover,  // 논문 §3.4: Convex(RR) 결정 후 GTO probe 의 instr_count skew 정리
   Execute
 };
 
 struct ipaws_state_t {
-  iPAWSPhase           phase;
-  uint64_t             phase_start_cycle;
-  WarpSchedulePolicy   chosen;       // policy selected during Execute
+  iPAWSPhase           phase;  //현재 phase
+  uint64_t             phase_start_cycle; //이 phase 시작 cycle
+  WarpSchedulePolicy   chosen;       // execute에서 돌릴 policy
 
-  // Per-Adapt-window counters (size = num_warps; reset at each Adapt start).
+  // adapt window 내 카운터 ( window 시작마다 0으로 reset )
   std::vector<uint64_t> adapt_issue;
   std::vector<uint64_t> adapt_stall;
 
-  // Diagnostics
-  uint64_t             decides_total;     // count of Adapt-window completions
-  uint64_t             decides_valid;     // decides where WOI was non-trivial
+  // iPAWS paper §3.2, Figure 8: WOI(warps-of-interest) 필터용 영구 카운터.
+  // ADAPT phase 매 cycle "가장 oldest active warp이 stalled"이면 그 warp에
+  // +1. Decide 시점에 w* = argmax(issue_stall_count)을 잡고,
+  // WOI = {w : w_id <= w*_id AND active} 로 metric 계산을 제한.
+  // 영구 누적 (ADAPT window 마다 reset 안함) -> kernel 진행하며 WOI 수렴.
+  std::vector<uint64_t> issue_stall_count;
+
+  // 통계 / 진단 (diagnostic)
+  uint64_t             decides_total;     // 전체 decide 횟수
+  uint64_t             decides_valid;     // 유의미한 decide 횟수
   uint64_t             decides_skipped;   // decides where WOI < 2 (no meaningful test)
-  uint64_t             decides_concave;   // chose gCAWS branch
-  uint64_t             decides_convex;    // chose RR branch
+  uint64_t             decides_woi_fallback;  // issue_stall_count 전부 0이라 iscore>0 fallback한 횟수
+  uint64_t             decides_concave;   // chose gCAWS branch 횟수
+  uint64_t             decides_convex;    // chose RR branch 횟수
   double               decide_meanmax_accum;  // sum of (mean/max) over *valid* decides only
   double               decide_meanmax_min;
   double               decide_meanmax_max;
-  uint64_t             gcaws_exec_cycles;
-  uint64_t             rr_exec_cycles;
+  uint64_t             woi_size_accum;    // valid decide의 |WOI| 합
+  uint32_t             woi_size_min;
+  uint32_t             woi_size_max;
+  uint64_t             gcaws_exec_cycles; //gcaws로 실행한 cycle 누적
+  uint64_t             rr_exec_cycles; //rr로 실행한 cycle 누적
+  uint64_t             wspawn_events;     // kernel-boundary 마커: wspawn 디스패치 횟수
+  uint64_t             recover_target;    // Recover 시작 시 max(instr_count) — newest 가 따라잡을 목표
+  uint64_t             recover_cycles;    // Recover phase 누적 cycle (overhead 측정용)
+  uint64_t             recover_entries;   // Recover phase 진입 횟수
 
   ipaws_state_t()
     : phase(iPAWSPhase::Adapt)
@@ -131,13 +145,21 @@ struct ipaws_state_t {
     , decides_total(0)
     , decides_valid(0)
     , decides_skipped(0)
+    , decides_woi_fallback(0)
     , decides_concave(0)
     , decides_convex(0)
     , decide_meanmax_accum(0.0)
     , decide_meanmax_min(1.0)
     , decide_meanmax_max(0.0)
+    , woi_size_accum(0)
+    , woi_size_min(UINT32_MAX)
+    , woi_size_max(0)
     , gcaws_exec_cycles(0)
     , rr_exec_cycles(0)
+    , wspawn_events(0)
+    , recover_target(0)
+    , recover_cycles(0)
+    , recover_entries(0)
   {}
 };
 
@@ -149,11 +171,11 @@ struct ipaws_state_t {
 //   CPI_avg : per-warp average CPI
 //   nStall  : accumulated stall cycles (scoreboard + ibuffer)
 struct warp_cpl_t {
-  uint64_t instr_count;
-  uint64_t stall_cycles;
-  uint64_t criticality;
+  uint64_t instr_count; //이 warp가 누적 issue한 명령어 수
+  uint64_t stall_cycles; //이 warp가 누적 stallgks cycle 수
+  uint64_t criticality; //위 둘로 계산한 점수 (nInst * CPI + nStall)
 
-  warp_cpl_t() : instr_count(0), stall_cycles(0), criticality(0) {}
+  warp_cpl_t() : instr_count(0), stall_cycles(0), criticality(0) {} //kernel 전체 동안 누적-> 0 리셋안됨.
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -190,7 +212,7 @@ public:
 
   void dcache_write(const void* data, uint64_t addr, uint32_t size);
 
-private:
+private: //메서드 선언만 -> 실제 로직은 emulator.cpp에 있음.
 
   uint32_t fetch(uint32_t wid, uint64_t uuid);
 
@@ -203,6 +225,10 @@ private:
   int select_gcaws_warp();
 
   int select_ipaws_warp();
+
+  int select_recover_warp();
+
+  bool is_barrier_stalled(uint32_t wid) const;
 
   void ipaws_sample_and_step();
 
@@ -250,11 +276,11 @@ private:
   uint64_t    schedule_cycle_;
   int         greedy_warp_;
   int         rr_last_warp_;
-  int         critical_warp_;
+  int         critical_warp_; //gcaws가 직전에 고른 warp ( -1이면 없음 )
   std::vector<uint64_t> ready_timestamps_;
-  std::vector<warp_cpl_t> warp_cpl_;
-  ipaws_state_t ipaws_state_;
-  bool suppress_critical_push_;  // when true, gCAWS does not propagate critical_warp to caches
+  std::vector<warp_cpl_t> warp_cpl_; //warp별 criticality 카운터
+  ipaws_state_t ipaws_state_; //ipaws 상태 통째로
+  bool suppress_critical_push_;  // cacp 관련 : 지금은 flase로 고정
   std::vector<WarpMask> barriers_;
   std::unordered_map<int, std::stringstream> print_bufs_;
   MemoryUnit  mmu_;

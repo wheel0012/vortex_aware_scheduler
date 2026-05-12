@@ -15,7 +15,7 @@
 #include <iomanip>
 #include <stdlib.h>
 #include <unistd.h>
-#include <math.h>
+#include <cmath>
 #include <algorithm>
 #include <limits>
 #include <assert.h>
@@ -35,11 +35,9 @@ using namespace vortex;
 
 // iPAWS tuning macros hoisted above the Emulator destructor so its
 // diagnostic printout can reference them.
+// ADAPT phase 길이 (cycle). 너무 짧으면 분포 신호 약하고, 길면 overhead.
 #ifndef VORTEX_IPAWS_ADAPT_CYCLES
-#define VORTEX_IPAWS_ADAPT_CYCLES   1024
-#endif
-#ifndef VORTEX_IPAWS_EXECUTE_CYCLES
-#define VORTEX_IPAWS_EXECUTE_CYCLES 16384
+#define VORTEX_IPAWS_ADAPT_CYCLES   4096
 #endif
 #ifndef VORTEX_IPAWS_WOI_RATIO
 #define VORTEX_IPAWS_WOI_RATIO      0.5
@@ -49,6 +47,29 @@ using namespace vortex;
 #endif
 #ifndef VORTEX_IPAWS_USE_CACP
 #define VORTEX_IPAWS_USE_CACP       1
+#endif
+// 1 이면 iPAWS Adapt 가 wspawn (= kernel launch) 시점에만 트리거되고
+// Execute phase 는 다음 wspawn 까지 무한 지속. 0 이면 기존 periodic
+// (ADAPT_CYCLES + EXECUTE_CYCLES) 동작.
+// Change 3: btime = barrier-only. 1 이면 adapt_stall 이 barrier wait 만
+// 카운트 (논문 §3.3 strict). 0 이면 active && !chosen 모두 카운트 (이전).
+#ifndef VORTEX_IPAWS_BARRIER_ONLY_BTIME
+#define VORTEX_IPAWS_BARRIER_ONLY_BTIME 1
+#endif
+// Change 4: Recover phase. 1 이면 Convex(RR) 결정 후 Recover phase 실행
+// (least-instr-issued warp 우선). 0 이면 Adapt 직후 Execute(RR).
+// 기본 0 — Vortex memory latency 특성상 strict 종료 조건 도달 불가능,
+// cycle cap 으로만 동작하여 사실상 무용지물 (urp_analysis.md 참고).
+#ifndef VORTEX_IPAWS_USE_RECOVER
+#define VORTEX_IPAWS_USE_RECOVER 0
+#endif
+// Recover phase 종료 임계 (max-min instr_count <= 이면 종료). 너무 작으면
+// 영원히 끝 안날 수 있으니 cycle cap 도 함께 사용.
+#ifndef VORTEX_IPAWS_RECOVER_THRESHOLD
+#define VORTEX_IPAWS_RECOVER_THRESHOLD 4
+#endif
+#ifndef VORTEX_IPAWS_RECOVER_MAX_CYCLES
+#define VORTEX_IPAWS_RECOVER_MAX_CYCLES 8192
 #endif
 
 namespace {
@@ -113,16 +134,16 @@ void warp_t::reset(uint64_t startup_addr) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-Emulator::Emulator(const Arch &arch, const DCRS &dcrs, Core* core)
+Emulator::Emulator(const Arch &arch, const DCRS &dcrs, Core* core) //생성자
     : arch_(arch)
     , dcrs_(dcrs)
     , core_(core)
     , warps_(arch.num_warps(), arch.num_threads())
     , schedule_policy_(kDefaultSchedulePolicy)
     , schedule_cycle_(0)
-    , greedy_warp_(-1)
-    , rr_last_warp_(-1)
-    , critical_warp_(-1)
+    , greedy_warp_(-1) //gto 의 직전 warp 없음( 처음 reset 이라서)
+    , rr_last_warp_(-1) //마찬가지
+    , critical_warp_(-1) //마찬가지
     , ready_timestamps_(arch.num_warps(), 0)
     , warp_cpl_(arch.num_warps())
     , suppress_critical_push_(false)
@@ -136,35 +157,55 @@ Emulator::Emulator(const Arch &arch, const DCRS &dcrs, Core* core)
   #endif
 {
   std::srand(50);
-  this->reset();
+  this->reset(); 
 }
 
-Emulator::~Emulator() {
-  this->cout_flush();
-  if (schedule_policy_ == WarpSchedulePolicy::iPAWS) {
+Emulator::~Emulator() { //소멸자
+  this->cout_flush(); //프로그램이 출력하던 stdout을 마저 비운다. 
+  if (schedule_policy_ == WarpSchedulePolicy::iPAWS) { //ipaws 정책일때만 통계 출력
     auto& s = ipaws_state_;
     double avg_meanmax = (s.decides_valid > 0)
                          ? (s.decide_meanmax_accum / s.decides_valid)
                          : 0.0;
     double min_meanmax = (s.decides_valid > 0) ? s.decide_meanmax_min : 0.0;
     double max_meanmax = (s.decides_valid > 0) ? s.decide_meanmax_max : 0.0;
+    double avg_woi = (s.decides_valid > 0)
+                     ? (static_cast<double>(s.woi_size_accum) / s.decides_valid)
+                     : 0.0;
+    uint32_t woi_min = (s.decides_valid > 0) ? s.woi_size_min : 0;
+    uint32_t woi_max = (s.decides_valid > 0) ? s.woi_size_max : 0;
+    // DEBUG: per-warp permanent stall counter dump.
+    std::cerr << "IPAWS_DBG_STALL:";
+    for (size_t i = 0; i < s.issue_stall_count.size(); ++i) {
+      std::cerr << " " << i << "=" << s.issue_stall_count[i];
+    }
+    std::cerr << std::endl;
     std::cerr << "IPAWS_STATS: decides=" << s.decides_total
               << " valid=" << s.decides_valid
               << " skipped=" << s.decides_skipped
+              << " woi_fallback=" << s.decides_woi_fallback
               << " concave=" << s.decides_concave
               << " convex=" << s.decides_convex
               << " mm_avg=" << std::fixed << std::setprecision(3) << avg_meanmax
               << " mm_min=" << min_meanmax
               << " mm_max=" << max_meanmax
+              << " woi_avg=" << avg_woi
+              << " woi_min=" << woi_min
+              << " woi_max=" << woi_max
               << " gcaws_exec_cycles=" << s.gcaws_exec_cycles
               << " rr_exec_cycles=" << s.rr_exec_cycles
+              << " wspawn_events=" << s.wspawn_events
+              << " recover_entries=" << s.recover_entries
+              << " recover_cycles=" << s.recover_cycles
               << " test=mean/max<0.5"
               << " use_cacp=" << (VORTEX_IPAWS_USE_CACP ? 1 : 0)
+              << " barrier_only_btime=" << (VORTEX_IPAWS_BARRIER_ONLY_BTIME ? 1 : 0)
+              << " use_recover=" << (VORTEX_IPAWS_USE_RECOVER ? 1 : 0)
               << std::endl;
   }
 }
 
-void Emulator::reset() {
+void Emulator::reset() { // 시뮬 재시작시 호출 + 객체 만들때 호출 
   uint64_t startup_addr = dcrs_.base_dcrs.read(VX_DCR_BASE_STARTUP_ADDR0);
 #if (XLEN == 64)
   startup_addr |= (uint64_t(dcrs_.base_dcrs.read(VX_DCR_BASE_STARTUP_ADDR1)) << 32);
@@ -189,21 +230,25 @@ void Emulator::reset() {
 
   csr_mscratch_ = startup_arg;
 
-  stalled_warps_.reset();
+  stalled_warps_.reset(); // _ : emulator class안의 멤버변수를 표현하는 것임.
   active_warps_.reset();
   schedule_cycle_ = 0;
   greedy_warp_ = -1;
   rr_last_warp_ = -1;
-  critical_warp_ = -1;
+  critical_warp_ = -1; //gcaws 직전 선택 초기화
   std::fill(ready_timestamps_.begin(), ready_timestamps_.end(), 0);
+
+  //gcaws 카운터 리셋
   for (auto& cpl : warp_cpl_) {
     cpl.instr_count = 0;
     cpl.stall_cycles = 0;
     cpl.criticality = 0;
   }
+  //ipaws 상태 초기화.
   ipaws_state_ = ipaws_state_t();
   ipaws_state_.adapt_issue.assign(arch_.num_warps(), 0);
   ipaws_state_.adapt_stall.assign(arch_.num_warps(), 0);
+  ipaws_state_.issue_stall_count.assign(arch_.num_warps(), 0);
   suppress_critical_push_ = false;
 
   // activate first warp and thread
@@ -301,10 +346,12 @@ int Emulator::select_rr_warp() {
   return -1;
 }
 
-void Emulator::update_cpl_counters() {
+void Emulator::update_cpl_counters() { //매 cycle 호출되어서 모든 active warp의 criticality 점수를 갱신
   // 1. Accumulate stall cycles for active-but-stalled warps.
   for (size_t wid = 0, nw = arch_.num_warps(); wid < nw; ++wid) {
+    //active_warps_ , stalled_warps_ 는 bitmask임, test(wid) : wid번째 비트가 켜져있냐?
     if (active_warps_.test(wid) && stalled_warps_.test(wid)) {
+      //active하다: dispatched 되었다. stall: scoreborad/ barrier 대기중인 warp
       warp_cpl_.at(wid).stall_cycles++;
     }
   }
@@ -314,13 +361,13 @@ void Emulator::update_cpl_counters() {
   for (size_t wid = 0, nw = arch_.num_warps(); wid < nw; ++wid) {
     if (!active_warps_.test(wid)) continue;
     max_inst = std::max(max_inst, warp_cpl_.at(wid).instr_count);
-  }
+  } //max inst = 가장 많은 명령어 issue한 warp의 카운트
 
   // 3. Recompute nCriticality = nInst * CPI_avg + nStall.
   for (size_t wid = 0, nw = arch_.num_warps(); wid < nw; ++wid) {
     if (!active_warps_.test(wid)) continue;
-    auto& cpl = warp_cpl_.at(wid);
-    uint64_t nInst = max_inst - cpl.instr_count;
+    auto& cpl = warp_cpl_.at(wid); //alias
+    uint64_t nInst = max_inst - cpl.instr_count; //내가 선두보다 몇 개 명령어 뒤쳐졌나?
     // CPI_avg approximation: elapsed cycles / committed instructions.
     // Floor at 1 to avoid zeroing out the instruction-disparity term for
     // a warp that just started.
@@ -329,20 +376,11 @@ void Emulator::update_cpl_counters() {
         : 1;
     cpl.criticality = nInst * cpi_avg + cpl.stall_cycles;
   }
-}
+} //결과적으로 이번 cycle에 새로운 criticality 값 update됨.
 
 int Emulator::select_gcaws_warp() {
+ 
   int prev_critical = critical_warp_;
-  // Greedy phase: stay on the current critical warp while it is ready.
-  if (critical_warp_ >= 0) {
-    uint32_t wid = static_cast<uint32_t>(critical_warp_);
-    if (active_warps_.test(wid) && !stalled_warps_.test(wid)) {
-      return critical_warp_;
-    }
-  }
-
-  // Pick the ready warp with the highest criticality score.
-  // Tie-break with the oldest ready timestamp (GTO fallback).
   int selected_warp = -1;
   uint64_t best_crit = 0;
   uint64_t best_ts = std::numeric_limits<uint64_t>::max();
@@ -381,19 +419,59 @@ int Emulator::select_gcaws_warp() {
 // VORTEX_IPAWS_* macros are defined at the top of the file (see header
 // comment near `using namespace vortex;`).
 namespace {
-constexpr uint64_t IPAWS_ADAPT_CYCLES   = VORTEX_IPAWS_ADAPT_CYCLES;
-constexpr uint64_t IPAWS_EXECUTE_CYCLES = VORTEX_IPAWS_EXECUTE_CYCLES;
-constexpr bool     IPAWS_USE_CACP       = (VORTEX_IPAWS_USE_CACP != 0);
+constexpr uint64_t IPAWS_ADAPT_CYCLES        = VORTEX_IPAWS_ADAPT_CYCLES;
+constexpr bool     IPAWS_USE_CACP            = (VORTEX_IPAWS_USE_CACP != 0);
+constexpr bool     IPAWS_BARRIER_ONLY_BTIME  = (VORTEX_IPAWS_BARRIER_ONLY_BTIME != 0);
+constexpr bool     IPAWS_USE_RECOVER         = (VORTEX_IPAWS_USE_RECOVER != 0);
+constexpr uint64_t IPAWS_RECOVER_THRESHOLD   = VORTEX_IPAWS_RECOVER_THRESHOLD;
+constexpr uint64_t IPAWS_RECOVER_MAX_CYCLES  = VORTEX_IPAWS_RECOVER_MAX_CYCLES;
+}
+
+// 논문 §3.3: btime = barrier-wait time. warp w 가 barrier 에서 대기 중인지
+// 판정 (scoreboard stall 과 구분). barriers_[i] 는 barrier i 에서 대기 중인
+// warp bitmask.
+bool Emulator::is_barrier_stalled(uint32_t wid) const {
+  for (const auto& b : barriers_) {
+    if (b.test(wid)) return true;
+  }
+  return false;
+}
+
+// Change 4: Recover phase scheduler — 논문 §3.4 의 "least instruction-issued
+// warp" 우선. argmin(instr_count) + oldest-ready tie-break. newer (Adapt 동안
+// 적게 issue 한) warp 가 빨리 따라잡도록 함.
+int Emulator::select_recover_warp() {
+  int selected = -1;
+  uint64_t min_inst = std::numeric_limits<uint64_t>::max();
+  uint64_t min_ts = std::numeric_limits<uint64_t>::max();
+  for (size_t wid = 0, nw = arch_.num_warps(); wid < nw; ++wid) {
+    if (!active_warps_.test(wid)) continue;
+    if (stalled_warps_.test(wid)) continue;
+    uint64_t cnt = warp_cpl_.at(wid).instr_count;
+    uint64_t ts = ready_timestamps_.at(wid);
+    if (ts == 0) ts = std::numeric_limits<uint64_t>::max();
+    bool take = false;
+    if (selected < 0) take = true;
+    else if (cnt < min_inst) take = true;
+    else if (cnt == min_inst && ts < min_ts) take = true;
+    if (take) {
+      selected = static_cast<int>(wid);
+      min_inst = cnt;
+      min_ts = ts;
+    }
+  }
+  return selected;
 }
 
 int Emulator::select_ipaws_warp() {
   auto& s = ipaws_state_;
   if (s.phase == iPAWSPhase::Adapt) {
-    // Probe with GTO. The chosen warp gets an issue credit. Every other
-    // active warp accumulates a "did-not-issue" cycle, regardless of why
-    // (ready-but-passed-over OR stalled at a barrier / scoreboard). This
-    // makes iscore = inst + btime match the iPAWS paper's score, where
-    // btime captures barrier-wait time.
+    // ADAPT phase: GTO 로 probe.
+    // - 선택된 warp: adapt_issue +1 (= inst term).
+    // - 그 외 active warp 의 adapt_stall (= btime term):
+    //   * BARRIER_ONLY_BTIME=1 (Change 3 strict): barrier-stalled warp 만 +1.
+    //     논문 §3.3 의 btime = barrier wait time 정의에 정확히 일치.
+    //   * BARRIER_ONLY_BTIME=0 (이전 동작): active && !chosen 모두 +1.
     int chosen = select_gto_warp();
     if (chosen >= 0) {
       ++s.adapt_issue.at(chosen);
@@ -401,9 +479,29 @@ int Emulator::select_ipaws_warp() {
     for (uint32_t w = 0, nw = arch_.num_warps(); w < nw; ++w) {
       if (static_cast<int>(w) == chosen) continue;
       if (!active_warps_.test(w)) continue;
-      ++s.adapt_stall.at(w);
+      if (IPAWS_BARRIER_ONLY_BTIME) {
+        if (is_barrier_stalled(w)) {
+          ++s.adapt_stall.at(w);
+        }
+      } else {
+        ++s.adapt_stall.at(w);
+      }
+    }
+    // iPAWS 논문 §3.2 WOI 필터용 per-warp issue-stall counter (영구 누적).
+    // Paper strict 해석: "warp w 가 stalled 인데 oldest 일 때" 만 +1.
+    // NOTE: 본 Vortex 환경에서 이 필터는 architectural mismatch 로 적용 불가
+    //   (urp_analysis.md 종합 진단 참고). 코드는 paper-faithful 유지.
+    for (uint32_t w = 0, nw = arch_.num_warps(); w < nw; ++w) {
+      if (!active_warps_.test(w)) continue;
+      if (stalled_warps_.test(w)) {
+        ++s.issue_stall_count.at(w);
+      }
+      break;  // lowest-id active warp 만 "the oldest" 자격.
     }
     return chosen;
+  }
+  if (s.phase == iPAWSPhase::Recover) {
+    return select_recover_warp();
   }
   // Execute phase: dispatch the policy chosen at last Decide.
   if (s.chosen == WarpSchedulePolicy::RR) {
@@ -421,17 +519,43 @@ void Emulator::ipaws_sample_and_step() {
   case iPAWSPhase::Adapt: {
     if (elapsed < IPAWS_ADAPT_CYCLES) break;
 
-    // iPAWS Algorithm 1 evaluation.
+    // iPAWS Algorithm 1 평가.
     //   iscore[w] = adapt_issue[w] + adapt_stall[w]
-    //   WOI       = active warps that participated (iscore > 0).
-    //   concave   = iscore_sum < |WOI| * iscore_max / 2  (mean/max < 0.5).
+    //   WOI       = stall-rank 기반 필터 (논문 §3.2):
+    //               w* = argmax(issue_stall_count)  (active warps 중)
+    //               WOI = {w : w_id <= w*_id AND active}
+    //               -> 한번도 head-of-line 못 된 newer warp 들 제외.
+    //   concave   = iscore_sum < |WOI| * iscore_max / 2  (mean/max < 0.5). -> gcaws
+    //
+    // issue_stall_count 가 전부 0 (= ADAPT 안에서 oldest active warp 이
+    // 한번도 stall 안한 경우) 면 stall-rank로 WOI 못 정함 -> 기존
+    // "iscore>0" 필터로 fallback.
+    int w_star = -1;
+    uint64_t best_stall = 0;
+    for (uint32_t w = 0, nw = arch_.num_warps(); w < nw; ++w) {
+      if (!active_warps_.test(w)) continue;
+      uint64_t sc = s.issue_stall_count.at(w);
+      if (sc > best_stall) {
+        best_stall = sc;
+        w_star = static_cast<int>(w);
+      }
+      // tie 는 더 oldest (lower wid) 우선 ->  조건만 사용
+    }
+
+    bool used_woi_filter = (w_star >= 0);
+    if (!used_woi_filter) {
+      ++s.decides_woi_fallback;
+    }
+
     uint64_t iscore_sum = 0;
     uint64_t iscore_max = 0;
     size_t   woi_size   = 0;
     for (uint32_t w = 0, nw = arch_.num_warps(); w < nw; ++w) {
       if (!active_warps_.test(w)) continue;
+      // stall-rank WOI 필터: w_id <= w*_id 만 포함.
+      if (used_woi_filter && static_cast<int>(w) > w_star) continue;
       uint64_t iscore = s.adapt_issue.at(w) + s.adapt_stall.at(w);
-      if (iscore == 0) continue;  // WOI filter
+      if (iscore == 0) continue;  // 참여 안한 warp 제거 (fallback path 에서 의미 있음).
       iscore_sum += iscore;
       if (iscore > iscore_max) iscore_max = iscore;
       ++woi_size;
@@ -453,18 +577,26 @@ void Emulator::ipaws_sample_and_step() {
       s.decide_meanmax_accum += meanmax;
       if (meanmax < s.decide_meanmax_min) s.decide_meanmax_min = meanmax;
       if (meanmax > s.decide_meanmax_max) s.decide_meanmax_max = meanmax;
+      uint32_t wsize = static_cast<uint32_t>(woi_size);
+      s.woi_size_accum += wsize;
+      if (wsize < s.woi_size_min) s.woi_size_min = wsize;
+      if (wsize > s.woi_size_max) s.woi_size_max = wsize;
     } else {
       ++s.decides_skipped;
     }
 
     if (concave) {
+      // Concave -> gCAWS. Recover 불필요 (gCAWS 가 skew 자체를 활용).
       s.chosen = WarpSchedulePolicy::gCAWS;
       ++s.decides_concave;
       suppress_critical_push_ = !IPAWS_USE_CACP;
       if (suppress_critical_push_ && core_) {
         core_->set_critical_warp(-1);
       }
+      s.phase = iPAWSPhase::Execute;
     } else {
+      // Convex -> RR. Change 4 (논문 §3.4): Recover phase 로 instr_count
+      // skew 정리 후 RR 진입. USE_RECOVER=0 이면 바로 Execute.
       s.chosen = WarpSchedulePolicy::RR;
       ++s.decides_convex;
       suppress_critical_push_ = true;
@@ -472,29 +604,84 @@ void Emulator::ipaws_sample_and_step() {
         critical_warp_ = -1;
         core_->set_critical_warp(-1);
       }
+      if (IPAWS_USE_RECOVER) {
+        // Recover 목표 = 현재 active warp 들의 max(instr_count).
+        // newest warp 들이 이 값에 도달할 때까지 Recover.
+        uint64_t mx = 0, mn = std::numeric_limits<uint64_t>::max();
+        uint64_t sum = 0, sumsq = 0;
+        size_t n_act = 0;
+        int wid_max = -1, wid_min = -1;
+        std::cerr << "IPAWS_DBG_RECOVER_ENTRY: cycle=" << schedule_cycle_
+                  << " per_warp_instr_count=[";
+        for (uint32_t w = 0, nw = arch_.num_warps(); w < nw; ++w) {
+          if (!active_warps_.test(w)) continue;
+          uint64_t c = warp_cpl_.at(w).instr_count;
+          if (n_act > 0) std::cerr << ",";
+          std::cerr << w << ":" << c;
+          if (c > mx) { mx = c; wid_max = static_cast<int>(w); }
+          if (c < mn) { mn = c; wid_min = static_cast<int>(w); }
+          sum += c;
+          sumsq += c * c;
+          ++n_act;
+        }
+        double mean = (n_act > 0) ? (static_cast<double>(sum) / n_act) : 0.0;
+        double var = (n_act > 0) ? (static_cast<double>(sumsq) / n_act - mean * mean) : 0.0;
+        double stddev = (var > 0.0) ? std::sqrt(var) : 0.0;
+        double range_over_mean = (mean > 0.0) ? (static_cast<double>(mx - mn) / mean) : 0.0;
+        double range_over_max = (mx > 0) ? (static_cast<double>(mx - mn) / mx) : 0.0;
+        std::cerr << "] n=" << n_act
+                  << " max=" << mx << "(w" << wid_max << ")"
+                  << " min=" << mn << "(w" << wid_min << ")"
+                  << " mean=" << std::fixed << std::setprecision(1) << mean
+                  << " stddev=" << stddev
+                  << " range=" << (mx - mn)
+                  << " range/mean=" << std::setprecision(3) << range_over_mean
+                  << " range/max=" << range_over_max
+                  << std::endl;
+        s.recover_target = mx;
+        ++s.recover_entries;
+        s.phase = iPAWSPhase::Recover;
+      } else {
+        s.phase = iPAWSPhase::Execute;
+      }
     }
-
-    s.phase = iPAWSPhase::Execute;
     s.phase_start_cycle = now;
     std::fill(s.adapt_issue.begin(), s.adapt_issue.end(), 0);
     std::fill(s.adapt_stall.begin(), s.adapt_stall.end(), 0);
     break;
   }
+  case iPAWSPhase::Recover: {
+    ++s.recover_cycles;
+    // 종료 조건: (a) active warp 들의 min(instr_count) 가 recover_target 도달,
+    //          또는 (b) max-min <= threshold,
+    //          또는 (c) cycle cap (RECOVER_MAX_CYCLES) 도달 — safety.
+    uint64_t mn = std::numeric_limits<uint64_t>::max();
+    uint64_t mx = 0;
+    size_t   n_active = 0;
+    for (uint32_t w = 0, nw = arch_.num_warps(); w < nw; ++w) {
+      if (!active_warps_.test(w)) continue;
+      uint64_t c = warp_cpl_.at(w).instr_count;
+      mn = std::min(mn, c);
+      mx = std::max(mx, c);
+      ++n_active;
+    }
+    bool done = false;
+    if (n_active == 0) done = true;
+    else if (mn >= s.recover_target) done = true;
+    else if ((mx - mn) <= IPAWS_RECOVER_THRESHOLD) done = true;
+    else if (elapsed >= IPAWS_RECOVER_MAX_CYCLES) done = true;
+    if (done) {
+      s.phase = iPAWSPhase::Execute;
+      s.phase_start_cycle = now;
+    }
+    break;
+  }
   case iPAWSPhase::Execute: {
+    // 다음 wspawn (kernel launch) 까지 무한 지속. periodic 재트리거 없음.
     if (s.chosen == WarpSchedulePolicy::gCAWS)
       ++s.gcaws_exec_cycles;
     else
       ++s.rr_exec_cycles;
-    if (elapsed >= IPAWS_EXECUTE_CYCLES) {
-      s.phase = iPAWSPhase::Adapt;
-      s.phase_start_cycle = now;
-      // Quiesce the cache-side CACP signal before the next GTO probe so the
-      // dcache does not carry over a stale critical-warp from the previous
-      // Execute window.
-      suppress_critical_push_ = true;
-      critical_warp_ = -1;
-      if (core_) core_->set_critical_warp(-1);
-    }
     break;
   }
   }
@@ -514,6 +701,21 @@ instr_trace_t* Emulator::step() {
     }
     wspawn_.valid = false;
     stalled_warps_.reset(0);
+
+    // wspawn = kernel-launch 마커. iPAWS 의 Adapt phase 를 여기서 강제로
+    // 시작 (이전 Execute 결과 무시). 매 kernel 마다 policy 결정 fresh.
+    if (schedule_policy_ == WarpSchedulePolicy::iPAWS) {
+      auto& s = ipaws_state_;
+      ++s.wspawn_events;
+      s.phase = iPAWSPhase::Adapt;
+      s.phase_start_cycle = schedule_cycle_;
+      std::fill(s.adapt_issue.begin(), s.adapt_issue.end(), 0);
+      std::fill(s.adapt_stall.begin(), s.adapt_stall.end(), 0);
+      // critical_warp / CACP 신호 quiesce.
+      suppress_critical_push_ = true;
+      critical_warp_ = -1;
+      if (core_) core_->set_critical_warp(-1);
+    }
   }
 
   if (WarpSchedulePolicy::GTO == schedule_policy_
