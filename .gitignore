@@ -8,7 +8,7 @@
 *.swp
 *.swo
 miscs/apptainer/vortex.sif
-*.txt
+
 sweep_results*
 ccws_*
 
