@@ -62,6 +62,7 @@
 // #include <sys/time.h>							// (in directory known to compiler)			needed by ???
 #include <math.h>									// (in directory known to compiler)			needed by log, pow
 #include <string.h>									// (in directory known to compiler)			needed by memset
+#include <ctype.h>									// (in directory known to compiler)			needed by isspace
 
 //======================================================================================================================================================150
 //	COMMON
@@ -1877,7 +1878,7 @@ main(	int argc,
 	  // check if -file
 	  if(strcmp(argv[cur_arg], "file")==0){
 	    // check if value provided
-	    if(argc>=cur_arg+1){
+	    if(argc>cur_arg+1){
 	      input_file = argv[cur_arg+1];
 	      cur_arg = cur_arg+1;
 	      // value is not a number
@@ -1890,7 +1891,7 @@ main(	int argc,
 	  }
 	  else if(strcmp(argv[cur_arg], "command")==0){
 	    // check if value provided
-	    if(argc>=cur_arg+1){
+	    if(argc>cur_arg+1){
 	      command_file = argv[cur_arg+1];
 	      cur_arg = cur_arg+1;
 	      // value is not a number
@@ -1903,8 +1904,10 @@ main(	int argc,
 	  }
 	}
 	// Print configuration
-	  if((input_file==NULL)||(command_file==NULL))
+	  if((input_file==NULL)||(command_file==NULL)) {
 	    printf("Usage: ./b+tree file input_file command command_list\n");
+	    return -1;
+	  }
 
 	  // For debug
 	  printf("Input File: %s \n", input_file);
@@ -1925,12 +1928,13 @@ main(	int argc,
      rewind (commandFile);
 
      // allocate memory to contain the whole file:
-     commandBuffer = (char*) malloc (sizeof(char)*lSize);
+     commandBuffer = (char*) malloc (sizeof(char)*(lSize + 1));
      if (commandBuffer == NULL) {fputs ("Command Buffer memory error",stderr); exit (2);}
      
      // copy the file into the buffer:
      result = fread (commandBuffer,1,lSize,commandFile);
      if (result != lSize) {fputs ("Command file reading error",stderr); exit (3);}
+     commandBuffer[lSize] = '\0';
 
      /* the whole file is now loaded in the memory buffer. */
 
@@ -1972,7 +1976,7 @@ main(	int argc,
 
 	if (input_file != NULL) {
 
-		printf("Getting input from file %s...\n", argv[1]);
+		printf("Getting input from file %s...\n", input_file);
 
 		// open input file
 		file_pointer = fopen(input_file, "r");
@@ -2017,8 +2021,14 @@ main(	int argc,
 	char *commandPointer=commandBuffer;
 	printf("Waiting for command\n");
 	printf("> ");
-	while (sscanf(commandPointer, "%c", &instruction) != EOF) {
-	  commandPointer++;
+	while (*commandPointer != '\0') {
+	  while (isspace((unsigned char)*commandPointer)) {
+	    commandPointer++;
+	  }
+	  if (*commandPointer == '\0') {
+	    break;
+	  }
+	  instruction = *commandPointer++;
 	  switch (instruction) {
 			// ----------------------------------------40
 			// Insert
@@ -2134,9 +2144,7 @@ main(	int argc,
 
 				// get # of queries from user
 				int count;
-				sscanf(commandPointer, "%d", &count);
-				while(*commandPointer!=32 && commandPointer!='\n')
-				  commandPointer++;
+				count = (int)strtol(commandPointer, &commandPointer, 10);
 
 				printf("\n ******command: k count=%d \n",count);
 				if(count > 65535){
@@ -2257,14 +2265,10 @@ main(	int argc,
 
 				// get # of queries from user
 				int count;
-				sscanf(commandPointer, "%d", &count);
-				while(*commandPointer!=32 && commandPointer!='\n')
-				  commandPointer++;
+				count = (int)strtol(commandPointer, &commandPointer, 10);
 
 				int rSize;
-				sscanf(commandPointer, "%d", &rSize);
-				while(*commandPointer!=32 && commandPointer!='\n')
-				  commandPointer++;
+				rSize = (int)strtol(commandPointer, &commandPointer, 10);
 
 				printf("\n******command: j count=%d, rSize=%d \n",count, rSize);
 
@@ -2400,6 +2404,8 @@ main(	int argc,
 	// ------------------------------------------------------------60
 
 	free(mem);
+	free(commandBuffer);
+	printf("Passed!\n");
 	return EXIT_SUCCESS;
 
 }

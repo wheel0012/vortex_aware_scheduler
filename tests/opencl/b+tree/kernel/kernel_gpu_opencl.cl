@@ -10,13 +10,6 @@
 //	DEFINE
 //======================================================================================================================================================150
 
-// double precision support (switch between as needed for NVIDIA/AMD)
-#ifdef AMDAPP
-#pragma OPENCL EXTENSION cl_amd_fp64 : enable
-#else
-#pragma OPENCL EXTENSION cl_khr_fp64 : enable
-#endif
-
 // clBuildProgram compiler cannot link this file for some reason, so had to redefine constants and structures below
 // #include ../common.h						// (in directory specified to compiler)			main function header
 
@@ -44,7 +37,7 @@ typedef struct knode {
 	int location;
 	int indices [DEFAULT_ORDER + 1];
 	int  keys [DEFAULT_ORDER + 1];
-	bool is_leaf;
+	char is_leaf;
 	int num_keys;
 } knode; 
 
@@ -53,51 +46,38 @@ typedef struct knode {
 //========================================================================================================================================================================================================200
 
 __kernel void 
-findK(	long height,
+findK(	int height,
 		__global knode *knodesD,
-		long knodes_elem,
+		int knodes_elem,
 		__global record *recordsD,
 
-		__global long *currKnodeD,
-		__global long *offsetD,
+		__global int *currKnodeD,
+		__global int *offsetD,
 		__global int *keysD, 
 		__global record *ansD)
 {
+	int bid = get_global_id(0);
+	int curr = currKnodeD[bid];
+	int next = offsetD[bid];
 
-	// private thread IDs
-	int thid = get_local_id(0);
-	int bid = get_group_id(0);
-
-	// processtree levels
-	int i;
-	for(i = 0; i < height; i++){
-
-		// if value is between the two keys
-		if((knodesD[currKnodeD[bid]].keys[thid]) <= keysD[bid] && (knodesD[currKnodeD[bid]].keys[thid+1] > keysD[bid])){
-			// this conditional statement is inserted to avoid crush due to but in original code
-			// "offset[bid]" calculated below that addresses knodes[] in the next iteration goes outside of its bounds cause segmentation fault
-			// more specifically, values saved into knodes->indices in the main function are out of bounds of knodes that they address
-			if(knodesD[offsetD[bid]].indices[thid] < knodes_elem){
-				offsetD[bid] = knodesD[offsetD[bid]].indices[thid];
+	for (int level = 0; level < height; level++) {
+		for (int slot = 0; slot < DEFAULT_ORDER; slot++) {
+			if (knodesD[curr].keys[slot] <= keysD[bid] &&
+				knodesD[curr].keys[slot + 1] > keysD[bid] &&
+				knodesD[next].indices[slot] < knodes_elem) {
+				next = knodesD[next].indices[slot];
 			}
 		}
-		//__syncthreads();
-		barrier(CLK_LOCAL_MEM_FENCE);
-		// set for next tree level
-		if(thid==0){
-			currKnodeD[bid] = offsetD[bid];
+		curr = next;
+	}
+
+	currKnodeD[bid] = curr;
+	offsetD[bid] = next;
+	for (int slot = 0; slot < DEFAULT_ORDER; slot++) {
+		if (knodesD[curr].keys[slot] == keysD[bid]) {
+			ansD[bid].value = recordsD[knodesD[curr].indices[slot]].value;
 		}
-		//__syncthreads();
-		barrier(CLK_LOCAL_MEM_FENCE);
-
 	}
-
-	//At this point, we have a candidate leaf node which may contain
-	//the target record.  Check each key to hopefully find the record
-	if(knodesD[currKnodeD[bid]].keys[thid] == keysD[bid]){
-		ansD[bid].value = recordsD[knodesD[currKnodeD[bid]].indices[thid]].value;
-	}
-
 }
 
 //========================================================================================================================================================================================================200

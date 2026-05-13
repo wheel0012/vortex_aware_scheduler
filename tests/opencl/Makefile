@@ -21,6 +21,7 @@ all:
 	$(MAKE) -C guassian
 	$(MAKE) -C kmeans
 	$(MAKE) -C blackscholes
+	$(MAKE) -C b+tree
 	$(MAKE) -C bfs
 
 run-simx:
@@ -42,6 +43,7 @@ run-simx:
 	$(MAKE) -C guassian run-simx
 	$(MAKE) -C kmeans run-simx
 	$(MAKE) -C blackscholes run-simx
+	$(MAKE) -C b+tree run-simx
 	$(MAKE) -C bfs run-simx
 
 run-rtlsim:
@@ -63,6 +65,7 @@ run-rtlsim:
 	$(MAKE) -C guassian run-rtlsim
 	$(MAKE) -C kmeans run-rtlsim
 	$(MAKE) -C blackscholes run-rtlsim
+	$(MAKE) -C b+tree run-rtlsim
 	$(MAKE) -C bfs run-rtlsim
 
 clean:
@@ -85,4 +88,5 @@ clean:
 	$(MAKE) -C guassian clean
 	$(MAKE) -C kmeans clean
 	$(MAKE) -C blackscholes clean
+	$(MAKE) -C b+tree clean
 	$(MAKE) -C bfs clean

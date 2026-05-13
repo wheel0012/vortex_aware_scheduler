@@ -1,6 +1,7 @@
 EXE := b+tree.out
 KERNEL_SRCS := kernel/kernel_gpu_opencl.cl kernel/kernel_gpu_opencl_2.cl
-OPTS ?= file mil.txt command command.txt
+KERNEL_DIM ?= -DRD_WG_SIZE_0=32 -DRD_WG_SIZE_1=32
+OPTS ?= file btree-smoke.input command btree-smoke.command
 
 include ../rodinia.mk
 

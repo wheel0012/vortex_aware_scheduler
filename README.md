@@ -177,7 +177,7 @@ Rodinia에서 가져온 OpenCL benchmark도 `tests/opencl/<app>` 아래에 있�
 ./ci/blackbox.sh --driver=simx --app=spmv --args="-i ./1138_bus.mtx,./1138_bus.vec" --cores=32 --warps=32 --threads=32 --l2cache --perf=1
 
 # b+tree: file <input_file> command <command_file>
-./ci/blackbox.sh --driver=simx --app=b+tree --args="file mil.txt command command.txt" --cores=32 --warps=32 --threads=32 --l2cache --perf=1
+./ci/blackbox.sh --driver=simx --app=b+tree --args="file btree-smoke.input command btree-smoke.command" --cores=32 --warps=32 --threads=32 --l2cache --perf=1
 
 # srad: <iterations> <lambda> <rows> <cols>
 ./ci/blackbox.sh --driver=simx --app=srad --args="1 0.5 16 16" --cores=32 --warps=32 --threads=32 --l2cache --perf=1
