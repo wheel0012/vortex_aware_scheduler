@@ -133,11 +133,107 @@ echo "source <build-path>/ci/toolchain_env.sh" >> ~/.bashrc
 ```
 - For additional information, check out the [documentation](docs/index.md)
 
+## URP 실험 가이드 (simx)
 
----
+### 정책 선택(코드에서 1줄 수정)
+`sim/simx/emulator.cpp`의 `kDefaultSchedulePolicy` 값을 바꿔서 사용합니다.
 
-## URP project (fork-specific)
+- `WarpSchedulePolicy::Static` : 기존 priority 방식
+- `WarpSchedulePolicy::RR` : round-robin
+- `WarpSchedulePolicy::GTO` : greedy-then-oldest
+- `WarpSchedulePolicy::CCWS` : cache-conscious warp scheduling
 
-본 fork 의 URP 작업 (CAWA + iPAWS 적응형 스케줄러 설계 / 구현 / 실험 로그)
-은 [urp_analysis.md](urp_analysis.md) 에 정리되어 있다. 코드 변경, build-time
-옵션, sweep 스크립트 사용법, 그리고 누적되는 실험 결과는 거기서 확인.
+### 빌드
+```sh
+cd build
+source ./ci/toolchain_env.sh
+make -C sim/simx -j$(nproc)
+```
+
+### 실행 예시 (sgemm3)
+```sh
+./ci/blackbox.sh --driver=simx --app=sgemm3 --cores=32 --warps=32 --threads=32 --l2cache --perf=1
+```
+
+### Rodinia benchmark 실행
+Rodinia에서 가져온 OpenCL benchmark도 `tests/opencl/<app>` 아래에 있으면 `./ci/blackbox.sh`의 `--app`으로 실행할 수 있습니다. 각 benchmark의 기본 인자는 해당 디렉터리의 `Makefile` 또는 `makefile`에 있는 `OPTS ?= ...` 값을 사용합니다.
+
+```sh
+./ci/blackbox.sh --driver=simx --app=hotspot --cores=32 --warps=32 --threads=32 --l2cache --perf=1
+./ci/blackbox.sh --driver=simx --app=bfs --cores=32 --warps=32 --threads=32 --l2cache --perf=1
+./ci/blackbox.sh --driver=simx --app=kmeans --cores=32 --warps=32 --threads=32 --l2cache --perf=1
+```
+
+입력 크기나 입력 파일을 바꾸고 싶으면 `--args="..."`를 사용합니다. `--args`의 문자열은 그대로 benchmark 실행 인자로 전달됩니다. 상대경로는 `make -C tests/opencl/<app>`로 실행되므로 해당 benchmark 디렉터리 기준입니다.
+
+```sh
+# hotspot: <grid_size> <pyramid_height> <iterations> <temp_file> <power_file> <output_file>
+./ci/blackbox.sh --driver=simx --app=hotspot --args="64 1 2 temp_64 power_64 output.out" --cores=32 --warps=32 --threads=32 --l2cache --perf=1
+
+# bfs: <graph_file>
+./ci/blackbox.sh --driver=simx --app=bfs --args="./graph4k.txt" --cores=32 --warps=32 --threads=32 --l2cache --perf=1
+
+# spmv: -i <matrix_file>,<vector_file>
+./ci/blackbox.sh --driver=simx --app=spmv --args="-i ./1138_bus.mtx,./1138_bus.vec" --cores=32 --warps=32 --threads=32 --l2cache --perf=1
+
+# b+tree: file <input_file> command <command_file>
+./ci/blackbox.sh --driver=simx --app=b+tree --args="file btree-smoke.input command btree-smoke.command" --cores=32 --warps=32 --threads=32 --l2cache --perf=1
+
+# srad: <iterations> <lambda> <rows> <cols>
+./ci/blackbox.sh --driver=simx --app=srad --args="1 0.5 16 16" --cores=32 --warps=32 --threads=32 --l2cache --perf=1
+```
+
+입력 파일이 benchmark 디렉터리 밖에 있으면 절대경로를 쓰거나, benchmark 디렉터리 기준 상대경로를 지정합니다.
+
+```sh
+./ci/blackbox.sh --driver=simx --app=bfs --args="/home/user/datasets/graph.txt" --cores=32 --warps=32 --threads=32 --l2cache
+./ci/blackbox.sh --driver=simx --app=hotspot --args="1024 1 2 ../../datasets/temp_1024 ../../datasets/power_1024 output.out" --cores=32 --warps=32 --threads=32 --l2cache
+```
+
+### MSHR-aware(GTO)
+`GTO` 스케줄러에 MSHR 압박 신호를 결합한 policy
+
+- 동작 원리:
+  - MSHR 압박 조건(`occupancy >= capacity * NUM / DEN`)이 참이면, head 명령이 `LOAD`인 ready warp를 임시 masking
+  - 가능한 경우 `non-load` warp를 우선 스케줄링해 LSU 포화를 완화
+  - 압박 상태에서 ready warp가 모두 `LOAD`이면, `LOAD_COOLDOWN` 주기마다 oldest load warp 1개를 허용해 진행 보장
+
+- 기본값(현재 코드 기준):
+  - `VX_GTO_MSHR_AWARE=1`
+  - `VX_GTO_MSHR_PRESSURE_NUM=3`
+  - `VX_GTO_MSHR_PRESSURE_DEN=4`
+  - `VX_GTO_MSHR_LOAD_COOLDOWN=2`
+
+- 실행 예시:
+  - 기본 사용(옵션 없이, 코드 기본값 사용)
+```sh
+./ci/blackbox.sh --driver=simx --app=sgemm3 --cores=32 --warps=32 --threads=32 --l2cache --perf=1
+```
+  - OFF 비교(`MSHR-aware` 비활성화)
+```sh
+CONFIGS="-DVX_GTO_MSHR_AWARE=0" ./ci/blackbox.sh --driver=simx --app=sgemm3 --cores=32 --warps=32 --threads=32 --l2cache --perf=1
+```
+  - 튜닝 예시(`NUM/DEN/COOLDOWN` 지정)
+```sh
+CONFIGS="-DVX_GTO_MSHR_AWARE=1 -DVX_GTO_MSHR_PRESSURE_NUM=7 -DVX_GTO_MSHR_PRESSURE_DEN=8 -DVX_GTO_MSHR_LOAD_COOLDOWN=4" ./ci/blackbox.sh --driver=simx --app=sgemm3 --cores=32 --warps=32 --threads=32 --l2cache --perf=1
+```
+
+### CCWS scheduler 설정 안내
+CONFIGS에 
+```sh
+-DVX_SCHED_POLICY=WarpSchedulePolicy::CCWS 추가
+```
+
+- 주요 튜닝 파라미터:
+  - `VX_CCWS_VTA_SIZE=8`: warp별 VTA entry 수
+  - `VX_CCWS_LLD_SCORE=10`: VTA hit 시 부여할 lost-locality score
+  - `VX_CCWS_LLS_DECAY_PERIOD=1`: 몇 tick마다 LLS를 감소시킬지 설정, `0`이면 decay 비활성화
+  - `VX_CCWS_LLS_DECAY_STEP=1`: decay 시 LLS 감소량
+  - `VX_CCWS_LLS_CUTOFF=0`: cumulative LLS cutoff, `0`이면 고정 top-K 모드
+  - `VX_CCWS_MAX_ACTIVE_LOAD_WARPS=4`: cumulative cutoff가 고른 schedulable warp 수의 상한
+  - `VX_CCWS_GATE_WHOLE_WARP=0`: `0`이면 load-only gating, `1`이면 whole-warp gating
+
+- 튜닝 예시:
+```sh
+CONFIGS="-DVX_SCHED_POLICY=WarpSchedulePolicy::CCWS -DVX_CCWS_VTA_SIZE=16 -DVX_CCWS_LLD_SCORE=20 -DVX_CCWS_LLS_DECAY_PERIOD=2 -DVX_CCWS_LLS_DECAY_STEP=1 -DVX_CCWS_MAX_ACTIVE_LOAD_WARPS=8" ./ci/blackbox.sh --driver=simx --app=sgemm3 --cores=32 --warps=32 --threads=32 --l2cache --perf=3
+```

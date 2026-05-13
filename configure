@@ -97,12 +97,13 @@ copy_files() {
             rel_path="${rel_path#/}" # Remove leading slash, if present
             local full_target_dir="$target_dir/$rel_path"
 
-            # Copy and update Makefile and common.mk if they exist
+            # Copy and update build metadata files if they exist
             if [ $full_copy -eq 1 ]; then
                 copy_and_update "$dir/*" "$full_target_dir"
             else
                 copy_and_update "$dir/Makefile" "$full_target_dir"
                 copy_and_update "$dir/common.mk" "$full_target_dir"
+                copy_and_update "$dir/rodinia.mk" "$full_target_dir"
                 copy_and_update "$dir/*.in" "$full_target_dir"
             fi
         done
@@ -166,7 +167,7 @@ if [ "$OSVERSION" == "unsupported" ]; then
 fi
 
 # project subdirectories to build
-SUBDIRS=("." "!ci" "!perf" "hw*" "kernel*" "runtime*" "sim*" "tests*")
+SUBDIRS=("." "!ci" "!perf" "hw*" "kernel*" "runtime*" "sim*" "!tests/opencl/b+tree*" "!tests/opencl/hotspot*" "!tests/opencl/heartwall*" "!tests/opencl/srad*" "tests*")
 
 # Get the directory of the script
 SOURCE_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"

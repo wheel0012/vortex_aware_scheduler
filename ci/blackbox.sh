@@ -28,7 +28,7 @@ show_help()
     echo "  where"
     echo "--driver: gpu, simx, rtlsim, oape, xrt"
     echo "--app: any subfolder test under regression or opencl"
-    echo "--class: 0=disable, 1=pipeline, 2=memsys"
+    echo "--class: 0=disable, 1=pipeline, 2=memsys, 3=all"
     echo "--nohup: build and run in temp directory"
 }
 
@@ -54,23 +54,29 @@ DEFAULTS() {
 }
 
 parse_args() {
+    #CONFIGS=$(add_option "$CONFIGS" "");;
     DEFAULTS
     for i in "$@"; do
-        case $i in
+        
+        case $i in   
             --driver=*) DRIVER=${i#*=} ;;
             --app=*)    APP=${i#*=} ;;
             --clusters=*) CONFIGS=$(add_option "$CONFIGS" "-DNUM_CLUSTERS=${i#*=}") ;;
-            --cores=*)  CONFIGS=$(add_option "$CONFIGS" "-DNUM_CORES=${i#*=}") ;;
+            --cores=*)  CONFIGS=$(add_option "$CONFIGS" " -DNUM_CORES=${i#*=}") ;;
             --warps=*)  CONFIGS=$(add_option "$CONFIGS" "-DNUM_WARPS=${i#*=}") ;;
             --threads=*) CONFIGS=$(add_option "$CONFIGS" "-DNUM_THREADS=${i#*=}") ;;
             --l2cache)  CONFIGS=$(add_option "$CONFIGS" "-DL2_ENABLE") ;;
             --l3cache)  CONFIGS=$(add_option "$CONFIGS" "-DL3_ENABLE") ;;
-            --perf=*)   CONFIGS=$(add_option "$CONFIGS" "-DPERF_ENABLE"); PERF_CLASS=${i#*=} ;;
+            --perf=*)   CONFIGS=$(add_option "$CONFIGS" "-DPERF_ENABLE "); PERF_CLASS=${i#*=} ;;
             --debug=*)  DEBUG=1; DEBUG_LEVEL=${i#*=} ;;
             --scope)    SCOPE=1; ;;
             --args=*)   HAS_ARGS=1; ARGS=${i#*=} ;;
             --log=*)    LOGFILE=${i#*=} ;;
             --nohup)    TEMPBUILD=1 ;;
+            --l1_size)  CONFIGS=$(add_option "$CONFIGS" "-DDCACHE_SIZE=131072") ;;
+            --l1_ways)  CONFIGS=$(add_option "$CONFIGS" "-DDCACHE_NUM_WAYS=8") ;;
+            --l2_size)  CONFIGS=$(add_option "$CONFIGS" "-DL2_CACHE_SIZE=262144") ;;
+            --l2_ways)  CONFIGS=$(add_option "$CONFIGS" "-DL2_NUM_WAYS=16") ;;
             --help)     show_help; exit 0 ;;
             *)          show_usage; exit 1 ;;
         esac

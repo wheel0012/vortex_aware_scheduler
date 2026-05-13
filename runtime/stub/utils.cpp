@@ -19,8 +19,13 @@
 #include <cstring>
 #include <vector>
 #include <unordered_map>
+#include <algorithm>
 #include <vortex.h>
 #include <assert.h>
+
+namespace {
+constexpr int kMPMClassAll = 3;
+}
 
 class ProfilingMode {
 public:
@@ -195,6 +200,14 @@ extern int vx_dump_perf(vx_device_h hdevice, FILE* stream) {
   uint64_t stores = 0;
   uint64_t ifetch_lat = 0;
   uint64_t load_lat   = 0;
+  uint64_t ccws_vta_inserts = 0;
+  uint64_t ccws_vta_hits = 0;
+  uint64_t ccws_throttled_loads = 0;
+  uint64_t ccws_throttled_warps = 0;
+  uint64_t ccws_fallback_issues = 0;
+  uint64_t ccws_active_issue_candidates_sum = 0;
+  uint64_t ccws_lls_sum = 0;
+  uint64_t ccws_max_lls = 0;
   // PERF: l2cache
   uint64_t l2cache_reads = 0;
   uint64_t l2cache_writes = 0;
@@ -253,7 +266,11 @@ extern int vx_dump_perf(vx_device_h hdevice, FILE* stream) {
     });
 
     switch (perf_class) {
-    case VX_DCR_MPM_CLASS_CORE: {
+    case VX_DCR_MPM_CLASS_CORE:
+    case kMPMClassAll: {
+      CHECK_ERR(vx_dcr_write(hdevice, VX_DCR_BASE_MPM_CLASS, VX_DCR_MPM_CLASS_CORE), {
+        return err;
+      });
       // PERF: pipeline
       // scheduler idles
       {
@@ -426,8 +443,68 @@ extern int vx_dump_perf(vx_device_h hdevice, FILE* stream) {
         if (num_cores > 1) fprintf(stream, "PERF: core%d: stores=%ld\n", core_id, stores_per_core);
         stores += stores_per_core;
       }
-    } break;
+      // CCWS
+      {
+        uint64_t vta_inserts_per_core;
+        CHECK_ERR(vx_mpm_query(hdevice, VX_CSR_MPM_CCWS_VTA_INSERTS, core_id, &vta_inserts_per_core), {
+          return err;
+        });
+        uint64_t vta_hits_per_core;
+        CHECK_ERR(vx_mpm_query(hdevice, VX_CSR_MPM_CCWS_VTA_HITS, core_id, &vta_hits_per_core), {
+          return err;
+        });
+        uint64_t throttled_loads_per_core;
+        CHECK_ERR(vx_mpm_query(hdevice, VX_CSR_MPM_CCWS_THROTTLED_LOADS, core_id, &throttled_loads_per_core), {
+          return err;
+        });
+        uint64_t throttled_warps_per_core;
+        CHECK_ERR(vx_mpm_query(hdevice, VX_CSR_MPM_CCWS_THROTTLED_WARPS, core_id, &throttled_warps_per_core), {
+          return err;
+        });
+        uint64_t fallback_issues_per_core;
+        CHECK_ERR(vx_mpm_query(hdevice, VX_CSR_MPM_CCWS_FALLBACK_ISSUES, core_id, &fallback_issues_per_core), {
+          return err;
+        });
+        uint64_t avg_active_issue_candidates_per_core;
+        CHECK_ERR(vx_mpm_query(hdevice, VX_CSR_MPM_CCWS_AVG_ACTIVE_ISSUE_CANDIDATES, core_id, &avg_active_issue_candidates_per_core), {
+          return err;
+        });
+        uint64_t avg_lls_per_core;
+        CHECK_ERR(vx_mpm_query(hdevice, VX_CSR_MPM_CCWS_AVG_LLS, core_id, &avg_lls_per_core), {
+          return err;
+        });
+        uint64_t max_lls_per_core;
+        CHECK_ERR(vx_mpm_query(hdevice, VX_CSR_MPM_CCWS_MAX_LLS, core_id, &max_lls_per_core), {
+          return err;
+        });
+        if (num_cores > 1) {
+          fprintf(stream, "PERF: core%d: ccws vta inserts=%ld\n", core_id, vta_inserts_per_core);
+          fprintf(stream, "PERF: core%d: ccws vta hits=%ld\n", core_id, vta_hits_per_core);
+          fprintf(stream, "PERF: core%d: ccws throttled loads=%ld\n", core_id, throttled_loads_per_core);
+          fprintf(stream, "PERF: core%d: ccws throttled warps=%ld\n", core_id, throttled_warps_per_core);
+          fprintf(stream, "PERF: core%d: ccws fallback issues=%ld\n", core_id, fallback_issues_per_core);
+          fprintf(stream, "PERF: core%d: ccws avg active issue candidates=%.3f\n", core_id, avg_active_issue_candidates_per_core / 1000.0);
+          fprintf(stream, "PERF: core%d: ccws avg lls=%.3f\n", core_id, avg_lls_per_core / 1000.0);
+          fprintf(stream, "PERF: core%d: ccws max lls=%ld\n", core_id, max_lls_per_core);
+        }
+        ccws_vta_inserts += vta_inserts_per_core;
+        ccws_vta_hits += vta_hits_per_core;
+        ccws_throttled_loads += throttled_loads_per_core;
+        ccws_throttled_warps += throttled_warps_per_core;
+        ccws_fallback_issues += fallback_issues_per_core;
+        ccws_active_issue_candidates_sum += avg_active_issue_candidates_per_core;
+        ccws_lls_sum += avg_lls_per_core;
+        ccws_max_lls = std::max<uint64_t>(ccws_max_lls, max_lls_per_core);
+      }
+      if (perf_class != kMPMClassAll) {
+        break;
+      }
+      [[fallthrough]];
+    }
     case VX_DCR_MPM_CLASS_MEM: {
+      CHECK_ERR(vx_dcr_write(hdevice, VX_DCR_BASE_MPM_CLASS, VX_DCR_MPM_CLASS_MEM), {
+        return err;
+      });
       if (lmem_enable) {
         // PERF: lmem
         uint64_t lmem_reads;
@@ -600,7 +677,8 @@ extern int vx_dump_perf(vx_device_h hdevice, FILE* stream) {
   }
 
   switch (perf_class) {
-  case VX_DCR_MPM_CLASS_CORE: {
+  case VX_DCR_MPM_CLASS_CORE:
+  case kMPMClassAll: {
     int sched_idles_percent = calcAvgPercent(sched_idles, total_cycles);
     int sched_stalls_percent = calcAvgPercent(sched_stalls, total_cycles);
     int ibuffer_percent = calcAvgPercent(ibuffer_stalls, total_cycles);
@@ -636,7 +714,19 @@ extern int vx_dump_perf(vx_device_h hdevice, FILE* stream) {
     fprintf(stream, "PERF: stores=%ld\n", stores);
     fprintf(stream, "PERF: ifetch latency=%d cycles\n", ifetch_avg_lat);
     fprintf(stream, "PERF: load latency=%d cycles\n", load_avg_lat);
-  } break;
+    fprintf(stream, "PERF: ccws vta inserts=%ld\n", ccws_vta_inserts);
+    fprintf(stream, "PERF: ccws vta hits=%ld\n", ccws_vta_hits);
+    fprintf(stream, "PERF: ccws throttled loads=%ld\n", ccws_throttled_loads);
+    fprintf(stream, "PERF: ccws throttled warps=%ld\n", ccws_throttled_warps);
+    fprintf(stream, "PERF: ccws fallback issues=%ld\n", ccws_fallback_issues);
+    fprintf(stream, "PERF: ccws avg active issue candidates=%.3f\n", (ccws_active_issue_candidates_sum / num_cores) / 1000.0);
+    fprintf(stream, "PERF: ccws avg lls=%.3f\n", (ccws_lls_sum / num_cores) / 1000.0);
+    fprintf(stream, "PERF: ccws max lls=%ld\n", ccws_max_lls);
+    if (perf_class != kMPMClassAll) {
+      break;
+    }
+    [[fallthrough]];
+  }
   case VX_DCR_MPM_CLASS_MEM: {
     if (l2cache_enable) {
       l2cache_reads /= num_cores;

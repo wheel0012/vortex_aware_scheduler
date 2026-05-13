@@ -22,6 +22,10 @@
 
 int get_profiling_mode();
 
+namespace {
+constexpr int kMPMClassAll = 3;
+}
+
 static int dcr_initialize(vx_device_h hdevice) {
   const uint64_t startup_addr(STARTUP_ADDR);
 
@@ -142,6 +146,9 @@ extern int vx_copy_from_dev(void* host_ptr, vx_buffer_h hbuffer, uint64_t src_of
 extern int vx_start(vx_device_h hdevice, vx_buffer_h hkernel, vx_buffer_h harguments) {
   int profiling_mode = get_profiling_mode();
   if (profiling_mode != 0) {
+    if (profiling_mode == kMPMClassAll) {
+      profiling_mode = VX_DCR_MPM_CLASS_CORE;
+    }
     CHECK_ERR(vx_dcr_write(hdevice, VX_DCR_BASE_MPM_CLASS, profiling_mode), {
       return err;
     });
