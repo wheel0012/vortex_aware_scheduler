@@ -12,6 +12,11 @@ miscs/apptainer/vortex.sif
 sweep_results*
 ccws_*
 
+# OpenCL input data that should be tracked despite the broad *.txt rule.
+!tests/opencl/b+tree/command.txt
+!tests/opencl/b+tree/mil.txt
+!tests/opencl/heartwall/input.txt
+
 # Runtime build artifacts
 /runtime/*.so
 /runtime/*.a
@@ -51,6 +56,7 @@ ccws_*
 #/tests/opencl/bfs/bfs
 #/tests/opencl/heartwall/heartwall
 /tests/opencl/heartwall/test.avi
+!tests/opencl/heartwall/test.avi
 #/tests/opencl/hotspot/hotspot
 #/tests/opencl/sgemm3/sgemm3
 #/tests/opencl/spmv/spmv
