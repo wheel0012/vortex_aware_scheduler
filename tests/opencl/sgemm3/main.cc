@@ -139,8 +139,8 @@ static void cleanup() {
   if (kernel_bin) free(kernel_bin);
 }
 
-uint32_t size = 1024;
-uint32_t tile_size = 32;
+uint32_t size = 512;
+uint32_t tile_size = 4;
 
 static void show_usage() {
   printf("Usage: [-n size] [-t tile size] [-h: help]\n");
@@ -170,8 +170,6 @@ static void parse_args(int argc, char **argv) {
 int main (int argc, char **argv) {
   // parse command arguments
   parse_args(argc, argv);
-  size = 512;
-  tile_size = 32;
 
   uint32_t size_sq = size * size;
 
