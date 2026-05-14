@@ -13,7 +13,7 @@ set -u
 set -o pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-BUILD_DIR="$ROOT_DIR/build"
+BUILD_DIR="$ROOT_DIR"
 EXP_DIR="$ROOT_DIR/worklogs/experiments/streamcluster_large_4lsu_4bank"
 
 CORES=1
@@ -22,8 +22,9 @@ THREADS=32
 HW_TWEAK="-DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4"
 BASE_FLAGS="-DPERF_ENABLE $HW_TWEAK"
 
-# Streamcluster parameters: kmin kmax dim n chunksize clustersize infile outfile nproc
-STREAMCLUSTER_ARGS="2 16 8 4096 256 256 none output.txt 1"
+# Streamcluster parameters: kmin kmax dim n chunksize clustersize infile outfile nproc + extra args
+# Increased input size for larger working set: n from 16 to 4096
+STREAMCLUSTER_OPTS="2 16 8 4096 256 256 none output.txt 1 -d 0"
 
 declare -A SCHED=( [GTO]=1 [RR]=2 [gCAWS]=3 [iPAWS]=4 )
 POLICIES=(RR GTO gCAWS iPAWS)
@@ -46,9 +47,9 @@ for label in "${POLICIES[@]}"; do
   for perf in 2 1; do
     blog="$cfg_dir/streamcluster.perf${perf}.log"
     : > "$blog"
-    ( cd "$BUILD_DIR" && CONFIGS="$conf" timeout 3600 ./ci/blackbox.sh \
+    ( cd "$BUILD_DIR" && CONFIGS="$conf" OPTS="$STREAMCLUSTER_OPTS" timeout 3600 ./ci/blackbox.sh \
         --driver=simx --app=streamcluster --cores=$CORES --warps=$WARPS --threads=$THREADS \
-        --l2cache --perf=$perf --args="$STREAMCLUSTER_ARGS" >> "$blog" 2>&1 )
+        --l2cache --perf=$perf >> "$blog" 2>&1 )
     rc=$?
     ipc=$(grep "^PERF: instrs=" "$blog" | tail -1)
     echo "  [$label/perf$perf] rc=$rc $ipc"
