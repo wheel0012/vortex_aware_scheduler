@@ -463,11 +463,6 @@ bool Core::wspawn(uint32_t num_warps, Word nextPC) {
   return emulator_.wspawn(num_warps, nextPC);
 }
 
-void Core::set_critical_warp(int wid) {
-  if (socket_)
-    socket_->set_critical_warp(wid);
-}
-
 void Core::attach_ram(RAM* ram) {
   emulator_.attach_ram(ram);
 }

@@ -131,8 +131,6 @@ public:
 
   bool wspawn(uint32_t num_warps, Word nextPC);
 
-  void set_critical_warp(int wid);
-
   uint32_t id() const {
     return core_id_;
   }

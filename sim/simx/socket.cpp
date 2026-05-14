@@ -49,18 +49,6 @@ Socket::Socket(const SimContext& ctx,
   });
 
   snprintf(sname, 100, "%s-dcaches", this->name().c_str());
-  // VORTEX_CACP_ENABLE=0 forces CACP off; VORTEX_CACP_RESERVED selects how
-  // many ways out of A are reserved for the critical warp (default A/2).
-#ifndef VORTEX_CACP_ENABLE
-#define VORTEX_CACP_ENABLE 1
-#endif
-#ifndef VORTEX_CACP_RESERVED
-#define VORTEX_CACP_RESERVED (DCACHE_NUM_WAYS / 2)
-#endif
-  bool cacp_enable = (DCACHE_NUM_WAYS >= 2) && (VORTEX_CACP_ENABLE != 0);
-  uint32_t cacp_reserved = cacp_enable ? VORTEX_CACP_RESERVED : 0;
-  if (cacp_reserved >= DCACHE_NUM_WAYS)
-    cacp_reserved = DCACHE_NUM_WAYS - 1;
   dcaches_ = CacheCluster::Create(sname, cores_per_socket, NUM_DCACHES, CacheSim::Config{
     !DCACHE_ENABLED,
     log2ceil(DCACHE_SIZE),  // C
@@ -75,8 +63,6 @@ Socket::Socket(const SimContext& ctx,
     false,                  // write response
     DCACHE_MSHR_SIZE,       // mshr size
     2,                      // pipeline latency
-    cacp_enable,            // cacp_enable
-    static_cast<uint8_t>(cacp_reserved), // cacp_reserved_ways
   });
 
   // find overlap
@@ -175,12 +161,6 @@ void Socket::barrier(uint32_t bar_id, uint32_t count, uint32_t core_id) {
 
 void Socket::resume(uint32_t core_index) {
   cores_.at(core_index)->resume(-1);
-}
-
-void Socket::set_critical_warp(int wid) {
-  if (dcaches_) {
-    dcaches_->set_critical_warp(wid);
-  }
 }
 
 Socket::PerfStats Socket::perf_stats() const {

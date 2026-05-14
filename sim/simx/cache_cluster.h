@@ -95,12 +95,6 @@ public:
 		return perf;
 	}
 
-	void set_critical_warp(int wid) {
-		for (auto& cache : caches_) {
-			cache->set_critical_warp(wid);
-		}
-	}
-
 private:
   std::vector<CacheSim::Ptr> caches_;
 };

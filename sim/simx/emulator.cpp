@@ -45,9 +45,6 @@ using namespace vortex;
 #ifndef VORTEX_IPAWS_CONCAVE_TH
 #define VORTEX_IPAWS_CONCAVE_TH     0.4
 #endif
-#ifndef VORTEX_IPAWS_USE_CACP
-#define VORTEX_IPAWS_USE_CACP       1
-#endif
 // 1 이면 iPAWS Adapt 가 wspawn (= kernel launch) 시점에만 트리거되고
 // Execute phase 는 다음 wspawn 까지 무한 지속. 0 이면 기존 periodic
 // (ADAPT_CYCLES + EXECUTE_CYCLES) 동작.
@@ -146,7 +143,6 @@ Emulator::Emulator(const Arch &arch, const DCRS &dcrs, Core* core) //생성자
     , critical_warp_(-1) //마찬가지
     , ready_timestamps_(arch.num_warps(), 0)
     , warp_cpl_(arch.num_warps())
-    , suppress_critical_push_(false)
     , barriers_(arch.num_barriers(), 0)
     , ipdom_size_(arch.num_threads()-1)
   #ifdef EXT_TCU_ENABLE
@@ -198,7 +194,6 @@ Emulator::~Emulator() { //소멸자
               << " recover_entries=" << s.recover_entries
               << " recover_cycles=" << s.recover_cycles
               << " test=mean/max<0.5"
-              << " use_cacp=" << (VORTEX_IPAWS_USE_CACP ? 1 : 0)
               << " barrier_only_btime=" << (VORTEX_IPAWS_BARRIER_ONLY_BTIME ? 1 : 0)
               << " use_recover=" << (VORTEX_IPAWS_USE_RECOVER ? 1 : 0)
               << std::endl;
@@ -249,7 +244,6 @@ void Emulator::reset() { // 시뮬 재시작시 호출 + 객체 만들때 호출
   ipaws_state_.adapt_issue.assign(arch_.num_warps(), 0);
   ipaws_state_.adapt_stall.assign(arch_.num_warps(), 0);
   ipaws_state_.issue_stall_count.assign(arch_.num_warps(), 0);
-  suppress_critical_push_ = false;
 
   // activate first warp and thread
   active_warps_.set(0);
@@ -347,7 +341,7 @@ int Emulator::select_rr_warp() {
 }
 
 void Emulator::update_cpl_counters() { //매 cycle 호출되어서 모든 active warp의 criticality 점수를 갱신
-  // 1. Accumulate stall cycles for active-but-stalled warps.
+  
   for (size_t wid = 0, nw = arch_.num_warps(); wid < nw; ++wid) {
     //active_warps_ , stalled_warps_ 는 bitmask임, test(wid) : wid번째 비트가 켜져있냐?
     if (active_warps_.test(wid) && stalled_warps_.test(wid)) {
@@ -356,7 +350,6 @@ void Emulator::update_cpl_counters() { //매 cycle 호출되어서 모든 active
     }
   }
 
-  // 2. Find the leading warp (highest instr_count) among active warps.
   uint64_t max_inst = 0;
   for (size_t wid = 0, nw = arch_.num_warps(); wid < nw; ++wid) {
     if (!active_warps_.test(wid)) continue;
@@ -368,9 +361,6 @@ void Emulator::update_cpl_counters() { //매 cycle 호출되어서 모든 active
     if (!active_warps_.test(wid)) continue;
     auto& cpl = warp_cpl_.at(wid); //alias
     uint64_t nInst = max_inst - cpl.instr_count; //내가 선두보다 몇 개 명령어 뒤쳐졌나?
-    // CPI_avg approximation: elapsed cycles / committed instructions.
-    // Floor at 1 to avoid zeroing out the instruction-disparity term for
-    // a warp that just started.
     uint64_t cpi_avg = (cpl.instr_count > 0)
         ? std::max<uint64_t>(1, schedule_cycle_ / cpl.instr_count)
         : 1;
@@ -380,7 +370,6 @@ void Emulator::update_cpl_counters() { //매 cycle 호출되어서 모든 active
 
 int Emulator::select_gcaws_warp() {
  
-  int prev_critical = critical_warp_;
   int selected_warp = -1;
   uint64_t best_crit = 0;
   uint64_t best_ts = std::numeric_limits<uint64_t>::max();
@@ -409,9 +398,6 @@ int Emulator::select_gcaws_warp() {
   }
 
   critical_warp_ = selected_warp;
-  if (selected_warp != prev_critical && core_ && !suppress_critical_push_) {
-    core_->set_critical_warp(selected_warp);
-  }
   return selected_warp;
 }
 
@@ -420,7 +406,6 @@ int Emulator::select_gcaws_warp() {
 // comment near `using namespace vortex;`).
 namespace {
 constexpr uint64_t IPAWS_ADAPT_CYCLES        = VORTEX_IPAWS_ADAPT_CYCLES;
-constexpr bool     IPAWS_USE_CACP            = (VORTEX_IPAWS_USE_CACP != 0);
 constexpr bool     IPAWS_BARRIER_ONLY_BTIME  = (VORTEX_IPAWS_BARRIER_ONLY_BTIME != 0);
 constexpr bool     IPAWS_USE_RECOVER         = (VORTEX_IPAWS_USE_RECOVER != 0);
 constexpr uint64_t IPAWS_RECOVER_THRESHOLD   = VORTEX_IPAWS_RECOVER_THRESHOLD;
@@ -589,21 +574,13 @@ void Emulator::ipaws_sample_and_step() {
       // Concave -> gCAWS. Recover 불필요 (gCAWS 가 skew 자체를 활용).
       s.chosen = WarpSchedulePolicy::gCAWS;
       ++s.decides_concave;
-      suppress_critical_push_ = !IPAWS_USE_CACP;
-      if (suppress_critical_push_ && core_) {
-        core_->set_critical_warp(-1);
-      }
       s.phase = iPAWSPhase::Execute;
     } else {
       // Convex -> RR. Change 4 (논문 §3.4): Recover phase 로 instr_count
       // skew 정리 후 RR 진입. USE_RECOVER=0 이면 바로 Execute.
       s.chosen = WarpSchedulePolicy::RR;
       ++s.decides_convex;
-      suppress_critical_push_ = true;
-      if (core_) {
-        critical_warp_ = -1;
-        core_->set_critical_warp(-1);
-      }
+      critical_warp_ = -1;
       if (IPAWS_USE_RECOVER) {
         // Recover 목표 = 현재 active warp 들의 max(instr_count).
         // newest warp 들이 이 값에 도달할 때까지 Recover.
@@ -711,10 +688,7 @@ instr_trace_t* Emulator::step() {
       s.phase_start_cycle = schedule_cycle_;
       std::fill(s.adapt_issue.begin(), s.adapt_issue.end(), 0);
       std::fill(s.adapt_stall.begin(), s.adapt_stall.end(), 0);
-      // critical_warp / CACP 신호 quiesce.
-      suppress_critical_push_ = true;
       critical_warp_ = -1;
-      if (core_) core_->set_critical_warp(-1);
     }
   }
 

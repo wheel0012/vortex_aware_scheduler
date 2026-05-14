@@ -280,7 +280,6 @@ private: //메서드 선언만 -> 실제 로직은 emulator.cpp에 있음.
   std::vector<uint64_t> ready_timestamps_;
   std::vector<warp_cpl_t> warp_cpl_; //warp별 criticality 카운터
   ipaws_state_t ipaws_state_; //ipaws 상태 통째로
-  bool suppress_critical_push_;  // cacp 관련 : 지금은 flase로 고정
   std::vector<WarpMask> barriers_;
   std::unordered_map<int, std::stringstream> print_bufs_;
   MemoryUnit  mmu_;

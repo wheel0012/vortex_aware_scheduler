@@ -182,27 +182,21 @@ struct set_t {
 		}
 	}
 
-	// RRIP-based tag lookup with optional way partitioning.
-	//   shared_ways limits free/replacement candidates to ways [0..shared_ways-1].
-	//   On miss, ages rrpv counters in the candidate set until a victim with
-	//   rrpv==RRPV_MAX is found. Falls back to full associativity if the
-	//   partition is too small to host a free/replacement candidate.
-	int tag_lookup(uint64_t tag, int* free_line_id, int* repl_line_id,
-	               uint32_t shared_ways) {
+	// RRIP-based tag lookup (CACP-free): scan all ways for hit/free; on miss,
+	// age rrpv counters across all ways until a victim with rrpv==RRPV_MAX
+	// is found.
+	int tag_lookup(uint64_t tag, int* free_line_id, int* repl_line_id) {
 		uint32_t n = lines.size();
-		if (shared_ways == 0 || shared_ways > n)
-			shared_ways = n;
 		int hit_line_id = -1;
 		*free_line_id = -1;
 		*repl_line_id = -1;
 
-		// Scan all ways for a tag hit; free-line discovery limited to shared subset.
 		for (uint32_t i = 0; i < n; ++i) {
 			auto& line = lines.at(i);
 			if (line.valid && line.tag == tag) {
 				hit_line_id = i;
 			}
-			if (!line.valid && i < shared_ways && *free_line_id == -1) {
+			if (!line.valid && *free_line_id == -1) {
 				*free_line_id = i;
 			}
 		}
@@ -211,22 +205,20 @@ struct set_t {
 		if (*free_line_id != -1)
 			return -1;
 
-		// RRIP victim search within the shared-ways subset.
+		// RRIP victim search.
 		for (uint32_t guard = 0; guard < (RRPV_MAX + 1); ++guard) {
-			for (uint32_t i = 0; i < shared_ways; ++i) {
+			for (uint32_t i = 0; i < n; ++i) {
 				if (lines.at(i).rrpv == RRPV_MAX) {
 					*repl_line_id = i;
 					return -1;
 				}
 			}
-			// Age all candidates in the shared subset and retry.
-			for (uint32_t i = 0; i < shared_ways; ++i) {
+			for (uint32_t i = 0; i < n; ++i) {
 				if (lines.at(i).rrpv < RRPV_MAX)
 					++lines.at(i).rrpv;
 			}
 		}
 
-		// Pathological fallback: shouldn't happen but pick way 0 to keep going.
 		*repl_line_id = 0;
 		return -1;
 	}
@@ -404,13 +396,8 @@ public:
 		, mshr_(config.mshr_size)
 		, pipe_req_(TFifo<bank_req_t>::Create("", config.latency-1))
 		, shct_(SHCT_SIZE)
-		, critical_warp_id_(-1)
 	{
 		this->reset();
-	}
-
-	void set_critical_warp(int wid) {
-		critical_warp_id_ = wid;
 	}
 
   void reset() {
@@ -426,11 +413,6 @@ public:
 			}
 		}
   }
-
-	bool is_critical_warp(uint32_t wid) const {
-		return critical_warp_id_ >= 0
-		    && static_cast<uint32_t>(critical_warp_id_) == wid;
-	}
 
   void tick() {
 		// process input requests
@@ -472,19 +454,10 @@ private:
 				auto& line  = set.lines.at(entry.line_id);
 				line.valid  = true;
 				line.tag    = entry.bank_req.addr_tag;
-				// SHiP-CB insertion: pick RRPV from SHCT prediction; CACP biases
-				// critical warps' blocks toward the near-reference end.
+				// SHiP-CB insertion: pick RRPV from SHCT prediction.
 				uint16_t sig = shct_.signature(entry.bank_req.pc);
-				bool is_critical = this->is_critical_warp(entry.bank_req.wid);
 				bool predict_hot = shct_.is_hot(sig);
-				uint8_t inserted_rrpv;
-				if (config_.cacp_enable && is_critical) {
-					inserted_rrpv = RRPV_NEAR;
-				} else if (predict_hot) {
-					inserted_rrpv = RRPV_LONG;
-				} else {
-					inserted_rrpv = RRPV_MAX;
-				}
+				uint8_t inserted_rrpv = predict_hot ? RRPV_LONG : RRPV_MAX;
 				line.signature = sig;
 				line.reused    = false;
 				line.rrpv      = inserted_rrpv;
@@ -547,20 +520,7 @@ private:
 			int32_t free_line_id = -1;
 			int32_t repl_line_id = 0;
 			auto& set = sets_.at(bank_req.set_id);
-			// CACP way partitioning: non-critical warps are restricted to the
-			// shared ways subset; critical warp may use the full associativity.
-			uint32_t total_ways = params_.lines_per_set;
-			uint32_t shared_ways = total_ways;
-			if (config_.cacp_enable && config_.cacp_reserved_ways > 0 && total_ways > 1) {
-				uint32_t reserved = config_.cacp_reserved_ways;
-				if (reserved >= total_ways)
-					reserved = total_ways - 1;
-				bool is_critical = (critical_warp_id_ >= 0
-				                    && static_cast<uint32_t>(critical_warp_id_) == bank_req.wid);
-				shared_ways = is_critical ? total_ways : (total_ways - reserved);
-			}
-			// tag lookup
-			int hit_line_id = set.tag_lookup(bank_req.addr_tag, &free_line_id, &repl_line_id, shared_ways);
+			int hit_line_id = set.tag_lookup(bank_req.addr_tag, &free_line_id, &repl_line_id);
 			if (hit_line_id != -1) {
 				// SHiP-CB: promote to near-reference and credit the signature.
 				auto& hit_line2 = set.lines.at(hit_line_id);
@@ -687,7 +647,6 @@ private:
 	uint64_t pending_read_reqs_;
 	uint64_t pending_write_reqs_;
 	uint64_t pending_fill_reqs_;
-	int      critical_warp_id_;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -830,14 +789,6 @@ public:
 		return perf_stats;
 	}
 
-	void set_critical_warp(int wid) {
-		if (config_.bypass)
-			return;
-		for (auto& bank : banks_) {
-			bank->set_critical_warp(wid);
-		}
-	}
-
 private:
 
 	void processBypassResponse(const MemRsp& mem_rsp) {
@@ -900,8 +851,4 @@ void CacheSim::tick() {
 
 CacheSim::PerfStats CacheSim::perf_stats() const {
   return impl_->perf_stats();
-}
-
-void CacheSim::set_critical_warp(int wid) {
-  impl_->set_critical_warp(wid);
 }

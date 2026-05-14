@@ -69,8 +69,6 @@ public:
 
   void resume(uint32_t core_id);
 
-  void set_critical_warp(int wid);
-
   PerfStats perf_stats() const;
 
 private:
