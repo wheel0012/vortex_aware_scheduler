@@ -2,10 +2,10 @@
 # sgemm3 @ HW(LSU=2, banks=4) + WG=32x32 (=1024 threads = full warp pool).
 # 4 policies x perf={1,2}.
 #
-# WG size: tests/opencl/sgemm3/main.cc has hardcoded size=512, tile_size=32
-# (line 173-174 overrides cmdline -n/-t). Local work group = 32*32 = 1024
-# threads = 32 warps (NUM_WARPS=32 entire pool). Working set = 3 * 512^2 *
-# 4 B = 3 MB (overflows L2=1MB; partially DRAM-bound).
+# WG size: 32x32 = 1024 threads = 32 warps (NUM_WARPS=32 entire pool).
+# Workload: -n128 (working set 3 * 128^2 * 4 = 192 KB, ~12x L1, sweet-spot
+# in L1-thrash zone). Note: main.cc previously hardcoded size=512 over-
+# riding cmdline; that override has been removed so -n is effective.
 #
 # Output: worklogs/experiments/sgemm3_wg1024_4lsu_4bank/<policy>/{build.log,sgemm3.perf{1,2}.log}
 # Usage: ./worklogs/scripts/run_sgemm3_4lsu_4bank.sh
@@ -22,7 +22,7 @@ WARPS=32
 THREADS=32
 HW_TWEAK="-DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4"
 BASE_FLAGS="-DPERF_ENABLE $HW_TWEAK"
-ARGS="-n96"  # ignored by sgemm3 main.cc (line 173 overrides size=512)
+ARGS="-n128"  # 128x128 matrix, tile 32 -> 16 WGs of 1024 threads each
 
 declare -A SCHED=( [GTO]=1 [RR]=2 [gCAWS]=3 [iPAWS]=4 )
 POLICIES=(RR GTO gCAWS iPAWS)

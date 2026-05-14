@@ -170,8 +170,8 @@ static void parse_args(int argc, char **argv) {
 int main (int argc, char **argv) {
   // parse command arguments
   parse_args(argc, argv);
-  size = 512;
-  tile_size = 32;
+  // (was: hardcoded size=512, tile=32 here, overriding cmdline -n/-t.
+  //  removed so the -n / -t flags are effective.)
 
   uint32_t size_sq = size * size;
 
