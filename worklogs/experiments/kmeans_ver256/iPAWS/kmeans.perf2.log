@@ -1,4 +1,3 @@
->>> [iPAWS/kmeans/perf2/WG=256] args="-f100 -p1000"
 CONFIGS=-DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE 
 Running: CONFIGS="-DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE " make -C ./ci/../runtime/simx > /dev/null
 Running: OPTS="-f100 -p1000" make -C "./ci/../tests/opencl/kmeans" run-simx
@@ -90,25 +89,25 @@ PERF: core0: lmem reads=0
 PERF: core0: lmem writes=0
 PERF: core0: lmem bank stalls=0 (stall rate=0%)
 PERF: core0: icache reads=141359
-PERF: core0: icache read misses=410 (hit ratio=99%)
-PERF: core0: icache mshr stalls=171068 (stall rate=25%)
-PERF: core0: dcache reads=97334
-PERF: core0: dcache writes=30361
-PERF: core0: dcache read misses=63081 (hit ratio=35%)
-PERF: core0: dcache write misses=30315 (hit ratio=0%)
-PERF: core0: dcache bank stalls=113319 (stall rate=17%)
-PERF: core0: dcache mshr stalls=95400 (stall rate=14%)
-PERF: core0: coalescer misses=155828 (coalesce ratio=0%)
-PERF: l2cache reads=55176
-PERF: l2cache writes=30361
-PERF: l2cache read misses=20371 (hit ratio=63%)
-PERF: l2cache write misses=29055 (hit ratio=4%)
-PERF: l2cache bank stalls=25 (stall rate=0%)
-PERF: l2cache mshr stalls=17760 (stall rate=2%)
-PERF: memory requests=50780 (reads=20373, writes=30407)
-PERF: memory latency=110 cycles
-PERF: memory bank stalls=1 (stall rate=0%)
-PERF: instrs=4376583, cycles=662515, IPC=6.606013
-IPAWS_DBG_STALL: 0=11627 1=0 2=0 3=0 4=0 5=0 6=0 7=0 8=0 9=0 10=0 11=0 12=0 13=0 14=0 15=0 16=0 17=0 18=0 19=0 20=0 21=0 22=0 23=0 24=0 25=0 26=0 27=0 28=0 29=0 30=0 31=0
-IPAWS_STATS: decides=2 valid=0 skipped=2 woi_fallback=0 concave=0 convex=2 mm_avg=0.000 mm_min=0.000 mm_max=0.000 woi_avg=0.000 woi_min=0 woi_max=0 gcaws_exec_cycles=0 rr_exec_cycles=651634 wspawn_events=4 recover_entries=0 recover_cycles=0 test=mean/max<0.5 use_cacp=0 barrier_only_btime=1 use_recover=0
+PERF: core0: icache read misses=411 (hit ratio=99%)
+PERF: core0: icache mshr stalls=175198 (stall rate=26%)
+PERF: core0: dcache reads=73082
+PERF: core0: dcache writes=29945
+PERF: core0: dcache read misses=53612 (hit ratio=26%)
+PERF: core0: dcache write misses=29904 (hit ratio=0%)
+PERF: core0: dcache bank stalls=76160 (stall rate=11%)
+PERF: core0: dcache mshr stalls=100959 (stall rate=15%)
+PERF: core0: coalescer misses=155428 (split rate=23%)
+PERF: l2cache reads=53616
+PERF: l2cache writes=29945
+PERF: l2cache read misses=21133 (hit ratio=60%)
+PERF: l2cache write misses=28650 (hit ratio=4%)
+PERF: l2cache bank stalls=28 (stall rate=0%)
+PERF: l2cache mshr stalls=17412 (stall rate=2%)
+PERF: memory requests=51200 (reads=21209, writes=29991)
+PERF: memory latency=109 cycles
+PERF: memory bank stalls=2 (stall rate=0%)
+PERF: instrs=4376231, cycles=654544, IPC=6.685923
+IPAWS_DBG_STALL: 0=13466 1=0 2=0 3=0 4=0 5=0 6=0 7=0 8=0 9=0 10=0 11=0 12=0 13=0 14=0 15=0 16=0 17=0 18=0 19=0 20=0 21=0 22=0 23=0 24=0 25=0 26=0 27=0 28=0 29=0 30=0 31=0
+IPAWS_STATS: decides=3 valid=0 skipped=3 woi_fallback=0 concave=0 convex=3 mm_avg=0.000 mm_min=0.000 mm_max=0.000 woi_avg=0.000 woi_min=0 woi_max=0 gcaws_exec_cycles=0 rr_exec_cycles=643208 wspawn_events=4 recover_entries=0 recover_cycles=0 test=mean/max<0.5 use_cacp=0 barrier_only_btime=1 use_recover=0
 make: Leaving directory '/data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/tests/opencl/kmeans'

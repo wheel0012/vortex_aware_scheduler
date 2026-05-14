@@ -544,10 +544,11 @@ extern int vx_dump_perf(vx_device_h hdevice, FILE* stream) {
       CHECK_ERR(vx_mpm_query(hdevice, VX_CSR_MPM_COALESCER_MISS, core_id, &coalescer_misses), {
         return err;
       });
-      uint64_t coalescer_hits = (coalescer_misses < dcache_requests_per_core)
-                              ? (dcache_requests_per_core - coalescer_misses) : 0;
-      int coalescer_ratio = calcAvgPercent(coalescer_hits, dcache_requests_per_core);
-      fprintf(stream, "PERF: core%d: coalescer misses=%ld (coalesce ratio=%d%%)\n", core_id, coalescer_misses, coalescer_ratio);
+      // split_rate = fraction of cycles where a single LSU input did NOT
+      // drain into one output (i.e. coalescer needed multiple outputs).
+      // Lower = better single-cycle coalescing.
+      int coalescer_split_rate = calcAvgPercent(coalescer_misses, cycles_per_core);
+      fprintf(stream, "PERF: core%d: coalescer misses=%ld (split rate=%d%%)\n", core_id, coalescer_misses, coalescer_split_rate);
 
       if (l2cache_enable) {
         // PERF: L2cache

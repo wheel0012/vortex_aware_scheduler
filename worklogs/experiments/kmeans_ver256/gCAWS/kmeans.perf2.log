@@ -1,4 +1,3 @@
->>> [gCAWS/kmeans/perf2/WG=256] args="-f100 -p1000"
 CONFIGS=-DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DVORTEX_SCHED=3  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE 
 Running: CONFIGS="-DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DVORTEX_SCHED=3  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE " make -C ./ci/../runtime/simx > /dev/null
 Running: OPTS="-f100 -p1000" make -C "./ci/../tests/opencl/kmeans" run-simx
@@ -90,23 +89,23 @@ PERF: core0: lmem reads=0
 PERF: core0: lmem writes=0
 PERF: core0: lmem bank stalls=0 (stall rate=0%)
 PERF: core0: icache reads=141359
-PERF: core0: icache read misses=442 (hit ratio=99%)
-PERF: core0: icache mshr stalls=104319 (stall rate=15%)
-PERF: core0: dcache reads=97017
-PERF: core0: dcache writes=30361
-PERF: core0: dcache read misses=62490 (hit ratio=35%)
-PERF: core0: dcache write misses=30322 (hit ratio=0%)
-PERF: core0: dcache bank stalls=113137 (stall rate=16%)
-PERF: core0: dcache mshr stalls=99866 (stall rate=14%)
-PERF: core0: coalescer misses=155772 (coalesce ratio=0%)
-PERF: l2cache reads=54672
-PERF: l2cache writes=30361
-PERF: l2cache read misses=20887 (hit ratio=61%)
-PERF: l2cache write misses=29048 (hit ratio=4%)
+PERF: core0: icache read misses=430 (hit ratio=99%)
+PERF: core0: icache mshr stalls=90090 (stall rate=13%)
+PERF: core0: dcache reads=73084
+PERF: core0: dcache writes=29945
+PERF: core0: dcache read misses=54782 (hit ratio=25%)
+PERF: core0: dcache write misses=29903 (hit ratio=0%)
+PERF: core0: dcache bank stalls=76645 (stall rate=11%)
+PERF: core0: dcache mshr stalls=100624 (stall rate=15%)
+PERF: core0: coalescer misses=155428 (split rate=23%)
+PERF: l2cache reads=54783
+PERF: l2cache writes=29945
+PERF: l2cache read misses=20903 (hit ratio=61%)
+PERF: l2cache write misses=28648 (hit ratio=4%)
 PERF: l2cache bank stalls=24 (stall rate=0%)
-PERF: l2cache mshr stalls=17397 (stall rate=2%)
-PERF: memory requests=51361 (reads=20954, writes=30407)
-PERF: memory latency=108 cycles
-PERF: memory bank stalls=16 (stall rate=0%)
-PERF: instrs=4376199, cycles=667456, IPC=6.556536
+PERF: l2cache mshr stalls=17926 (stall rate=2%)
+PERF: memory requests=50964 (reads=20973, writes=29991)
+PERF: memory latency=121 cycles
+PERF: memory bank stalls=12 (stall rate=0%)
+PERF: instrs=4376231, cycles=652972, IPC=6.702019
 make: Leaving directory '/data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/tests/opencl/kmeans'

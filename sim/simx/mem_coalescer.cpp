@@ -48,13 +48,16 @@ void MemCoalescer::tick() {
     DT(4, this->name() << "-mem-rsp: " << out_rsp);
     auto& entry = pending_rd_reqs_.at(out_rsp.tag);
 
+    // Warp-wide: each output slot has its own input-thread mask (recorded
+    // at request-allocation time). Unionize masks of slots covered by
+    // out_rsp.mask, intersected with entry.mask (threads not yet served).
     BitVector<> rsp_mask(input_size_);
     for (uint32_t o = 0; o < output_size_; ++o) {
       if (!out_rsp.mask.test(o))
         continue;
-      for (uint32_t r = 0; r < output_ratio_; ++r) {
-        uint32_t i = o * output_ratio_ + r;
-        if (entry.mask.test(i))
+      const auto& sm = entry.slot_masks.at(o);
+      for (uint32_t i = 0; i < input_size_; ++i) {
+        if (sm.test(i) && entry.mask.test(i))
           rsp_mask.set(i);
       }
     }
@@ -95,43 +98,55 @@ void MemCoalescer::tick() {
 
   uint64_t addr_mask = ~uint64_t(line_size_-1);
 
+  // -----------------------------------------------------------------
+  // Warp-wide coalescing: group all unsent threads by cache-line addr,
+  // then assign each group to one output slot. Output slots beyond
+  // output_size_ are deferred to a later cycle (sent_mask_ accumulates).
+  // -----------------------------------------------------------------
   BitVector<> out_mask(output_size_);
   std::vector<uint64_t> out_addrs(output_size_);
-
+  std::vector<BitVector<>> slot_masks(output_size_, BitVector<>(input_size_));
   BitVector<> cur_mask(input_size_);
 
-  for (uint32_t o = 0; o < output_size_; ++o) {
-    for (uint32_t r = 0; r < output_ratio_; ++r) {
-      uint32_t i = o * output_ratio_ + r;
-      if (sent_mask_.test(i) || !in_req.mask.test(i))
-        continue;
+  // Pass 1: discover unique line addresses (preserve first-seen order via
+  // a parallel vector; small input_size makes the linear scan cheap).
+  std::vector<uint64_t> uniq_lines;
+  uniq_lines.reserve(output_size_);
+  std::vector<BitVector<>> line_threads;
+  line_threads.reserve(output_size_);
 
-      uint64_t seed_addr = in_req.addrs.at(i) & addr_mask;
-      cur_mask.set(i);
-
-      // coalesce matching requests
-      for (uint32_t s = r + 1; s < output_ratio_; ++s) {
-        uint32_t j = o * output_ratio_ + s;
-        if (sent_mask_.test(j) || !in_req.mask.test(j))
-          continue;
-        uint64_t match_addr = in_req.addrs.at(j) & addr_mask;
-        if (match_addr == seed_addr) {
-          cur_mask.set(j);
-        }
-      }
-
-      out_mask.set(o);
-      out_addrs.at(o) = seed_addr;
-      break;
+  for (uint32_t i = 0; i < input_size_; ++i) {
+    if (sent_mask_.test(i) || !in_req.mask.test(i))
+      continue;
+    uint64_t la = in_req.addrs.at(i) & addr_mask;
+    // find existing group
+    int found = -1;
+    for (uint32_t g = 0, ng = uniq_lines.size(); g < ng; ++g) {
+      if (uniq_lines[g] == la) { found = static_cast<int>(g); break; }
     }
+    if (found < 0) {
+      uniq_lines.push_back(la);
+      line_threads.emplace_back(input_size_);
+      found = static_cast<int>(line_threads.size()) - 1;
+    }
+    line_threads[found].set(i);
+  }
+
+  // Pass 2: assign up to output_size_ unique lines to output slots this cycle.
+  for (uint32_t o = 0; o < output_size_ && o < uniq_lines.size(); ++o) {
+    out_mask.set(o);
+    out_addrs[o] = uniq_lines[o];
+    slot_masks[o] = line_threads[o];
+    cur_mask |= line_threads[o];
   }
 
   assert(!out_mask.none());
 
   uint32_t tag = 0;
   if (!in_req.write) {
-    // allocate a response tag for read requests
-    tag = pending_rd_reqs_.allocate(pending_req_t{in_req.tag, cur_mask});
+    // allocate a response tag for read requests; keep per-slot masks so
+    // the response fan-out can find the right input threads.
+    tag = pending_rd_reqs_.allocate(pending_req_t{in_req.tag, cur_mask, slot_masks});
   }
 
   // build memory request
@@ -149,7 +164,7 @@ void MemCoalescer::tick() {
   ReqOut.push(out_req, delay_);
   DT(4, this->name() << "-mem-req: coalesced=" << cur_mask.count() << ", " << out_req);
 
-  // track partial responses
+  // track partial responses (one tick failed to drain the full input mask)
   perf_stats_.misses += (cur_mask.count() != in_req.mask.count());
 
   // update sent mask

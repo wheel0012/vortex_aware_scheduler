@@ -57,6 +57,10 @@ private:
   struct pending_req_t {
     uint32_t tag;
     BitVector<> mask;
+    // Per-output-slot input-thread mask. Populated when warp-wide coalescing
+    // assigns a group of (line-matched) input threads to one output slot.
+    // On response, slot s -> all bits in slot_masks[s] get notified.
+    std::vector<BitVector<>> slot_masks;
   };
 
   uint32_t input_size_;
