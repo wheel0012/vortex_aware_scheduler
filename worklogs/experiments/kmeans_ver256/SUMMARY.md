@@ -2,7 +2,34 @@
 
 **Workload**: kmeans `-f100 -p1000` (working set ~400KB, L1=16KB → ~25× thrash)
 **WG size**: 256 (= 8 warps per work-group, NUM_WARPS=32 의 1/4)
-**Branch**: `feat/warp-wide-coalescer`
+**Branch**: `feat/gcaws` (warp-wide coalescer 적용 후)
+
+## Sim configure
+
+| Param | Value | Note |
+|---|---|---|
+| NUM_CORES | 1 | |
+| NUM_WARPS | 32 | per core |
+| NUM_THREADS | 32 | per warp (SIMT lane) |
+| L1 dcache (`DCACHE_SIZE`) | 16 KB | 4-way, 2 banks |
+| `DCACHE_NUM_REQS` | 2 | LSU lanes per cycle into dcache |
+| `DCACHE_NUM_BANKS` | 2 | |
+| `DCACHE_NUM_WAYS` | 4 | |
+| L1 icache (`ICACHE_SIZE`) | 16 KB | |
+| L2 cache (`L2_CACHE_SIZE`) | 1024 KB | 8-way, enabled |
+| Coalescer | `output_size=DCACHE_NUM_REQS=2` | warp-wide (after fix); paper-era Fermi-like |
+| MSHR depth | upstream default | sim's in-flight queue (not real MSHR) |
+| Memory model | Ramulator + DRAM (~108c latency) | |
+| Build flags | `-DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0` | CACP off, scheduler-only experiment |
+| Scheduler | `VORTEX_SCHED ∈ {1=GTO, 2=RR, 3=gCAWS, 4=iPAWS}` | per-build via CONFIGS |
+| perf class | 1=CORE (pipeline) + 2=MEM (cache) | separate runs, results below |
+
+### Run command
+```bash
+cd build && CONFIGS="-DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DVORTEX_SCHED=<N>" \
+  ./ci/blackbox.sh --driver=simx --app=kmeans --cores=1 --warps=32 --threads=32 \
+  --l2cache --perf={1,2} --args="-f100 -p1000"
+```
 
 ## 1. 변경 내역
 
