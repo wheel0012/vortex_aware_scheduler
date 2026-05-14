@@ -1,0 +1,59 @@
+CONFIGS=-DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=3  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE 
+Running: CONFIGS="-DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=3  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE " make -C ./ci/../runtime/simx > /dev/null
+Running: OPTS="128 1 2 temp_128 power_128 output.out" make -C "./ci/../tests/opencl/hotspot" run-simx
+make: Entering directory '/data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/tests/opencl/hotspot'
+cc -O3 -I/data/URP_26_spring/bbosseong/tools/pocl/include -DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=3  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE  -Wall -o hotspot OpenCL_helper_library.c hotspot.c -Wl,-rpath,/data/URP_26_spring/bbosseong/tools/llvm-vortex/lib -L/data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/runtime -lvortex -L/data/URP_26_spring/bbosseong/tools/pocl/lib -lOpenCL
+In file included from /data/URP_26_spring/bbosseong/tools/pocl/include/CL/cl.h:20,
+                 from OpenCL_helper_library.h:4,
+                 from OpenCL_helper_library.c:1:
+/data/URP_26_spring/bbosseong/tools/pocl/include/CL/cl_version.h:22:9: note: ‘#pragma message: cl_version.h: CL_TARGET_OPENCL_VERSION is not defined. Defaulting to 300 (OpenCL 3.0)’
+   22 | #pragma message("cl_version.h: CL_TARGET_OPENCL_VERSION is not defined. Defaulting to 300 (OpenCL 3.0)")
+      |         ^~~~~~~
+In file included from /data/URP_26_spring/bbosseong/tools/pocl/include/CL/cl.h:20,
+                 from OpenCL_helper_library.h:4,
+                 from hotspot.h:4,
+                 from hotspot.c:1:
+/data/URP_26_spring/bbosseong/tools/pocl/include/CL/cl_version.h:22:9: note: ‘#pragma message: cl_version.h: CL_TARGET_OPENCL_VERSION is not defined. Defaulting to 300 (OpenCL 3.0)’
+   22 | #pragma message("cl_version.h: CL_TARGET_OPENCL_VERSION is not defined. Defaulting to 300 (OpenCL 3.0)")
+      |         ^~~~~~~
+hotspot.c: In function ‘main’:
+hotspot.c:189:9: warning: ‘clCreateCommandQueue’ is deprecated [-Wdeprecated-declarations]
+  189 |         command_queue = clCreateCommandQueue(context, device, 0, &error);
+      |         ^~~~~~~~~~~~~
+In file included from OpenCL_helper_library.h:4,
+                 from hotspot.h:4,
+                 from hotspot.c:1:
+/data/URP_26_spring/bbosseong/tools/pocl/include/CL/cl.h:1914:1: note: declared here
+ 1914 | clCreateCommandQueue(cl_context                     context,
+      | ^~~~~~~~~~~~~~~~~~~~
+LD_LIBRARY_PATH=/data/URP_26_spring/bbosseong/tools/pocl/lib:/data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/runtime:/data/URP_26_spring/bbosseong/tools/llvm-vortex/lib: POCL_VORTEX_XLEN=32 LLVM_PREFIX=/data/URP_26_spring/bbosseong/tools/llvm-vortex POCL_VORTEX_BINTOOL="OBJCOPY=/data/URP_26_spring/bbosseong/tools/llvm-vortex/bin/llvm-objcopy /data/URP_26_spring/bbosseong/vortex_aware_scheduler/kernel/scripts/vxbin.py" POCL_VORTEX_CFLAGS="-march=rv32imaf -mabi=ilp32f -O3 -mcmodel=medany --sysroot=/data/URP_26_spring/bbosseong/tools/riscv32-gnu-toolchain/riscv32-unknown-elf --gcc-toolchain=/data/URP_26_spring/bbosseong/tools/riscv32-gnu-toolchain -fno-rtti -fno-exceptions -nostartfiles -nostdlib -fdata-sections -ffunction-sections -I/data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/hw -I/data/URP_26_spring/bbosseong/vortex_aware_scheduler/kernel/include -DXLEN_32 -DNDEBUG -DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=3  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE  -Xclang -target-feature -Xclang +vortex -Xclang -target-feature -Xclang +zicond -mllvm -disable-loop-idiom-all" POCL_VORTEX_LDFLAGS="-Wl,-Bstatic,--gc-sections,-T/data/URP_26_spring/bbosseong/vortex_aware_scheduler/kernel/scripts/link32.ld,--defsym=STARTUP_ADDR=0x80000000 /data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/kernel/libvortex.a -L/data/URP_26_spring/bbosseong/tools/libc32/lib -lm -lc /data/URP_26_spring/bbosseong/tools/libcrt32/lib/baremetal/libclang_rt.builtins-riscv32.a" VORTEX_DRIVER=simx ./hotspot 128 1 2 temp_128 power_128 output.out
+WG size of kernel = 16 X 16
+Platform: The pocl project
+Device: Vortex OpenGPU
+
+Kernel time: 7.443 seconds
+Total time: 7.444 seconds
+PERF: core0: lmem reads=0
+PERF: core0: lmem writes=0
+PERF: core0: lmem bank stalls=0 (stall rate=0%)
+PERF: core0: icache reads=64914
+PERF: core0: icache read misses=441 (hit ratio=99%)
+PERF: core0: icache mshr stalls=138392 (stall rate=31%)
+PERF: core0: dcache reads=62635
+PERF: core0: dcache writes=52506
+PERF: core0: dcache read misses=34978 (hit ratio=44%)
+PERF: core0: dcache write misses=49488 (hit ratio=5%)
+PERF: core0: dcache bank stalls=51737 (stall rate=11%)
+PERF: core0: dcache mshr stalls=88244 (stall rate=19%)
+PERF: core0: coalescer misses=103936 (split rate=23%)
+PERF: l2cache reads=34959
+PERF: l2cache writes=52506
+PERF: l2cache read misses=12010 (hit ratio=65%)
+PERF: l2cache write misses=29601 (hit ratio=43%)
+PERF: l2cache bank stalls=19436 (stall rate=4%)
+PERF: l2cache mshr stalls=16390 (stall rate=3%)
+PERF: memory requests=64564 (reads=12012, writes=52552)
+PERF: memory latency=195 cycles
+PERF: memory bank stalls=0 (stall rate=0%)
+PERF: instrs=2051944, cycles=441284, IPC=4.649940
+make: Leaving directory '/data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/tests/opencl/hotspot'

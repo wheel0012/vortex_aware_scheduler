@@ -1,0 +1,84 @@
+CONFIGS=-DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=1 -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE
+Running: CONFIGS="-DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=1 -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE" make -C ./ci/../runtime/simx > /dev/null
+Running: OPTS="-n96" make -C "./ci/../tests/opencl/sgemm3" run-simx
+make: Entering directory '/home/so/vortex_gcaws_kbs/build/tests/opencl/sgemm3'
+g++ -std=c++17 -Wall -Wextra -Wfatal-errors -Wno-deprecated-declarations -Wno-unused-parameter -Wno-narrowing -pthread -I/home/so/tools/pocl/include -DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=1 -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE -O2 -DNDEBUG -MM /home/so/vortex_gcaws_kbs/tests/opencl/sgemm3/main.cc > .depend;
+g++ -std=c++17 -Wall -Wextra -Wfatal-errors -Wno-deprecated-declarations -Wno-unused-parameter -Wno-narrowing -pthread -I/home/so/tools/pocl/include -DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=1 -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE -O2 -DNDEBUG -c /home/so/vortex_gcaws_kbs/tests/opencl/sgemm3/main.cc -o main.cc.o
+In file included from /home/so/tools/pocl/include/CL/cl.h:20,
+                 from /home/so/tools/pocl/include/CL/opencl.h:24,
+                 from /home/so/vortex_gcaws_kbs/tests/opencl/sgemm3/main.cc:4:
+/home/so/tools/pocl/include/CL/cl_version.h:22:104: note: ‘#pragma message: cl_version.h: CL_TARGET_OPENCL_VERSION is not defined. Defaulting to 300 (OpenCL 3.0)’
+   22 | #pragma message("cl_version.h: CL_TARGET_OPENCL_VERSION is not defined. Defaulting to 300 (OpenCL 3.0)")
+      |                                                                                                        ^
+g++ -std=c++17 -Wall -Wextra -Wfatal-errors -Wno-deprecated-declarations -Wno-unused-parameter -Wno-narrowing -pthread -I/home/so/tools/pocl/include -DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=1 -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE -O2 -DNDEBUG main.cc.o -Wl,-rpath,/home/so/tools/llvm-vortex/lib -L/home/so/vortex_gcaws_kbs/build/runtime -lvortex -L/home/so/tools/pocl/lib -lOpenCL -o sgemm3
+LD_LIBRARY_PATH=/home/so/tools/pocl/lib:/home/so/vortex_gcaws_kbs/build/runtime:/home/so/tools/llvm-vortex/lib: POCL_VORTEX_XLEN=64 LLVM_PREFIX=/home/so/tools/llvm-vortex POCL_VORTEX_BINTOOL="OBJCOPY=/home/so/tools/llvm-vortex/bin/llvm-objcopy /home/so/vortex_gcaws_kbs/kernel/scripts/vxbin.py" POCL_VORTEX_CFLAGS="-march=rv64imafd -mabi=lp64d -O3 -mcmodel=medany --sysroot=/home/so/tools/riscv64-gnu-toolchain/riscv64-unknown-elf --gcc-toolchain=/home/so/tools/riscv64-gnu-toolchain -fno-rtti -fno-exceptions -nostartfiles -nostdlib -fdata-sections -ffunction-sections -I/home/so/vortex_gcaws_kbs/build/hw -I/home/so/vortex_gcaws_kbs/kernel/include -DXLEN_64 -DNDEBUG -DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=1 -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE -Xclang -target-feature -Xclang +vortex -Xclang -target-feature -Xclang +zicond -mllvm -disable-loop-idiom-all	" POCL_VORTEX_LDFLAGS="-Wl,-Bstatic,--gc-sections,-T/home/so/vortex_gcaws_kbs/kernel/scripts/link64.ld,--defsym=STARTUP_ADDR=0x80000000 /home/so/vortex_gcaws_kbs/build/kernel/libvortex.a -L/home/so/tools/libc64/lib -lm -lc /home/so/tools/libcrt64/lib/baremetal/libclang_rt.builtins-riscv64.a" VORTEX_DRIVER=simx ./sgemm3 -n96
+Matrix size=128x128, tile size=32x32
+Create context
+Using device: Vortex OpenGPU
+Allocate device buffers
+Create program from kernel source
+Upload source buffers
+Execute the kernel
+Elapsed time: 19453 ms
+Download destination buffer
+Verify result
+PASSED!
+PERF: core0: lmem reads=0
+PERF: core0: lmem writes=0
+PERF: core0: lmem bank stalls=0 (stall rate=0%)
+PERF: core0: icache reads=709613
+PERF: core0: icache read misses=526 (hit ratio=99%)
+PERF: core0: icache mshr stalls=172632 (stall rate=5%)
+PERF: core0: dcache reads=516028
+PERF: core0: dcache writes=211676
+PERF: core0: dcache read misses=284343 (hit ratio=44%)
+PERF: core0: dcache write misses=202611 (hit ratio=4%)
+PERF: core0: dcache bank stalls=279842 (stall rate=8%)
+PERF: core0: dcache mshr stalls=1015867 (stall rate=30%)
+PERF: core0: coalescer misses=125344 (split rate=3%)
+PERF: l2cache reads=283447
+PERF: l2cache writes=211676
+PERF: l2cache read misses=151997 (hit ratio=46%)
+PERF: l2cache write misses=166604 (hit ratio=21%)
+PERF: l2cache bank stalls=29373 (stall rate=0%)
+PERF: l2cache mshr stalls=4113 (stall rate=0%)
+PERF: memory requests=363695 (reads=151998, writes=211697)
+PERF: memory latency=157 cycles
+PERF: memory bank stalls=0 (stall rate=0%)
+PERF: instrs=22680485, cycles=3355714, IPC=6.758766
+make: Leaving directory '/home/so/vortex_gcaws_kbs/build/tests/opencl/sgemm3'
+Matrix size=512x512, tile size=32x32
+Create context
+Using device: Vortex OpenGPU
+Allocate device buffers
+Create program from kernel source
+Upload source buffers
+Execute the kernel
+Elapsed time: 483032 ms
+Download destination buffer
+Verify result
+PASSED!
+PERF: core0: lmem reads=0
+PERF: core0: lmem writes=0
+PERF: core0: lmem bank stalls=0 (stall rate=0%)
+PERF: core0: icache reads=41985005
+PERF: core0: icache read misses=523 (hit ratio=99%)
+PERF: core0: icache mshr stalls=172606 (stall rate=0%)
+PERF: core0: dcache reads=21932476
+PERF: core0: dcache writes=3262172
+PERF: core0: dcache read misses=8130903 (hit ratio=62%)
+PERF: core0: dcache write misses=2797235 (hit ratio=14%)
+PERF: core0: dcache bank stalls=4664934 (stall rate=5%)
+PERF: core0: dcache mshr stalls=13650467 (stall rate=16%)
+PERF: core0: coalescer misses=2790304 (split rate=3%)
+PERF: l2cache reads=8100077
+PERF: l2cache writes=3262172
+PERF: l2cache read misses=2261073 (hit ratio=72%)
+PERF: l2cache write misses=2136062 (hit ratio=34%)
+PERF: l2cache bank stalls=1168138 (stall rate=1%)
+PERF: l2cache mshr stalls=15298 (stall rate=0%)
+PERF: memory requests=5523267 (reads=2261074, writes=3262193)
+PERF: memory latency=156 cycles
+PERF: memory bank stalls=0 (stall rate=0%)
+PERF: instrs=1343493029, cycles=83570707, IPC=16.076124
+make: Leaving directory '/home/so/vortex_gcaws_kbs/build/tests/opencl/sgemm3'

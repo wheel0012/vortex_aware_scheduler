@@ -7,13 +7,14 @@
 *.orig
 *.swp
 *.swo
+*:Zone.Identifier*
 miscs/apptainer/vortex.sif
 *.txt
 sweep_results*
 ccws_*
 
 third_party/*
-workloads/experiments/**/*.log
+
 
 # OpenCL input data that should be tracked despite the broad *.txt rule.
 !tests/opencl/b+tree/command.txt
@@ -47,6 +48,7 @@ workloads/experiments/**/*.log
 /tests/opencl/**/filelist.log
 /tests/opencl/**/output.out
 /tests/opencl/**/result.txt
+/tests/opencl/**/PD.txt
 /tests/opencl/**/*.out
 /tests/opencl/**/*_out.pgm
 /tests/opencl/**/*.o

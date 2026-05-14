@@ -11,7 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-VORTEX_HOME ?= /home/ltj/2026urp/vortex_aware_scheduler
+VORTEX_HOME ?= /home/ltj/2026urp/vortex_gcaws
 
 XLEN ?= 64
 
@@ -19,7 +19,7 @@ TOOLDIR ?= /home/ltj/tools
 
 OSVERSION ?= ubuntu/focal
 
-INSTALLDIR ?= /home/ltj/2026urp/vortex_aware_scheduler
+INSTALLDIR ?= /home/ltj/2026urp/vortex_gcaws
 
 LLVM_VORTEX ?= $(TOOLDIR)/llvm-vortex
 

@@ -155,6 +155,7 @@ main() {
     export VORTEX_PROFILING=$PERF_CLASS
 
     make -C "$ROOT_DIR/hw" config > /dev/null
+    make -C "$ROOT_DIR/kernel" > /dev/null
     make -C "$ROOT_DIR/runtime/stub" > /dev/null
 
     if [ $TEMPBUILD -eq 1 ]; then

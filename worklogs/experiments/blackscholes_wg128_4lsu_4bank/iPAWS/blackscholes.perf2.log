@@ -1,0 +1,138 @@
+CONFIGS=-DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE 
+Running: CONFIGS="-DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE " make -C ./ci/../runtime/simx > /dev/null
+Running: make -C "./ci/../tests/opencl/blackscholes" run-simx
+make: Entering directory '/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/blackscholes'
+g++ -I/home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes -std=c++17 -Wall -Wextra -Wfatal-errors -Wno-deprecated-declarations -Wno-unused-parameter -Wno-narrowing -pthread -I/home/ltj/tools/pocl/include -DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE  -O2 -DNDEBUG -MM /home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/main.cc /home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/oclUtils.cpp /home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/shrUtils.cpp /home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/cmd_arg_reader.cpp /home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/oclBlackScholes_launcher.cpp /home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/oclBlackScholes_gold.cpp > .depend;
+g++ -I/home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes -std=c++17 -Wall -Wextra -Wfatal-errors -Wno-deprecated-declarations -Wno-unused-parameter -Wno-narrowing -pthread -I/home/ltj/tools/pocl/include -DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE  -O2 -DNDEBUG -c /home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/main.cc -o main.cc.o
+In file included from /home/ltj/tools/pocl/include/CL/cl.h:20,
+                 from /home/ltj/tools/pocl/include/CL/opencl.h:24,
+                 from /home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/oclUtils.h:26,
+                 from /home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/main.cc:13:
+/home/ltj/tools/pocl/include/CL/cl_version.h:22:104: note: ‘#pragma message: cl_version.h: CL_TARGET_OPENCL_VERSION is not defined. Defaulting to 300 (OpenCL 3.0)’
+   22 | #pragma message("cl_version.h: CL_TARGET_OPENCL_VERSION is not defined. Defaulting to 300 (OpenCL 3.0)")
+      |                                                                                                        ^
+g++ -I/home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes -std=c++17 -Wall -Wextra -Wfatal-errors -Wno-deprecated-declarations -Wno-unused-parameter -Wno-narrowing -pthread -I/home/ltj/tools/pocl/include -DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE  -O2 -DNDEBUG -c /home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/oclUtils.cpp -o oclUtils.cpp.o
+In file included from /home/ltj/tools/pocl/include/CL/cl.h:20,
+                 from /home/ltj/tools/pocl/include/CL/opencl.h:24,
+                 from /home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/oclUtils.h:26,
+                 from /home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/oclUtils.cpp:21:
+/home/ltj/tools/pocl/include/CL/cl_version.h:22:104: note: ‘#pragma message: cl_version.h: CL_TARGET_OPENCL_VERSION is not defined. Defaulting to 300 (OpenCL 3.0)’
+   22 | #pragma message("cl_version.h: CL_TARGET_OPENCL_VERSION is not defined. Defaulting to 300 (OpenCL 3.0)")
+      |                                                                                                        ^
+/home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/oclUtils.cpp: In function ‘void oclPrintDevInfo(int, cl_device_id)’:
+/home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/oclUtils.cpp:262:23: warning: the address of ‘device_string’ will never be NULL [-Waddress]
+  262 |     if (device_string != 0)
+      |         ~~~~~~~~~~~~~~^~~~
+/home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/oclUtils.cpp:110:10: note: ‘device_string’ declared here
+  110 |     char device_string[1024];
+      |          ^~~~~~~~~~~~~
+/home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/oclUtils.cpp: In function ‘int oclGetDevCap(cl_device_id)’:
+/home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/oclUtils.cpp:350:20: warning: the address of ‘cDevString’ will never be NULL [-Waddress]
+  350 |     if (cDevString != 0)
+      |         ~~~~~~~~~~~^~~~
+/home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/oclUtils.cpp:344:10: note: ‘cDevString’ declared here
+  344 |     char cDevString[1024];
+      |          ^~~~~~~~~~
+g++ -I/home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes -std=c++17 -Wall -Wextra -Wfatal-errors -Wno-deprecated-declarations -Wno-unused-parameter -Wno-narrowing -pthread -I/home/ltj/tools/pocl/include -DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE  -O2 -DNDEBUG -c /home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/shrUtils.cpp -o shrUtils.cpp.o
+/home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/shrUtils.cpp: In function ‘int shrLogV(int, int, const char*, __va_list_tag*)’:
+/home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/shrUtils.cpp:404:46: warning: format not a string literal and no format arguments [-Wformat-security]
+  404 |                         szNumWritten = printf(sFormatSpec.c_str());                             // console
+      |                                        ~~~~~~^~~~~~~~~~~~~~~~~~~~~
+/home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/shrUtils.cpp:408:48: warning: format not a string literal and no format arguments [-Wformat-security]
+  408 |                         szNumWritten = fprintf (pFileStream0, sFormatSpec.c_str());             // sample log file
+      |                                        ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/shrUtils.cpp:411:52: warning: format not a string literal and no format arguments [-Wformat-security]
+  411 |                             szNumWritten  = fprintf(pFileStream1, sFormatSpec.c_str());         // master log file
+      |                                             ~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/shrUtils.cpp:206:12: warning: variable ‘szNumWritten’ set but not used [-Wunused-but-set-variable]
+  206 |     size_t szNumWritten = 0;
+      |            ^~~~~~~~~~~~
+g++ -I/home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes -std=c++17 -Wall -Wextra -Wfatal-errors -Wno-deprecated-declarations -Wno-unused-parameter -Wno-narrowing -pthread -I/home/ltj/tools/pocl/include -DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE  -O2 -DNDEBUG -c /home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/cmd_arg_reader.cpp -o cmd_arg_reader.cpp.o
+g++ -I/home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes -std=c++17 -Wall -Wextra -Wfatal-errors -Wno-deprecated-declarations -Wno-unused-parameter -Wno-narrowing -pthread -I/home/ltj/tools/pocl/include -DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE  -O2 -DNDEBUG -c /home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/oclBlackScholes_launcher.cpp -o oclBlackScholes_launcher.cpp.o
+In file included from /home/ltj/tools/pocl/include/CL/cl.h:20,
+                 from /home/ltj/tools/pocl/include/CL/opencl.h:24,
+                 from /home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/oclUtils.h:26,
+                 from /home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/oclBlackScholes_launcher.cpp:12:
+/home/ltj/tools/pocl/include/CL/cl_version.h:22:104: note: ‘#pragma message: cl_version.h: CL_TARGET_OPENCL_VERSION is not defined. Defaulting to 300 (OpenCL 3.0)’
+   22 | #pragma message("cl_version.h: CL_TARGET_OPENCL_VERSION is not defined. Defaulting to 300 (OpenCL 3.0)")
+      |                                                                                                        ^
+/home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/oclBlackScholes_launcher.cpp: In function ‘void initBlackScholes(cl_context, cl_command_queue, const char**)’:
+/home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/oclBlackScholes_launcher.cpp:42:12: warning: unused variable ‘kernelLength’ [-Wunused-variable]
+   42 |     size_t kernelLength;
+      |            ^~~~~~~~~~~~
+/home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/oclBlackScholes_launcher.cpp:53:12: warning: unused variable ‘binary_status’ [-Wunused-variable]
+   53 |     cl_int binary_status = 0;
+      |            ^~~~~~~~~~~~~
+/home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/oclBlackScholes_launcher.cpp:54:18: warning: unused variable ‘device_id’ [-Wunused-variable]
+   54 |     cl_device_id device_id = oclGetFirstDev(cxGPUContext);
+      |                  ^~~~~~~~~
+g++ -I/home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes -std=c++17 -Wall -Wextra -Wfatal-errors -Wno-deprecated-declarations -Wno-unused-parameter -Wno-narrowing -pthread -I/home/ltj/tools/pocl/include -DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE  -O2 -DNDEBUG -c /home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/oclBlackScholes_gold.cpp -o oclBlackScholes_gold.cpp.o
+In file included from /home/ltj/tools/pocl/include/CL/cl.h:20,
+                 from /home/ltj/tools/pocl/include/CL/opencl.h:24,
+                 from /home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/oclUtils.h:26,
+                 from /home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/oclBlackScholes_common.h:14,
+                 from /home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes/oclBlackScholes_gold.cpp:15:
+/home/ltj/tools/pocl/include/CL/cl_version.h:22:104: note: ‘#pragma message: cl_version.h: CL_TARGET_OPENCL_VERSION is not defined. Defaulting to 300 (OpenCL 3.0)’
+   22 | #pragma message("cl_version.h: CL_TARGET_OPENCL_VERSION is not defined. Defaulting to 300 (OpenCL 3.0)")
+      |                                                                                                        ^
+g++ -I/home/ltj/2026urp/vortex_gcaws/tests/opencl/blackscholes -std=c++17 -Wall -Wextra -Wfatal-errors -Wno-deprecated-declarations -Wno-unused-parameter -Wno-narrowing -pthread -I/home/ltj/tools/pocl/include -DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE  -O2 -DNDEBUG main.cc.o oclUtils.cpp.o shrUtils.cpp.o cmd_arg_reader.cpp.o oclBlackScholes_launcher.cpp.o oclBlackScholes_gold.cpp.o -Wl,-rpath,/home/ltj/tools/llvm-vortex/lib -L/home/ltj/2026urp/vortex_gcaws/build/runtime -lvortex -L/home/ltj/tools/pocl/lib -lOpenCL -o blackscholes
+LD_LIBRARY_PATH=/home/ltj/tools/pocl/lib:/home/ltj/2026urp/vortex_gcaws/build/runtime:/home/ltj/tools/llvm-vortex/lib: POCL_VORTEX_XLEN=64 LLVM_PREFIX=/home/ltj/tools/llvm-vortex POCL_VORTEX_BINTOOL="OBJCOPY=/home/ltj/tools/llvm-vortex/bin/llvm-objcopy /home/ltj/2026urp/vortex_gcaws/kernel/scripts/vxbin.py" POCL_VORTEX_CFLAGS="-march=rv64imafd -mabi=lp64d -O3 -mcmodel=medany --sysroot=/home/ltj/tools/riscv64-gnu-toolchain/riscv64-unknown-elf --gcc-toolchain=/home/ltj/tools/riscv64-gnu-toolchain -fno-rtti -fno-exceptions -nostartfiles -nostdlib -fdata-sections -ffunction-sections -I/home/ltj/2026urp/vortex_gcaws/build/hw -I/home/ltj/2026urp/vortex_gcaws/kernel/include -DXLEN_64 -DNDEBUG -DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE  -Xclang -target-feature -Xclang +vortex -Xclang -target-feature -Xclang +zicond -mllvm -disable-loop-idiom-all	" POCL_VORTEX_LDFLAGS="-Wl,-Bstatic,--gc-sections,-T/home/ltj/2026urp/vortex_gcaws/kernel/scripts/link64.ld,--defsym=STARTUP_ADDR=0x80000000 /home/ltj/2026urp/vortex_gcaws/build/kernel/libvortex.a -L/home/ltj/tools/libc64/lib -lm -lc /home/ltj/tools/libcrt64/lib/baremetal/libclang_rt.builtins-riscv64.a" VORTEX_DRIVER=simx ./blackscholes 
+[blackscholes] starting...
+
+WARNING: NVIDIA OpenCL platform not found - defaulting to first platform!
+
+clGetPlatformID...
+Get the Device info and select Device...
+  # of Devices Available = 1
+  Using Device 0: Vortex OpenGPU
+  # of Compute Units = 1
+./blackscholes Starting...
+
+Allocating and initializing host memory...
+Initializing OpenCL...
+WARNING: NVIDIA OpenCL platform not found - defaulting to first platform!
+
+Creating OpenCL memory objects...
+Starting up BlackScholes...
+...creating BlackScholes program
+...building BlackScholes program
+...creating BlackScholes kernels
+Running OpenCL BlackScholes...
+
+
+Reading back OpenCL BlackScholes results...
+Comparing against Host/C++ computation...
+Relative L1 (call, put) = (1.654e-07, 5.073e-08)
+
+Shutting down...
+PERF: core0: lmem reads=0
+PERF: core0: lmem writes=0
+PERF: core0: lmem bank stalls=0 (stall rate=0%)
+PERF: core0: icache reads=187466
+PERF: core0: icache read misses=442 (hit ratio=99%)
+PERF: core0: icache mshr stalls=54366 (stall rate=1%)
+PERF: core0: dcache reads=674057
+PERF: core0: dcache writes=487464
+PERF: core0: dcache read misses=629949 (hit ratio=6%)
+PERF: core0: dcache write misses=471015 (hit ratio=3%)
+PERF: core0: dcache bank stalls=808533 (stall rate=20%)
+PERF: core0: dcache mshr stalls=90390 (stall rate=2%)
+PERF: core0: coalescer misses=287036 (split rate=7%)
+PERF: l2cache reads=629846
+PERF: l2cache writes=487464
+PERF: l2cache read misses=9955 (hit ratio=98%)
+PERF: l2cache write misses=29047 (hit ratio=94%)
+PERF: l2cache bank stalls=19646 (stall rate=0%)
+PERF: l2cache mshr stalls=6946 (stall rate=0%)
+PERF: memory requests=497443 (reads=9957, writes=487486)
+PERF: memory latency=1530 cycles
+PERF: memory bank stalls=0 (stall rate=0%)
+PERF: instrs=5793278, cycles=4027243, IPC=1.438522
+IPAWS_DBG_STALL: 0=11197 1=0 2=0 3=0 4=0 5=0 6=0 7=0 8=0 9=0 10=0 11=0 12=0 13=0 14=0 15=0 16=0 17=0 18=0 19=0 20=0 21=0 22=0 23=0 24=0 25=0 26=0 27=0 28=0 29=0 30=0 31=0
+IPAWS_STATS: decides=2 valid=0 skipped=2 woi_fallback=0 concave=0 convex=2 mm_avg=0.000 mm_min=0.000 mm_max=0.000 woi_avg=0.000 woi_min=0 woi_max=0 gcaws_exec_cycles=0 rr_exec_cycles=4016317 wspawn_events=4 recover_entries=0 recover_cycles=0 test=mean/max<0.5 barrier_only_btime=1 use_recover=0
+[blackscholes] test results...
+PASSED
+
+> exiting in 3 seconds: 3...2...1...done!
+
+make: Leaving directory '/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/blackscholes'

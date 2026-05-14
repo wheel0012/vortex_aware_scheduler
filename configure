@@ -167,7 +167,7 @@ if [ "$OSVERSION" == "unsupported" ]; then
 fi
 
 # project subdirectories to build
-SUBDIRS=("." "!ci" "!perf" "hw*" "kernel*" "runtime*" "sim*" "!tests/opencl/b+tree*" "!tests/opencl/hotspot*" "!tests/opencl/heartwall*" "!tests/opencl/srad*" "tests*")
+SUBDIRS=("." "!ci" "!perf" "hw*" "kernel*" "runtime*" "sim*" "!tests/opencl/b+tree*" "!tests/opencl/hotspot*" "!tests/opencl/heartwall*" "!tests/opencl/srad*" "!tests/opencl/streamcluster*" "tests*")
 
 # Get the directory of the script
 SOURCE_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
