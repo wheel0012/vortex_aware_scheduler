@@ -274,9 +274,11 @@ private: //메서드 선언만 -> 실제 로직은 emulator.cpp에 있음.
   WarpMask    stalled_warps_;
   WarpSchedulePolicy schedule_policy_;
   uint64_t    schedule_cycle_;
+  uint32_t    kernel_id_;
   int         greedy_warp_;
   int         rr_last_warp_;
   int         critical_warp_; //gcaws가 직전에 고른 warp ( -1이면 없음 )
+  int         last_scheduled_warp_; // 직전 cycle에 실제 실행된 warp (nStall scheduler delay 추적용)
   std::vector<uint64_t> ready_timestamps_;
   std::vector<warp_cpl_t> warp_cpl_; //warp별 criticality 카운터
   ipaws_state_t ipaws_state_; //ipaws 상태 통째로

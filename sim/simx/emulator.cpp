@@ -71,6 +71,11 @@ using namespace vortex;
 #ifndef VORTEX_IPAWS_RECOVER_MAX_CYCLES
 #define VORTEX_IPAWS_RECOVER_MAX_CYCLES 8192
 #endif
+// CPL 스냅샷 로깅 주기 (cycle). 0이면 비활성화.
+// 예: -DVORTEX_CPL_LOG_INTERVAL=4096
+#ifndef VORTEX_CPL_LOG_INTERVAL
+#define VORTEX_CPL_LOG_INTERVAL 0
+#endif
 
 namespace {
 
@@ -141,9 +146,11 @@ Emulator::Emulator(const Arch &arch, const DCRS &dcrs, Core* core) //생성자
     , warps_(arch.num_warps(), arch.num_threads())
     , schedule_policy_(kDefaultSchedulePolicy)
     , schedule_cycle_(0)
+    , kernel_id_(0)
     , greedy_warp_(-1) //gto 의 직전 warp 없음( 처음 reset 이라서)
     , rr_last_warp_(-1) //마찬가지
     , critical_warp_(-1) //마찬가지
+    , last_scheduled_warp_(-1)
     , ready_timestamps_(arch.num_warps(), 0)
     , warp_cpl_(arch.num_warps())
     , suppress_critical_push_(false)
@@ -233,9 +240,11 @@ void Emulator::reset() { // 시뮬 재시작시 호출 + 객체 만들때 호출
   stalled_warps_.reset(); // _ : emulator class안의 멤버변수를 표현하는 것임.
   active_warps_.reset();
   schedule_cycle_ = 0;
+  ++kernel_id_;
   greedy_warp_ = -1;
   rr_last_warp_ = -1;
   critical_warp_ = -1; //gcaws 직전 선택 초기화
+  last_scheduled_warp_ = -1;
   std::fill(ready_timestamps_.begin(), ready_timestamps_.end(), 0);
 
   //gcaws 카운터 리셋
@@ -347,11 +356,12 @@ int Emulator::select_rr_warp() {
 }
 
 void Emulator::update_cpl_counters() { //매 cycle 호출되어서 모든 active warp의 criticality 점수를 갱신
-  // 1. Accumulate stall cycles for active-but-stalled warps.
+  // 1. Accumulate stall cycles for all active warps that did NOT execute last cycle.
+  // Paper (CAWA Algorithm 3): nStall includes both hardware stalls (scoreboard/barrier)
+  // AND scheduler delay (ready but not selected). Any active warp that was not the
+  // last scheduled warp counts as stalled this cycle.
   for (size_t wid = 0, nw = arch_.num_warps(); wid < nw; ++wid) {
-    //active_warps_ , stalled_warps_ 는 bitmask임, test(wid) : wid번째 비트가 켜져있냐?
-    if (active_warps_.test(wid) && stalled_warps_.test(wid)) {
-      //active하다: dispatched 되었다. stall: scoreborad/ barrier 대기중인 warp
+    if (active_warps_.test(wid) && static_cast<int>(wid) != last_scheduled_warp_) {
       warp_cpl_.at(wid).stall_cycles++;
     }
   }
@@ -376,11 +386,35 @@ void Emulator::update_cpl_counters() { //매 cycle 호출되어서 모든 active
         : 1;
     cpl.criticality = nInst * cpi_avg + cpl.stall_cycles;
   }
+
+#if VORTEX_CPL_LOG_INTERVAL > 0
+  if (schedule_cycle_ > 0 && (schedule_cycle_ % VORTEX_CPL_LOG_INTERVAL) == 0) {
+    std::cerr << "CPL_LOG: kernel=" << kernel_id_
+              << " cycle=" << schedule_cycle_
+              << " core=" << (core_ ? core_->id() : 0);
+    for (size_t wid = 0, nw = arch_.num_warps(); wid < nw; ++wid) {
+      const auto& cpl = warp_cpl_.at(wid);
+      int active = active_warps_.test(wid) ? 1 : 0;
+      std::cerr << " w" << wid << "=" << cpl.instr_count
+                << "," << cpl.stall_cycles
+                << "," << cpl.criticality
+                << "," << active;
+    }
+    std::cerr << "\n";
+  }
+#endif
 } //결과적으로 이번 cycle에 새로운 criticality 값 update됨.
 
 int Emulator::select_gcaws_warp() {
  
   int prev_critical = critical_warp_;
+  if (critical_warp_ >= 0) {
+    uint32_t wid = static_cast<uint32_t>(critical_warp_);
+    if (active_warps_.test(wid) && !stalled_warps_.test(wid)) {
+      return critical_warp_;
+    }
+  }
+
   int selected_warp = -1;
   uint64_t best_crit = 0;
   uint64_t best_ts = std::numeric_limits<uint64_t>::max();
@@ -751,6 +785,13 @@ instr_trace_t* Emulator::step() {
     break;
   default:
     assert(false);
+  }
+
+  // Record the selected warp so update_cpl_counters() can charge scheduler delay
+  // to all other active warps next cycle (paper CAWA Algorithm 3).
+  if (schedule_policy_ == WarpSchedulePolicy::gCAWS
+      || schedule_policy_ == WarpSchedulePolicy::iPAWS) {
+    last_scheduled_warp_ = scheduled_warp;
   }
 
   if (scheduled_warp == -1)

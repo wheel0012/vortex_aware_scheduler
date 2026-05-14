@@ -1,0 +1,612 @@
+#!/bin/bash
+
+# Copyright © 2019-2023
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# exit when any command fails
+set -e
+
+# clear blackbox cache
+rm -f blackbox.*.cache
+
+# HW: add a test "VM Test" to make sure VM feature is enabled
+
+XLEN=${XLEN:=32}
+
+XSIZE=$((XLEN / 8))
+
+echo "Vortex Regression Test: XLEN=$XLEN"
+
+unittest()
+{
+    make -C tests/unittest run
+    make -C hw/unittest > /dev/null
+}
+
+isa()
+{
+    echo "begin isa tests..."
+
+    make -C sim/simx
+    make -C sim/rtlsim
+
+    make -C tests/riscv/isa run-simx
+    make -C tests/riscv/isa run-rtlsim
+
+    CONFIGS="-DFPU_FPNEW" make -C sim/rtlsim > /dev/null && make -C tests/riscv/isa run-rtlsim-32f
+
+    CONFIGS="-DFPU_DPI" make -C sim/rtlsim > /dev/null && make -C tests/riscv/isa run-rtlsim-32f
+
+    CONFIGS="-DFPU_DSP" make -C sim/rtlsim > /dev/null && make -C tests/riscv/isa run-rtlsim-32f
+
+    if [ "$XLEN" == "64" ]
+    then
+        CONFIGS="-DFPU_FPNEW" make -C sim/rtlsim > /dev/null && make -C tests/riscv/isa run-rtlsim-64d
+
+        CONFIGS="-DFPU_DPI" make -C sim/rtlsim > /dev/null && make -C tests/riscv/isa run-rtlsim-64d
+
+        CONFIGS="-DFPU_DPI -DEXT_D_DISABLE" make -C sim/rtlsim > /dev/null && make -C tests/riscv/isa run-rtlsim-64f
+
+        CONFIGS="-DFPU_FPNEW -DEXT_D_DISABLE" make -C sim/rtlsim > /dev/null && make -C tests/riscv/isa run-rtlsim-64f
+
+        CONFIGS="-DFPU_DSP -DEXT_D_DISABLE" make -C sim/rtlsim > /dev/null && make -C tests/riscv/isa run-rtlsim-64fx
+    fi
+
+    echo "isa tests done!"
+}
+
+kernel()
+{
+    echo "begin kernel tests..."
+
+    make -C sim/simx
+    make -C sim/rtlsim
+
+    make -C tests/kernel run-simx
+    make -C tests/kernel run-rtlsim
+
+    echo "kernel tests done!"
+}
+
+regression()
+{
+    echo "begin regression tests..."
+
+    make -C runtime/simx
+    make -C runtime/rtlsim
+
+    make -C tests/regression run-simx
+    make -C tests/regression run-rtlsim
+
+    # test kernel CTA
+    ./ci/blackbox.sh --driver=simx --app=cta --args="-x33 -y55 -z1 -a1 -b1 -c1"
+    ./ci/blackbox.sh --driver=simx --threads=32 --app=cta --args="-x1 -y1 -z1 -a3 -b5 -c7"
+    ./ci/blackbox.sh --driver=simx --threads=32 --app=cta --args="-x1 -y5 -z3 -a3 -b5 -c7"
+
+    # test global barrier
+    CONFIGS="-DGBAR_ENABLE" ./ci/blackbox.sh --driver=simx --app=dogfood --args="-n1 -tgbar" --cores=2
+    CONFIGS="-DGBAR_ENABLE" ./ci/blackbox.sh --driver=opae --app=dogfood --args="-n1 -tgbar" --cores=2
+    CONFIGS="-DGBAR_ENABLE" ./ci/blackbox.sh --driver=xrt --app=dogfood --args="-n1 -tgbar" --cores=2
+
+    # test local barrier
+    ./ci/blackbox.sh --driver=simx --app=dogfood --args="-n1 -tbar"
+    ./ci/blackbox.sh --driver=opae --app=dogfood --args="-n1 -tbar"
+    ./ci/blackbox.sh --driver=xrt --app=dogfood --args="-n1 -tbar"
+
+    # test temp driver mode for
+    ./ci/blackbox.sh --driver=simx --app=vecadd --nohup
+
+    echo "regression tests done!"
+}
+
+opencl()
+{
+    echo "begin opencl tests..."
+
+    make -C runtime/simx
+    make -C runtime/rtlsim
+
+    make -C tests/opencl run-simx
+    make -C tests/opencl run-rtlsim
+
+    ./ci/blackbox.sh --driver=simx --app=lbm --warps=8
+    ./ci/blackbox.sh --driver=rtlsim --app=lbm --warps=8
+
+    echo "opencl tests done!"
+}
+
+vm(){
+    echo "begin vm tests..."
+
+    make -C runtime/simx clean && CONFIGS="-DVM_ENABLE" make -C runtime/simx
+    make -C tests/opencl run-simx
+    make -C tests/regression run-simx
+
+    make -C runtime/simx clean && CONFIGS="-DVM_ENABLE -DVM_ADDR_MODE=BARE" make -C runtime/simx
+    make -C tests/opencl run-simx
+    make -C tests/regression run-simx
+
+    echo "vm tests done!"
+}
+
+cache()
+{
+    echo "begin cache tests..."
+
+    # disable local memory
+    CONFIGS="-DLMEM_DISABLE" ./ci/blackbox.sh --driver=rtlsim --app=demo --perf=1
+    CONFIGS="-DLMEM_DISABLE" ./ci/blackbox.sh --driver=simx --app=demo --perf=1
+
+    # disable L1 cache
+    CONFIGS="-DL1_DISABLE -DLMEM_DISABLE" ./ci/blackbox.sh --driver=rtlsim --app=sgemm
+    CONFIGS="-DL1_DISABLE" ./ci/blackbox.sh --driver=rtlsim --app=sgemm
+    CONFIGS="-DDCACHE_DISABLE" ./ci/blackbox.sh --driver=rtlsim --app=sgemm
+    CONFIGS="-DICACHE_DISABLE" ./ci/blackbox.sh --driver=rtlsim --app=sgemm
+
+    # reduce l1 line size
+    CONFIGS="-DL1_LINE_SIZE=$XSIZE" ./ci/blackbox.sh --driver=rtlsim --app=io_addr
+    CONFIGS="-DL1_LINE_SIZE=$XSIZE -DDISABLE_L1" ./ci/blackbox.sh --driver=rtlsim --app=io_addr
+    CONFIGS="-DL1_LINE_SIZE=$XSIZE" ./ci/blackbox.sh --driver=simx --app=io_addr
+    CONFIGS="-DL1_LINE_SIZE=$XSIZE -DLMEM_DISABLE" ./ci/blackbox.sh --driver=rtlsim --app=sgemm
+    CONFIGS="-DL1_LINE_SIZE=$XSIZE -DLMEM_DISABLE" ./ci/blackbox.sh --driver=simx --app=sgemm
+
+    # test cache ways
+    CONFIGS="-DICACHE_NUM_WAYS=1 -DDCACHE_NUM_WAYS=1" ./ci/blackbox.sh --driver=rtlsim --app=sgemm
+    CONFIGS="-DICACHE_NUM_WAYS=4 -DDCACHE_NUM_WAYS=8" ./ci/blackbox.sh --driver=rtlsim --app=sgemm
+    CONFIGS="-DICACHE_NUM_WAYS=4 -DDCACHE_NUM_WAYS=8" ./ci/blackbox.sh --driver=simx --app=sgemm
+
+    # test cache banking
+    CONFIGS="-DMEM_BLOCK_SIZE=8 -DLMEM_NUM_BANKS=4 -DDCACHE_NUM_BANKS=1" ./ci/blackbox.sh --driver=rtlsim --app=sgemm
+    CONFIGS="-DMEM_BLOCK_SIZE=8 -DLMEM_NUM_BANKS=4 -DDCACHE_NUM_BANKS=1" ./ci/blackbox.sh --driver=simx --app=sgemm
+    CONFIGS="-DMEM_BLOCK_SIZE=8 -DLMEM_NUM_BANKS=2 -DDCACHE_NUM_BANKS=4" ./ci/blackbox.sh --driver=rtlsim --app=sgemm --threads=8
+    CONFIGS="-DMEM_BLOCK_SIZE=8 -DLMEM_NUM_BANKS=2 -DDCACHE_NUM_BANKS=4" ./ci/blackbox.sh --driver=simx --app=sgemm --threads=8
+
+    # replacement policy
+    CONFIGS="-DDCACHE_REPL_POLICY=0" ./ci/blackbox.sh --driver=rtlsim --app=sgemm
+    CONFIGS="-DDCACHE_REPL_POLICY=1" ./ci/blackbox.sh --driver=rtlsim --app=sgemm
+    CONFIGS="-DDCACHE_REPL_POLICY=2" ./ci/blackbox.sh --driver=rtlsim --app=sgemm
+
+    # test writeback
+    CONFIGS="-DDCACHE_WRITEBACK=1 -DDCACHE_DIRTYBYTES=0 -DDCACHE_NUM_WAYS=4" ./ci/blackbox.sh --driver=rtlsim --app=mstress
+    CONFIGS="-DDCACHE_WRITEBACK=1 -DDCACHE_DIRTYBYTES=1 -DDCACHE_NUM_WAYS=4" ./ci/blackbox.sh --driver=rtlsim --app=mstress
+    CONFIGS="-DDCACHE_WRITEBACK=1 -DDCACHE_NUM_WAYS=4" ./ci/blackbox.sh --driver=simx --app=mstress
+    CONFIGS="-DSOCKET_SIZE=1 -DL2_WRITEBACK=1 -DL3_WRITEBACK=1" ./ci/blackbox.sh --driver=rtlsim --cores=2 --clusters=2 --l2cache --l3cache --app=mstress
+    CONFIGS="-DSOCKET_SIZE=1 -DL2_WRITEBACK=1 -DL3_WRITEBACK=1" ./ci/blackbox.sh --driver=simx --cores=2 --clusters=2 --l2cache --l3cache --app=mstress
+
+    # cache clustering
+    CONFIGS="-DSOCKET_SIZE=4 -DNUM_DCACHES=4 -DNUM_ICACHES=2" ./ci/blackbox.sh --driver=rtlsim --app=sgemm --cores=4 --warps=1 --threads=2
+
+    # L2/L3
+    CONFIGS="-DSOCKET_SIZE=1" ./ci/blackbox.sh --driver=rtlsim --cores=4 --l2cache --app=diverge --args="-n1"
+    CONFIGS="-DSOCKET_SIZE=1" ./ci/blackbox.sh --driver=simx --cores=4 --l2cache --app=diverge --args="-n1"
+    CONFIGS="-DSOCKET_SIZE=1" ./ci/blackbox.sh --driver=rtlsim --cores=2 --clusters=2 --l2cache --l3cache --app=diverge --args="-n1"
+    CONFIGS="-DSOCKET_SIZE=1" ./ci/blackbox.sh --driver=simx --cores=2 --clusters=2 --l2cache --l3cache --app=diverge --args="-n1"
+
+    echo "begin cache tests..."
+}
+
+config1()
+{
+    echo "begin configuration-1 tests..."
+
+    # warp/threads
+    ./ci/blackbox.sh --driver=rtlsim --warps=1 --threads=1 --app=diverge
+    ./ci/blackbox.sh --driver=rtlsim --warps=2 --threads=1 --app=diverge
+    ./ci/blackbox.sh --driver=rtlsim --warps=1 --threads=2 --app=diverge
+    ./ci/blackbox.sh --driver=rtlsim --warps=2 --threads=2 --app=diverge
+    ./ci/blackbox.sh --driver=rtlsim --warps=2 --threads=8 --app=diverge
+    ./ci/blackbox.sh --driver=rtlsim --warps=8 --threads=2 --app=diverge
+    ./ci/blackbox.sh --driver=simx --warps=1 --threads=1 --app=diverge
+    ./ci/blackbox.sh --driver=simx --warps=2 --threads=16 --app=diverge
+
+    # cores clustering
+    ./ci/blackbox.sh --driver=rtlsim --cores=4 --app=diverge --args="-n1"
+    ./ci/blackbox.sh --driver=simx --cores=4 --app=diverge --args="-n1"
+    ./ci/blackbox.sh --driver=rtlsim --cores=2 --clusters=2 --app=diverge --args="-n1"
+    ./ci/blackbox.sh --driver=simx --cores=2 --clusters=2 --app=diverge --args="-n1"
+    CONFIGS="-DSOCKET_SIZE=1" ./ci/blackbox.sh --driver=rtlsim --cores=2 --clusters=2 --app=diverge --args="-n1"
+    CONFIGS="-DSOCKET_SIZE=1" ./ci/blackbox.sh --driver=simx --cores=2 --clusters=2 --app=diverge --args="-n1"
+
+    # issue width
+    CONFIGS="-DISSUE_WIDTH=2" ./ci/blackbox.sh --driver=rtlsim --app=diverge
+    CONFIGS="-DISSUE_WIDTH=4" ./ci/blackbox.sh --driver=rtlsim --app=diverge
+    CONFIGS="-DISSUE_WIDTH=2" ./ci/blackbox.sh --driver=simx --app=diverge
+    CONFIGS="-DISSUE_WIDTH=4" ./ci/blackbox.sh --driver=simx --app=diverge
+
+    # simd width
+    CONFIGS="-DSIMD_WIDTH=1" ./ci/blackbox.sh --driver=rtlsim --app=dogfood --args="-ttrig"
+    CONFIGS="-DSIMD_WIDTH=2" ./ci/blackbox.sh --driver=rtlsim --app=dogfood --args="-ttrig"
+    ./ci/blackbox.sh --driver=rtlsim --warps=2 --threads=32 --app=sgemm
+    CONFIGS="-DSIMD_WIDTH=32" ./ci/blackbox.sh --driver=rtlsim --warps=2 --threads=32 --app=sgemm
+    CONFIGS="-DSIMD_WIDTH=1" ./ci/blackbox.sh --driver=simx --app=dogfood --args="-ttrig"
+    CONFIGS="-DSIMD_WIDTH=2" ./ci/blackbox.sh --driver=simx --app=dogfood --args="-ttrig"
+
+    # ALU scaling
+    CONFIGS="-DISSUE_WIDTH=1 -DNUM_ALU_BLOCK=1 -DNUM_ALU_LANES=1" ./ci/blackbox.sh --driver=rtlsim --app=diverge
+    CONFIGS="-DISSUE_WIDTH=4 -DNUM_ALU_BLOCK=2 -DNUM_ALU_LANES=2" ./ci/blackbox.sh --driver=rtlsim --app=diverge
+    CONFIGS="-DISSUE_WIDTH=4 -DNUM_ALU_BLOCK=4 -DNUM_ALU_LANES=4" ./ci/blackbox.sh --driver=rtlsim --app=diverge
+    CONFIGS="-DISSUE_WIDTH=1 -DNUM_ALU_BLOCK=1 -DNUM_ALU_LANES=1" ./ci/blackbox.sh --driver=simx --app=diverge
+    CONFIGS="-DISSUE_WIDTH=4 -DNUM_ALU_BLOCK=2 -DNUM_ALU_LANES=2" ./ci/blackbox.sh --driver=simx --app=diverge
+    CONFIGS="-DISSUE_WIDTH=4 -DNUM_ALU_BLOCK=4 -DNUM_ALU_LANES=4" ./ci/blackbox.sh --driver=simx --app=diverge
+
+    # FPU scaling
+    CONFIGS="-DISSUE_WIDTH=2 -DNUM_FPU_BLOCK=1 -DNUM_FPU_LANES=2" ./ci/blackbox.sh --driver=rtlsim --app=regression/vecadd
+    CONFIGS="-DISSUE_WIDTH=4 -DNUM_FPU_BLOCK=4 -DNUM_FPU_LANES=4" ./ci/blackbox.sh --driver=rtlsim --app=regression/vecadd
+    CONFIGS="-DISSUE_WIDTH=2 -DNUM_FPU_BLOCK=1 -DNUM_FPU_LANES=2" ./ci/blackbox.sh --driver=simx --app=regression/vecadd
+    CONFIGS="-DISSUE_WIDTH=4 -DNUM_FPU_BLOCK=4 -DNUM_FPU_LANES=4" ./ci/blackbox.sh --driver=simx --app=regression/vecadd
+
+    # FPU's PE scaling
+    CONFIGS="-DFMA_PE_RATIO=2" ./ci/blackbox.sh --driver=rtlsim --app=dogfood --args="-tfmadd"
+    CONFIGS="-DFCVT_PE_RATIO=2" ./ci/blackbox.sh --driver=rtlsim --app=dogfood --args="-tftoi"
+    CONFIGS="-DFDIV_PE_RATIO=2" ./ci/blackbox.sh --driver=rtlsim --app=dogfood --args="-tfdiv"
+    CONFIGS="-DFSQRT_PE_RATIO=2" ./ci/blackbox.sh --driver=rtlsim --app=dogfood --args="-tfsqrt"
+    CONFIGS="-DFNCP_PE_RATIO=2" ./ci/blackbox.sh --driver=rtlsim --app=dogfood --args="-tfclamp"
+
+    # LSU scaling
+    CONFIGS="-DISSUE_WIDTH=2 -DNUM_LSU_BLOCK=1 -DNUM_LSU_LANES=2" ./ci/blackbox.sh --driver=rtlsim --app=regression/vecadd
+    CONFIGS="-DISSUE_WIDTH=4 -DNUM_LSU_BLOCK=4 -DNUM_LSU_LANES=4" ./ci/blackbox.sh --driver=rtlsim --app=regression/vecadd
+    CONFIGS="-DISSUE_WIDTH=2 -DNUM_LSU_BLOCK=1 -DNUM_LSU_LANES=2" ./ci/blackbox.sh --driver=simx --app=regression/vecadd
+    CONFIGS="-DISSUE_WIDTH=4 -DNUM_LSU_BLOCK=4 -DNUM_LSU_LANES=4" ./ci/blackbox.sh --driver=simx --app=regression/vecadd
+
+    echo "configuration-1 tests done!"
+}
+
+config2()
+{
+    echo "begin configuration-2 tests..."
+
+    # test opaesim
+    ./ci/blackbox.sh --driver=opae --app=printf
+    ./ci/blackbox.sh --driver=opae --app=diverge
+    ./ci/blackbox.sh --driver=xrt --app=diverge
+
+    # disable DPI
+    if [ "$XLEN" == "64" ]; then
+        # need to disable trig on 64-bit due to a bug inside fpnew's sqrt core.
+        CONFIGS="-DDPI_DISABLE -DFPU_FPNEW" ./ci/blackbox.sh --driver=rtlsim --app=dogfood --args="-xtrig -xbar -xgbar"
+        CONFIGS="-DDPI_DISABLE -DFPU_FPNEW" ./ci/blackbox.sh --driver=opae --app=dogfood --args="-xtrig -xbar -xgbar"
+        CONFIGS="-DDPI_DISABLE -DFPU_FPNEW" ./ci/blackbox.sh --driver=xrt --app=dogfood --args="-xtrig -xbar -xgbar"
+    else
+        CONFIGS="-DDPI_DISABLE -DFPU_FPNEW" ./ci/blackbox.sh --driver=rtlsim --app=dogfood
+        CONFIGS="-DDPI_DISABLE -DFPU_FPNEW" ./ci/blackbox.sh --driver=opae --app=dogfood
+        CONFIGS="-DDPI_DISABLE -DFPU_FPNEW" ./ci/blackbox.sh --driver=xrt --app=dogfood
+    fi
+
+    # custom program startup address
+    make -C tests/regression/dogfood clean-kernel
+    STARTUP_ADDR=0x80000000 make -C tests/regression/dogfood
+    ./ci/blackbox.sh --driver=simx --app=dogfood
+    ./ci/blackbox.sh --driver=rtlsim --app=dogfood
+    make -C tests/regression/dogfood clean-kernel
+
+    # disabling M & F extensions
+    CONFIGS="-DEXT_M_DISABLE -DEXT_F_DISABLE" make -C sim/rtlsim > /dev/null && make -C tests/riscv/isa run-rtlsim-32i
+
+    # disabling ZICOND extension
+    CONFIGS="-DEXT_ZICOND_DISABLE" ./ci/blackbox.sh --driver=rtlsim --app=demo
+
+    # test 128-bit memory block
+    CONFIGS="-DMEM_BLOCK_SIZE=16" ./ci/blackbox.sh --driver=opae --app=mstress
+    CONFIGS="-DMEM_BLOCK_SIZE=16" ./ci/blackbox.sh --driver=xrt --app=mstress
+
+    # test XLEN-bit memory block
+    CONFIGS="-DMEM_BLOCK_SIZE=$XSIZE" ./ci/blackbox.sh --driver=opae --app=mstress
+    CONFIGS="-DMEM_BLOCK_SIZE=$XSIZE" ./ci/blackbox.sh --driver=simx --app=mstress
+
+    # test memory coalescing
+    CONFIGS="-DMEM_BLOCK_SIZE=16" ./ci/blackbox.sh --driver=rtlsim --app=mstress --threads=8
+    CONFIGS="-DMEM_BLOCK_SIZE=16" ./ci/blackbox.sh --driver=simx --app=mstress --threads=8
+
+    # test single-bank memory
+    if [ "$XLEN" == "64" ]; then
+        CONFIGS="-DPLATFORM_MEMORY_NUM_BANKS=1" ./ci/blackbox.sh --driver=opae --app=mstress
+        CONFIGS="-DPLATFORM_MEMORY_NUM_BANKS=1" ./ci/blackbox.sh --driver=xrt --app=mstress
+    else
+        CONFIGS="-DPLATFORM_MEMORY_NUM_BANKS=1" ./ci/blackbox.sh --driver=opae --app=mstress
+        CONFIGS="-DPLATFORM_MEMORY_NUM_BANKS=1" ./ci/blackbox.sh --driver=xrt --app=mstress
+    fi
+
+    # test larger memory address
+    if [ "$XLEN" == "64" ]; then
+        CONFIGS="-DPLATFORM_MEMORY_ADDR_WIDTH=49" ./ci/blackbox.sh --driver=opae --app=mstress
+        CONFIGS="-DPLATFORM_MEMORY_ADDR_WIDTH=49" ./ci/blackbox.sh --driver=xrt --app=mstress
+    else
+        CONFIGS="-DPLATFORM_MEMORY_ADDR_WIDTH=33" ./ci/blackbox.sh --driver=opae --app=mstress
+        CONFIGS="-DPLATFORM_MEMORY_ADDR_WIDTH=33" ./ci/blackbox.sh --driver=xrt --app=mstress
+    fi
+
+    # test memory banks interleaving
+    CONFIGS="-DPLATFORM_MEMORY_INTERLEAVE=1" ./ci/blackbox.sh --driver=opae --app=mstress
+    CONFIGS="-DPLATFORM_MEMORY_INTERLEAVE=0" ./ci/blackbox.sh --driver=opae --app=mstress
+
+    # test memory ports
+    CONFIGS="-DMEM_BLOCK_SIZE=8 -DPLATFORM_MEMORY_NUM_BANKS=2" ./ci/blackbox.sh --driver=simx --app=mstress
+    CONFIGS="-DMEM_BLOCK_SIZE=8 -DPLATFORM_MEMORY_NUM_BANKS=2" ./ci/blackbox.sh --driver=simx --app=mstress --threads=8
+    CONFIGS="-DMEM_BLOCK_SIZE=8 -DPLATFORM_MEMORY_NUM_BANKS=2" ./ci/blackbox.sh --driver=rtlsim --app=mstress
+    CONFIGS="-DMEM_BLOCK_SIZE=8 -DPLATFORM_MEMORY_NUM_BANKS=2" ./ci/blackbox.sh --driver=rtlsim --app=mstress --threads=8
+    CONFIGS="-DMEM_BLOCK_SIZE=8" ./ci/blackbox.sh --driver=opae --app=mstress --threads=8
+    CONFIGS="-DMEM_BLOCK_SIZE=8" ./ci/blackbox.sh --driver=xrt --app=mstress --threads=8
+
+    echo "configuration-2 tests done!"
+}
+
+test_csv_trace32()
+{
+    # test CSV trace generation
+    DEBUG=3 make -C sim/simx > /dev/null
+    DEBUG=3 CONFIGS="-DGPR_RESET" make -C sim/rtlsim > /dev/null
+    make -C tests/riscv/isa run-simx-32imf > run_simx.log
+    make -C tests/riscv/isa run-rtlsim-32imf > run_rtlsim.log
+    ./ci/trace_csv.py -tsimx run_simx.log -otrace_simx.csv
+    ./ci/trace_csv.py -trtlsim run_rtlsim.log -otrace_rtlsim.csv
+    diff trace_rtlsim.csv trace_simx.csv
+}
+
+test_csv_trace64()
+{
+    # test CSV trace generation
+    DEBUG=3 make -C sim/simx > /dev/null
+    DEBUG=3 CONFIGS="-DGPR_RESET" make -C sim/rtlsim > /dev/null
+    make -C tests/riscv/isa run-simx-64imf > run_simx.log
+    make -C tests/riscv/isa run-rtlsim-64imf > run_rtlsim.log
+    ./ci/trace_csv.py -tsimx run_simx.log -otrace_simx.csv
+    ./ci/trace_csv.py -trtlsim run_rtlsim.log -otrace_rtlsim.csv
+    diff trace_rtlsim.csv trace_simx.csv
+}
+
+debug()
+{
+    echo "begin debugging tests..."
+
+    test_csv_trace32
+
+    if [ "$XLEN" == "64" ]
+    then
+        test_csv_trace64
+    fi
+
+    CONFIGS="-O0" ./ci/blackbox.sh --driver=opae --app=demo --args="-n1"
+    CONFIGS="-O0" ./ci/blackbox.sh --driver=xrt --app=demo --args="-n1"
+    CONFIGS="-DSOCKET_SIZE=1" ./ci/blackbox.sh --driver=opae --cores=2 --clusters=2 --l2cache --debug=1 --perf=1 --app=demo --args="-n1"
+    CONFIGS="-DSOCKET_SIZE=1" ./ci/blackbox.sh --driver=xrt --cores=2 --clusters=2 --l2cache --debug=1 --perf=1 --app=demo --args="-n1"
+    CONFIGS="-DSOCKET_SIZE=1" ./ci/blackbox.sh --driver=simx --cores=2 --clusters=2 --l2cache --debug=1 --perf=1 --app=demo --args="-n1"
+
+    echo "debugging tests done!"
+}
+
+scope()
+{
+    echo "begin scope tests..."
+
+    SCOPE_DEPTH=128 ./ci/blackbox.sh --driver=opae --app=demo --args="-n1" --scope
+    SCOPE_DEPTH=128 ./ci/blackbox.sh --driver=xrt --app=demo --args="-n1" --scope
+
+    echo "debugging scope done!"
+}
+
+stress()
+{
+    echo "begin stress tests..."
+
+    # test verilator reset values
+    CONFIGS="-DVERILATOR_RESET_VALUE=1 -DSOCKET_SIZE=1 -DDCACHE_WRITEBACK=1 -DL2_WRITEBACK=1 -DL3_WRITEBACK=1" ./ci/blackbox.sh --driver=opae --cores=2 --clusters=2 --l2cache --l3cache --app=dogfood
+    CONFIGS="-DVERILATOR_RESET_VALUE=1" ./ci/blackbox.sh --driver=xrt --app=sgemm --args="-n128" --l2cache
+
+    echo "stress tests done!"
+}
+
+synthesis()
+{
+    echo "begin synthesis tests..."
+
+    PREFIX=build_base make -C hw/syn/yosys clean
+    PREFIX=build_base CONFIGS="-DDPI_DISABLE -DEXT_F_DISABLE -DNUM_WARPS=2 -DNUM_THREADS=2" make -C hw/syn/yosys synthesis
+
+    echo "synthesis tests done!"
+}
+
+vector()
+{
+    echo "begin vector tests..."
+
+    CONFIGS="-DVLEN=256 -DEXT_V_ENABLE" make -C sim/simx
+    VLEN=256 ./tests/riscv/riscv-vector-tests/run-test.sh
+
+    echo "vector tests done!"
+}
+
+tensor()
+{
+    echo "begin tensor tests..."
+
+    make -C tests/regression/sgemm_tcu clean && CONFIGS="-DNUM_THREADS=2 -DITYPE=int8 -DOTYPE=int32" make -C tests/regression/sgemm_tcu
+    CONFIGS="-DNUM_THREADS=2 -DEXT_TCU_ENABLE" ./ci/blackbox.sh --driver=simx --app=sgemm_tcu --debug=3 --log=run_simx.log
+
+    make -C tests/regression/sgemm_tcu clean && CONFIGS="-DNUM_THREADS=4 -DITYPE=uint4 -DOTYPE=int32" make -C tests/regression/sgemm_tcu
+    CONFIGS="-DNUM_THREADS=4 -DEXT_TCU_ENABLE" ./ci/blackbox.sh --driver=simx --app=sgemm_tcu
+
+    make -C tests/regression/sgemm_tcu clean && CONFIGS="-DNUM_THREADS=8 -DITYPE=fp16 -DOTYPE=fp32" make -C tests/regression/sgemm_tcu
+    CONFIGS="-DNUM_THREADS=8 -DEXT_TCU_ENABLE -DISSUE_WIDTH=2" ./ci/blackbox.sh --driver=simx --app=sgemm_tcu
+
+    make -C tests/regression/sgemm_tcu clean && CONFIGS="-DNUM_THREADS=16 -DITYPE=bf16 -DOTYPE=bf16" make -C tests/regression/sgemm_tcu
+    CONFIGS="-DNUM_THREADS=16 -DEXT_TCU_ENABLE" ./ci/blackbox.sh --driver=simx --app=sgemm_tcu
+
+    make -C tests/regression/sgemm_tcu clean && CONFIGS="-DNUM_THREADS=2 -DITYPE=int8 -DOTYPE=int32" make -C tests/regression/sgemm_tcu
+    CONFIGS="-DNUM_THREADS=2 -DEXT_TCU_ENABLE" ./ci/blackbox.sh --driver=rtlsim --app=sgemm_tcu --debug=3 --log=run_rtlsim.log
+
+    make -C tests/regression/sgemm_tcu clean && CONFIGS="-DNUM_THREADS=4 -DITYPE=uint4 -DOTYPE=int32" make -C tests/regression/sgemm_tcu
+    CONFIGS="-DNUM_THREADS=4 -DEXT_TCU_ENABLE" ./ci/blackbox.sh --driver=rtlsim --app=sgemm_tcu
+
+    make -C tests/regression/sgemm_tcu clean && CONFIGS="-DNUM_THREADS=8 -DITYPE=fp16 -DOTYPE=fp32" make -C tests/regression/sgemm_tcu
+    CONFIGS="-DNUM_THREADS=8 -DEXT_TCU_ENABLE -DTCU_DPI -DISSUE_WIDTH=2" ./ci/blackbox.sh --driver=rtlsim --app=sgemm_tcu
+    CONFIGS="-DNUM_THREADS=8 -DEXT_TCU_ENABLE -DTCU_BHF" ./ci/blackbox.sh --driver=rtlsim --app=sgemm_tcu
+    CONFIGS="-DNUM_THREADS=8 -DEXT_TCU_ENABLE -DTCU_DSP" ./ci/blackbox.sh --driver=rtlsim --app=sgemm_tcu
+
+    make -C tests/regression/sgemm_tcu clean && CONFIGS="-DNUM_THREADS=16 -DITYPE=bf16 -DOTYPE=fp32" make -C tests/regression/sgemm_tcu
+    CONFIGS="-DNUM_THREADS=16 -DEXT_TCU_ENABLE -DTCU_DPI" ./ci/blackbox.sh --driver=rtlsim --app=sgemm_tcu
+    CONFIGS="-DNUM_THREADS=16 -DEXT_TCU_ENABLE -DTCU_BHF" ./ci/blackbox.sh --driver=rtlsim --app=sgemm_tcu
+    CONFIGS="-DNUM_THREADS=16 -DEXT_TCU_ENABLE -DTCU_DSP" ./ci/blackbox.sh --driver=rtlsim --app=sgemm_tcu
+
+    echo "tensor tests done!"
+}
+
+cupbop() {
+
+    echo "begin cupbop tests..."
+
+    if [ "$XLEN" == "32" ]; then
+        echo "cupbop tests skipped for 32-bit"
+        return
+    fi
+
+
+    echo "downloading cupbop binaries..."
+    CUPBOP_URL="https://www.dropbox.com/scl/fi/qxiofb0ejfxoog9m7tmae/cupbop.zip?rlkey=kcboy03c08xcn6yizd4nv8h88&st=7yuqftef&dl=1"
+
+    wget -O cupbop.zip "${CUPBOP_URL}" || curl -L -o cupbop.zip "${CUPBOP_URL}"
+    unzip -o cupbop.zip -d tests/
+    rm cupbop.zip
+
+    echo "building simx runtime..."
+    make -C runtime/simx
+
+    PERF_CLASS=2
+    VORTEX_RUNTIME_DIR="runtime"
+    CUPBOP_RUNTIME_DIR="tests/cupbop/runtime"
+
+    tests=("bfs" "nn")
+    tests_args=("./graph20.txt" "./filelist.txt -r 10 -lat 30 -lng 90")
+
+    for i in "${!tests[@]}"; do
+        test="${tests[$i]}"
+        args="${tests_args[$i]}"
+        echo "running test: $test"
+        (
+            cd "tests/cupbop/$test" || exit
+            chmod +x "./host_${XLEN}.out"
+            LD_LIBRARY_PATH="../../../${CUPBOP_RUNTIME_DIR}:../../../${VORTEX_RUNTIME_DIR}/simx:../../../${VORTEX_RUNTIME_DIR}:${LD_LIBRARY_PATH}" \
+            ./host_${XLEN}.out ${args}
+        )
+    done
+
+    echo "cupbop tests done!"
+}
+
+show_usage()
+{
+    echo "Vortex Regression Test"
+    echo "Usage: $0 [--clean] [--unittest] [--isa] [--kernel] [--regression] [--opencl] [--cache] [--config1] [--config2] [--debug] [--scope] [--stress] [--synthesis] [--vector] [--tensor] [--cupbop] [--all] [--h|--help]"
+}
+
+declare -a tests=()
+clean=0
+
+while [ "$1" != "" ]; do
+    case $1 in
+        --clean )
+                clean=1
+                ;;
+        --unittest )
+                tests+=("unittest")
+                ;;
+        --isa )
+                tests+=("isa")
+                ;;
+        --kernel )
+                tests+=("kernel")
+                ;;
+        --regression )
+                tests+=("regression")
+                ;;
+        --opencl )
+                tests+=("opencl")
+                ;;
+        --cache )
+                tests+=("cache")
+                ;;
+        --vm )
+                tests+=("vm")
+                ;;
+        --config1 )
+                tests+=("config1")
+                ;;
+        --config2 )
+                tests+=("config2")
+                ;;
+        --debug )
+                tests+=("debug")
+                ;;
+        --scope )
+                tests+=("scope")
+                ;;
+        --stress )
+                tests+=("stress")
+                ;;
+        --synthesis )
+                tests+=("synthesis")
+                ;;
+        --vector )
+                tests+=("vector")
+                ;;
+        --tensor )
+                tests+=("tensor")
+                ;;
+        --cupbop )
+                tests+=("cupbop")
+                ;;
+        --all )
+                tests=()
+                tests+=("unittest")
+                tests+=("isa")
+                tests+=("kernel")
+                tests+=("regression")
+                tests+=("opencl")
+                tests+=("cache")
+                tests+=("vm")
+                tests+=("config1")
+                tests+=("config2")
+                tests+=("debug")
+                tests+=("scope")
+                tests+=("stress")
+                tests+=("synthesis")
+                tests+=("vector")
+                tests+=("tensor")
+                tests+=("cupbop")
+                ;;
+        -h | --help )
+                show_usage
+                exit
+                ;;
+        * )
+                show_usage
+                exit 1
+    esac
+    shift
+done
+
+if [ $clean -eq 1 ];
+then
+    make clean
+    make -s
+fi
+
+start=$SECONDS
+
+for test in "${tests[@]}"; do
+    $test
+done
+
+echo "Regression completed!"
+
+duration=$(( SECONDS - start ))
+awk -v t=$duration 'BEGIN{t=int(t*1000); printf "Elapsed Time: %d:%02d:%02d\n", t/3600000, t/60000%60, t/1000%60}'

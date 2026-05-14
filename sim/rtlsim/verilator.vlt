@@ -1,0 +1,9 @@
+`verilator_config
+
+lint_off -rule BLKANDNBLK -file "/home/so/vortex_gcaws_lkn/third_party/cvfpu/*"
+lint_off -rule UNOPTFLAT -file "/home/so/vortex_gcaws_lkn/third_party/cvfpu/*"
+lint_off -file "/home/so/vortex_gcaws_lkn/third_party/cvfpu/*"
+
+lint_off -rule BLKANDNBLK -file "/home/so/vortex_gcaws_lkn/third_party/hardfloat/*"
+lint_off -rule UNOPTFLAT -file "/home/so/vortex_gcaws_lkn/third_party/hardfloat/*"
+lint_off -file "/home/so/vortex_gcaws_lkn/third_party/hardfloat/*"
