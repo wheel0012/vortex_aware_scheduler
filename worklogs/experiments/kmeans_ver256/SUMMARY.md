@@ -1,8 +1,30 @@
 # kmeans @ WG=256 — coalescer 개선 전후 비교
 
-**Workload**: kmeans `-f100 -p1000` (working set ~400KB, L1=16KB → ~25× thrash)
+**Workload**: kmeans `-f100 -p1000`
 **WG size**: 256 (= 8 warps per work-group, NUM_WARPS=32 의 1/4)
 **Branch**: `feat/gcaws` (warp-wide coalescer 적용 후)
+
+## Workload input set
+
+| Arg | Meaning | Value |
+|---|---|---|
+| `-p1000` | npoints (data points 수) | 1000 |
+| `-f100` | nfeatures (point 당 feature 수) | 100 |
+| (default) | min/max_nclusters | 5 / 5 (single k=5) |
+| (default) | threshold | 0.001 (convergence) |
+| (default) | nloops | 1 (한 k 당 반복) |
+
+### 도출되는 크기
+- **Feature buffer**: 1000 × 100 × 4B = **400 KB** (메인 working set)
+- **Centroids**: 5 × 100 × 4B = 2 KB (centroid 풀, hot)
+- **Membership**: 1000 × 4B = 4 KB
+- **Total working set ≈ 400 KB** ← L1=16 KB의 **25× thrash**, L2=1 MB의 40% (sweet-spot 영역)
+
+### WG 매핑
+- `clEnqueueNDRangeKernel`: global=1000, local=256 → ceil(1000/256) = 4 WG
+- 각 WG = 256 threads = 8 warps (NUM_THREADS=32)
+- 동시 in-flight 가능한 WG 수 = NUM_WARPS/8 = 4 → 4 WG 동시 모두 launch 가능 (steady-state)
+- 즉 매 cycle 32 warps 모두 active 가능 (단 ready 여부는 별개)
 
 ## Sim configure
 
