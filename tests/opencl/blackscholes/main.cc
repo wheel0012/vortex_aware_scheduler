@@ -61,7 +61,7 @@ int main(int argc, char **argv)
         *h_X,
         *h_T;
 
-    const unsigned int   optionCount = 256*256; // ~1.8MB working set (was 16*16)
+    const unsigned int   optionCount = 64*64;  // ~112KB working set (sweet-spot for L1 thrash)
     const float                    R = 0.02f;
     const float                    V = 0.30f;
 

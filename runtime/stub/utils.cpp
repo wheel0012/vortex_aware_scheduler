@@ -460,10 +460,13 @@ extern int vx_dump_perf(vx_device_h hdevice, FILE* stream) {
         CHECK_ERR(vx_mpm_query(hdevice, VX_CSR_MPM_LMEM_BANK_ST, core_id, &lmem_bank_stalls), {
           return err;
         });
-        int lmem_bank_utilization = calcAvgPercent(lmem_reads + lmem_writes, lmem_reads + lmem_writes + lmem_bank_stalls);
+        // stall_rate = bank_stalls / cycles. high = bank conflicts hurting perf.
+        // (legacy "utilization=req/(req+stalls)" mixed count+cycle units; the
+        //  high value counter-intuitively meant *few* stalls per op.)
+        int lmem_bank_stall_rate = calcAvgPercent(lmem_bank_stalls, cycles_per_core);
         fprintf(stream, "PERF: core%d: lmem reads=%ld\n", core_id, lmem_reads);
         fprintf(stream, "PERF: core%d: lmem writes=%ld\n", core_id, lmem_writes);
-        fprintf(stream, "PERF: core%d: lmem bank stalls=%ld (utilization=%d%%)\n", core_id, lmem_bank_stalls, lmem_bank_utilization);
+        fprintf(stream, "PERF: core%d: lmem bank stalls=%ld (stall rate=%d%%)\n", core_id, lmem_bank_stalls, lmem_bank_stall_rate);
       }
 
       if (icache_enable) {
@@ -481,10 +484,12 @@ extern int vx_dump_perf(vx_device_h hdevice, FILE* stream) {
           return err;
         });
         int icache_read_hit_ratio = calcRatio(icache_read_misses, icache_reads);
-        int mshr_utilization = calcAvgPercent(icache_read_misses, icache_read_misses + icache_mshr_stalls);
+        // stall_rate = fraction of cycles stalled because the in-flight queue
+        // (sim's "MSHR") was full. Includes pending hits, not just real misses.
+        int icache_mshr_stall_rate = calcAvgPercent(icache_mshr_stalls, cycles_per_core);
         fprintf(stream, "PERF: core%d: icache reads=%ld\n", core_id, icache_reads);
         fprintf(stream, "PERF: core%d: icache read misses=%ld (hit ratio=%d%%)\n", core_id, icache_read_misses, icache_read_hit_ratio);
-        fprintf(stream, "PERF: core%d: icache mshr stalls=%ld (utilization=%d%%)\n", core_id, icache_mshr_stalls, mshr_utilization);
+        fprintf(stream, "PERF: core%d: icache mshr stalls=%ld (stall rate=%d%%)\n", core_id, icache_mshr_stalls, icache_mshr_stall_rate);
       }
 
       uint64_t dcache_requests_per_core = 0;
@@ -518,23 +523,31 @@ extern int vx_dump_perf(vx_device_h hdevice, FILE* stream) {
         });
         int dcache_read_hit_ratio = calcRatio(dcache_read_misses, dcache_reads);
         int dcache_write_hit_ratio = calcRatio(dcache_write_misses, dcache_writes);
-        int dcache_bank_utilization = calcAvgPercent(dcache_reads + dcache_writes, dcache_reads + dcache_writes + dcache_bank_stalls);
-        int mshr_utilization = calcAvgPercent(dcache_read_misses + dcache_write_misses, dcache_read_misses + dcache_write_misses + dcache_mshr_stalls);
+        // stall_rate = stall_cycles / total_cycles. high = bank/mshr is bottleneck.
+        int dcache_bank_stall_rate = calcAvgPercent(dcache_bank_stalls, cycles_per_core);
+        int dcache_mshr_stall_rate = calcAvgPercent(dcache_mshr_stalls, cycles_per_core);
         fprintf(stream, "PERF: core%d: dcache reads=%ld\n", core_id, dcache_reads);
         fprintf(stream, "PERF: core%d: dcache writes=%ld\n", core_id, dcache_writes);
         fprintf(stream, "PERF: core%d: dcache read misses=%ld (hit ratio=%d%%)\n", core_id, dcache_read_misses, dcache_read_hit_ratio);
         fprintf(stream, "PERF: core%d: dcache write misses=%ld (hit ratio=%d%%)\n", core_id, dcache_write_misses, dcache_write_hit_ratio);
-        fprintf(stream, "PERF: core%d: dcache bank stalls=%ld (utilization=%d%%)\n", core_id, dcache_bank_stalls, dcache_bank_utilization);
-        fprintf(stream, "PERF: core%d: dcache mshr stalls=%ld (utilization=%d%%)\n", core_id, dcache_mshr_stalls, mshr_utilization);
+        fprintf(stream, "PERF: core%d: dcache bank stalls=%ld (stall rate=%d%%)\n", core_id, dcache_bank_stalls, dcache_bank_stall_rate);
+        fprintf(stream, "PERF: core%d: dcache mshr stalls=%ld (stall rate=%d%%)\n", core_id, dcache_mshr_stalls, dcache_mshr_stall_rate);
       }
 
       // PERF: coalescer
+      //   coalescer_misses = number of output cycles where the drain did not
+      //   cover the full input mask (i.e. extra cycles beyond the first).
+      //   It is NOT comparable to dcache request count, so the legacy
+      //   "(req-miss)/req" formula underflows when misses>requests. Clamp to
+      //   avoid the INT_MIN cast, and rename to "coalesce ratio".
       uint64_t coalescer_misses;
       CHECK_ERR(vx_mpm_query(hdevice, VX_CSR_MPM_COALESCER_MISS, core_id, &coalescer_misses), {
         return err;
       });
-      int coalescer_utilization = calcAvgPercent(dcache_requests_per_core - coalescer_misses, dcache_requests_per_core);
-      fprintf(stream, "PERF: core%d: coalescer misses=%ld (hit ratio=%d%%)\n", core_id, coalescer_misses, coalescer_utilization);
+      uint64_t coalescer_hits = (coalescer_misses < dcache_requests_per_core)
+                              ? (dcache_requests_per_core - coalescer_misses) : 0;
+      int coalescer_ratio = calcAvgPercent(coalescer_hits, dcache_requests_per_core);
+      fprintf(stream, "PERF: core%d: coalescer misses=%ld (coalesce ratio=%d%%)\n", core_id, coalescer_misses, coalescer_ratio);
 
       if (l2cache_enable) {
         // PERF: L2cache
@@ -671,36 +684,37 @@ extern int vx_dump_perf(vx_device_h hdevice, FILE* stream) {
       l2cache_mshr_stalls /= num_cores;
       int read_hit_ratio = calcRatio(l2cache_read_misses, l2cache_reads);
       int write_hit_ratio = calcRatio(l2cache_write_misses, l2cache_writes);
-      int bank_utilization = calcAvgPercent(l2cache_reads + l2cache_writes, l2cache_reads + l2cache_writes + l2cache_bank_stalls);
-      int mshr_utilization = calcAvgPercent(l2cache_read_misses + l2cache_write_misses, l2cache_read_misses + l2cache_write_misses + l2cache_mshr_stalls);
+      // stall_rate normalised by max_cycles (kernel wall-clock for the slowest core).
+      int bank_stall_rate = calcAvgPercent(l2cache_bank_stalls, max_cycles);
+      int mshr_stall_rate = calcAvgPercent(l2cache_mshr_stalls, max_cycles);
       fprintf(stream, "PERF: l2cache reads=%ld\n", l2cache_reads);
       fprintf(stream, "PERF: l2cache writes=%ld\n", l2cache_writes);
       fprintf(stream, "PERF: l2cache read misses=%ld (hit ratio=%d%%)\n", l2cache_read_misses, read_hit_ratio);
       fprintf(stream, "PERF: l2cache write misses=%ld (hit ratio=%d%%)\n", l2cache_write_misses, write_hit_ratio);
-      fprintf(stream, "PERF: l2cache bank stalls=%ld (utilization=%d%%)\n", l2cache_bank_stalls, bank_utilization);
-      fprintf(stream, "PERF: l2cache mshr stalls=%ld (utilization=%d%%)\n", l2cache_mshr_stalls, mshr_utilization);
+      fprintf(stream, "PERF: l2cache bank stalls=%ld (stall rate=%d%%)\n", l2cache_bank_stalls, bank_stall_rate);
+      fprintf(stream, "PERF: l2cache mshr stalls=%ld (stall rate=%d%%)\n", l2cache_mshr_stalls, mshr_stall_rate);
     }
 
     if (l3cache_enable) {
       int read_hit_ratio = calcRatio(l3cache_read_misses, l3cache_reads);
       int write_hit_ratio = calcRatio(l3cache_write_misses, l3cache_writes);
-      int bank_utilization = calcAvgPercent(l3cache_reads + l3cache_writes, l3cache_reads + l3cache_writes + l3cache_bank_stalls);
-      int mshr_utilization = calcAvgPercent(l3cache_read_misses + l3cache_write_misses, l3cache_read_misses + l3cache_write_misses + l3cache_mshr_stalls);
+      int bank_stall_rate = calcAvgPercent(l3cache_bank_stalls, max_cycles);
+      int mshr_stall_rate = calcAvgPercent(l3cache_mshr_stalls, max_cycles);
       fprintf(stream, "PERF: l3cache reads=%ld\n", l3cache_reads);
       fprintf(stream, "PERF: l3cache writes=%ld\n", l3cache_writes);
       fprintf(stream, "PERF: l3cache read misses=%ld (hit ratio=%d%%)\n", l3cache_read_misses, read_hit_ratio);
       fprintf(stream, "PERF: l3cache write misses=%ld (hit ratio=%d%%)\n", l3cache_write_misses, write_hit_ratio);
-      fprintf(stream, "PERF: l3cache bank stalls=%ld (utilization=%d%%)\n", l3cache_bank_stalls, bank_utilization);
-      fprintf(stream, "PERF: l3cache mshr stalls=%ld (utilization=%d%%)\n", l3cache_mshr_stalls, mshr_utilization);
+      fprintf(stream, "PERF: l3cache bank stalls=%ld (stall rate=%d%%)\n", l3cache_bank_stalls, bank_stall_rate);
+      fprintf(stream, "PERF: l3cache mshr stalls=%ld (stall rate=%d%%)\n", l3cache_mshr_stalls, mshr_stall_rate);
     }
 
     {
       uint64_t mem_requests = mem_reads + mem_writes;
       int mem_avg_lat = caclAverage(mem_lat, mem_reads);
-      int mem_bank_utilization = calcAvgPercent(mem_requests, mem_requests + mem_bank_stalls);
+      int mem_bank_stall_rate = calcAvgPercent(mem_bank_stalls, max_cycles);
       fprintf(stream, "PERF: memory requests=%ld (reads=%ld, writes=%ld)\n", mem_requests, mem_reads, mem_writes);
       fprintf(stream, "PERF: memory latency=%d cycles\n", mem_avg_lat);
-      fprintf(stream, "PERF: memory bank stalls=%ld (utilization=%d%%)\n", mem_bank_stalls, mem_bank_utilization);
+      fprintf(stream, "PERF: memory bank stalls=%ld (stall rate=%d%%)\n", mem_bank_stalls, mem_bank_stall_rate);
     }
   } break;
   default:

@@ -1,0 +1,46 @@
+>>> [GTO/hotspot] args="512 1 2 temp_512 power_512 output.out"
+CONFIGS=-DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DVORTEX_SCHED=1  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE 
+Running: CONFIGS="-DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DVORTEX_SCHED=1  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE " make -C ./ci/../runtime/simx > /dev/null
+Running: OPTS="512 1 2 temp_512 power_512 output.out" make -C "./ci/../tests/opencl/hotspot" run-simx
+make: Entering directory '/data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/tests/opencl/hotspot'
+LD_LIBRARY_PATH=/data/URP_26_spring/bbosseong/tools/pocl/lib:/data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/runtime:/data/URP_26_spring/bbosseong/tools/llvm-vortex/lib: POCL_VORTEX_XLEN=32 LLVM_PREFIX=/data/URP_26_spring/bbosseong/tools/llvm-vortex POCL_VORTEX_BINTOOL="OBJCOPY=/data/URP_26_spring/bbosseong/tools/llvm-vortex/bin/llvm-objcopy /data/URP_26_spring/bbosseong/vortex_aware_scheduler/kernel/scripts/vxbin.py" POCL_VORTEX_CFLAGS="-march=rv32imaf -mabi=ilp32f -O3 -mcmodel=medany --sysroot=/data/URP_26_spring/bbosseong/tools/riscv32-gnu-toolchain/riscv32-unknown-elf --gcc-toolchain=/data/URP_26_spring/bbosseong/tools/riscv32-gnu-toolchain -fno-rtti -fno-exceptions -nostartfiles -nostdlib -fdata-sections -ffunction-sections -I/data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/hw -I/data/URP_26_spring/bbosseong/vortex_aware_scheduler/kernel/include -DXLEN_32 -DNDEBUG -DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DVORTEX_SCHED=1  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE  -Xclang -target-feature -Xclang +vortex -Xclang -target-feature -Xclang +zicond -mllvm -disable-loop-idiom-all" POCL_VORTEX_LDFLAGS="-Wl,-Bstatic,--gc-sections,-T/data/URP_26_spring/bbosseong/vortex_aware_scheduler/kernel/scripts/link32.ld,--defsym=STARTUP_ADDR=0x80000000 /data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/kernel/libvortex.a -L/data/URP_26_spring/bbosseong/tools/libc32/lib -lm -lc /data/URP_26_spring/bbosseong/tools/libcrt32/lib/baremetal/libclang_rt.builtins-riscv32.a" VORTEX_DRIVER=simx ./hotspot 512 1 2 temp_512 power_512 output.out
+WG size of kernel = 4 X 4
+Platform: The pocl project
+Device: Vortex OpenGPU
+
+Kernel time: 67.010 seconds
+Total time: 67.021 seconds
+PERF: core0: lmem reads=0
+PERF: core0: lmem writes=0
+PERF: core0: lmem bank stalls=0 (utilization=0%)
+PERF: core0: icache reads=2550865
+PERF: core0: icache read misses=0 (hit ratio=100%)
+PERF: core0: icache mshr stalls=2430384 (utilization=0%)
+PERF: core0: dcache reads=3458064
+PERF: core0: dcache writes=213455
+PERF: core0: dcache read misses=1111401 (hit ratio=67%)
+PERF: core0: dcache write misses=1023925 (hit ratio=-379%)
+PERF: core0: dcache bank stalls=34821314 (utilization=9%)
+PERF: core0: dcache mshr stalls=333 (utilization=99%)
+PERF: core0: coalescer misses=0 (hit ratio=100%)
+PERF: scheduler idle=2550865 (58%)
+PERF: scheduler stalls=0 (0%)
+PERF: ibuffer stalls=2430384 (55%)
+PERF: scoreboard stalls=3458064 (78%) (alu=3%, lsu=94%, csrs=0%, wctl=0%, fpu=2%)
+PERF: operands stalls=213455 (4%)
+PERF: ifetches=1826725
+PERF: loads=6832731
+PERF: stores=1084534
+PERF: ifetch latency=7 cycles
+PERF: load latency=17 cycles
+PERF: l2cache reads=357
+PERF: l2cache writes=0
+PERF: l2cache read misses=1826725 (hit ratio=-511587%)
+PERF: l2cache write misses=6832731 (hit ratio=0%)
+PERF: l2cache bank stalls=1084534 (utilization=0%)
+PERF: l2cache mshr stalls=12813217 (utilization=40%)
+PERF: memory requests=0 (reads=0, writes=0)
+PERF: memory latency=0 cycles
+PERF: memory bank stalls=0 (utilization=0%)
+PERF: instrs=29296463, cycles=4377490, IPC=6.692525
+make: Leaving directory '/data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/tests/opencl/hotspot'

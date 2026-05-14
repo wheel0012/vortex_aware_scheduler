@@ -1,0 +1,51 @@
+>>> [GTO/bfs] args="" (default OPTS = SRC_DIR/graph4k.txt)
+CONFIGS=-DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DVORTEX_SCHED=1  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE 
+Running: CONFIGS="-DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DVORTEX_SCHED=1  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE " make -C ./ci/../runtime/simx > /dev/null
+Running: make -C "./ci/../tests/opencl/bfs" run-simx
+make: Entering directory '/data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/tests/opencl/bfs'
+LD_LIBRARY_PATH=/data/URP_26_spring/bbosseong/tools/pocl/lib:/data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/runtime:/data/URP_26_spring/bbosseong/tools/llvm-vortex/lib: POCL_VORTEX_XLEN=32 LLVM_PREFIX=/data/URP_26_spring/bbosseong/tools/llvm-vortex POCL_VORTEX_BINTOOL="OBJCOPY=/data/URP_26_spring/bbosseong/tools/llvm-vortex/bin/llvm-objcopy /data/URP_26_spring/bbosseong/vortex_aware_scheduler/kernel/scripts/vxbin.py" POCL_VORTEX_CFLAGS="-march=rv32imaf -mabi=ilp32f -O3 -mcmodel=medany --sysroot=/data/URP_26_spring/bbosseong/tools/riscv32-gnu-toolchain/riscv32-unknown-elf --gcc-toolchain=/data/URP_26_spring/bbosseong/tools/riscv32-gnu-toolchain -fno-rtti -fno-exceptions -nostartfiles -nostdlib -fdata-sections -ffunction-sections -I/data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/hw -I/data/URP_26_spring/bbosseong/vortex_aware_scheduler/kernel/include -DXLEN_32 -DNDEBUG -DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DVORTEX_SCHED=1  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE  -Xclang -target-feature -Xclang +vortex -Xclang -target-feature -Xclang +zicond -mllvm -disable-loop-idiom-all	" POCL_VORTEX_LDFLAGS="-Wl,-Bstatic,--gc-sections,-T/data/URP_26_spring/bbosseong/vortex_aware_scheduler/kernel/scripts/link32.ld,--defsym=STARTUP_ADDR=0x80000000 /data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/kernel/libvortex.a -L/data/URP_26_spring/bbosseong/tools/libc32/lib -lm -lc /data/URP_26_spring/bbosseong/tools/libcrt32/lib/baremetal/libclang_rt.builtins-riscv32.a" VORTEX_DRIVER=simx ./bfs /data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/bfs/graph4k.txt
+enter demo main
+Reading File
+Reading File completed!
+_clInit()
+clReleaseKernel()
+clReleaseKernel()
+clReleaseProgram()
+clReleaseCommandQueue()
+PERF: core0: lmem reads=0
+PERF: core0: lmem writes=0
+PERF: core0: lmem bank stalls=0 (utilization=0%)
+PERF: core0: icache reads=217230
+PERF: core0: icache read misses=0 (hit ratio=100%)
+PERF: core0: icache mshr stalls=86598 (utilization=0%)
+PERF: core0: dcache reads=157949
+PERF: core0: dcache writes=1231
+PERF: core0: dcache read misses=55725 (hit ratio=64%)
+PERF: core0: dcache write misses=0 (hit ratio=100%)
+PERF: core0: dcache bank stalls=2913037 (utilization=5%)
+PERF: core0: dcache mshr stalls=657 (utilization=98%)
+PERF: core0: coalescer misses=0 (hit ratio=100%)
+PERF: scheduler idle=217230 (92%)
+PERF: scheduler stalls=0 (0%)
+PERF: ibuffer stalls=86598 (36%)
+PERF: scoreboard stalls=157949 (67%) (alu=1%, lsu=98%, csrs=0%, wctl=0%, fpu=0%)
+PERF: operands stalls=1231 (0%)
+PERF: ifetches=18091
+PERF: loads=53851
+PERF: stores=48246
+PERF: ifetch latency=174 cycles
+PERF: load latency=98 cycles
+PERF: l2cache reads=681
+PERF: l2cache writes=0
+PERF: l2cache read misses=18091 (hit ratio=-2556%)
+PERF: l2cache write misses=53851 (hit ratio=0%)
+PERF: l2cache bank stalls=48246 (utilization=1%)
+PERF: l2cache mshr stalls=3158427 (utilization=2%)
+PERF: memory requests=0 (reads=0, writes=0)
+PERF: memory latency=0 cycles
+PERF: memory bank stalls=0 (utilization=0%)
+PERF: instrs=358231, cycles=235190, IPC=1.523156
+clReleaseContext()
+clReleaseDevice()
+Passed!
+make: Leaving directory '/data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/tests/opencl/bfs'

@@ -24,7 +24,7 @@ declare -A SCHED=( [GTO]=1 [gCAWS]=3 [iPAWS]=4 )
 # Workload table: bench_label  app_name  args
 # args="" means use Makefile default OPTS.
 declare -A BENCH_ARGS=(
-  [bfs]="./graph4k.txt"
+  [bfs]=""
   [kmeans]="-f100 -p5000"
   [hotspot]="512 1 2 temp_512 power_512 output.out"
   [sgemm3]="-n128"
@@ -48,7 +48,7 @@ echo "Sweep output dir: $LOG_ROOT"
 # Header
 SUMMARY="$LOG_ROOT/SUMMARY.md"
 {
-  echo "# Sweep — GTO / gCAWS / iPAWS x 6 workloads"
+  echo "# Sweep — GTO / gCAWS / iPAWS x 7 workloads"
   echo
   echo "Timestamp: $(date)"
   echo
@@ -68,7 +68,7 @@ SUMMARY="$LOG_ROOT/SUMMARY.md"
     echo "| $b | \`$args\` |"
   done
   echo
-  echo "Note: blackscholes \`optionCount\` is hardcoded at \`256*256\` in main.cc (1.8MB working set; default was \`16*16\`)."
+  echo "Note: blackscholes \`optionCount\` is hardcoded at \`128*128\` in main.cc (~448KB working set; default was \`16*16\`)."
   echo
 } > "$SUMMARY"
 
@@ -118,7 +118,7 @@ done
   for bench in "${BENCHES[@]}"; do
     echo "### $bench"
     echo
-    printf "| Policy | instrs | cycles | IPC | dc_read_hit | dc_wr_hit | l2_read_hit |\n"
+    printf "| Policy | instrs | cycles | IPC | dc_read_hit | dc_read_misses | l2_read_misses |\n"
     printf "|---|---|---|---|---|---|---|\n"
     for label in GTO gCAWS iPAWS; do
       log="$LOG_ROOT/$label/${bench}.log"
@@ -126,11 +126,11 @@ done
       instrs=$(awk -F'[ ,]' '/instrs=/ {for (i=1;i<=NF;i++) if ($i ~ /^instrs=/) {split($i,a,"="); print a[2]}}' "$log" | tail -1)
       cycles=$(awk -F'[ ,]' '/cycles=/ {for (i=1;i<=NF;i++) if ($i ~ /^cycles=/) {split($i,a,"="); print a[2]}}' "$log" | tail -1)
       ipc=$(awk -F'=' '/IPC=/ {print $NF}' "$log" | tail -1)
-      rhit=$(awk -F'[()=%]' '/dcache read misses/ {for (i=1;i<=NF;i++) if ($i ~ /hit ratio/) {print $(i+1)}}' "$log" | tail -1)
-      whit=$(awk -F'[()=%]' '/dcache write misses/ {for (i=1;i<=NF;i++) if ($i ~ /hit ratio/) {print $(i+1)}}' "$log" | tail -1)
-      l2hit=$(awk -F'[()=%]' '/l2cache read misses/ {for (i=1;i<=NF;i++) if ($i ~ /hit ratio/) {print $(i+1)}}' "$log" | tail -1)
-      printf "| %s | %s | %s | %s | %s%% | %s%% | %s%% |\n" \
-        "$label" "${instrs:-?}" "${cycles:-?}" "${ipc:-?}" "${rhit:-?}" "${whit:-?}" "${l2hit:-?}"
+      rhit=$(awk -F'[()=%]' '/^PERF: core[0-9]+: dcache read misses/ {for (i=1;i<=NF;i++) if ($i ~ /hit ratio/) {print $(i+1); exit}}' "$log")
+      rmiss=$(awk '/^PERF: dcache read misses/ {match($0, /misses=([0-9]+)/, m); print m[1]; exit}' "$log")
+      l2miss=$(awk '/^PERF: l2cache read misses/ {match($0, /misses=([0-9]+)/, m); print m[1]; exit}' "$log")
+      printf "| %s | %s | %s | %s | %s%% | %s | %s |\n" \
+        "$label" "${instrs:-?}" "${cycles:-?}" "${ipc:-?}" "${rhit:-?}" "${rmiss:-?}" "${l2miss:-?}"
     done
     echo
   done

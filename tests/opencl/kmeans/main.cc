@@ -35,7 +35,7 @@ double gettime() {
 #elif defined(RD_WG_SIZE)
 #define BLOCK_SIZE RD_WG_SIZE
 #else
-#define BLOCK_SIZE 1 //256
+#define BLOCK_SIZE 512 // rodinia orig 256; was 1 in this repo before
 #endif
 
 #ifdef RD_WG_SIZE_1_0
@@ -45,7 +45,7 @@ double gettime() {
 #elif defined(RD_WG_SIZE)
 #define BLOCK_SIZE2 RD_WG_SIZE
 #else
-#define BLOCK_SIZE2 1 //256
+#define BLOCK_SIZE2 512 // rodinia orig 256; was 1 in this repo before
 #endif
 
 // local variables

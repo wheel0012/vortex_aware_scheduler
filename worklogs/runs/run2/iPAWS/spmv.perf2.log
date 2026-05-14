@@ -1,0 +1,46 @@
+>>> [iPAWS/spmv/perf2] args="-i /data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/spmv/Dubcova3.mtx,/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/spmv/Dubcova3.vec"
+CONFIGS=-DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE 
+Running: CONFIGS="-DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE " make -C ./ci/../runtime/simx > /dev/null
+Running: OPTS="-i /data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/spmv/Dubcova3.mtx,/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/spmv/Dubcova3.vec" make -C "./ci/../tests/opencl/spmv" run-simx
+make: Entering directory '/data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/tests/opencl/spmv'
+LD_LIBRARY_PATH=/data/URP_26_spring/bbosseong/tools/pocl/lib:/data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/runtime:/data/URP_26_spring/bbosseong/tools/llvm-vortex/lib: POCL_VORTEX_XLEN=32 LLVM_PREFIX=/data/URP_26_spring/bbosseong/tools/llvm-vortex POCL_VORTEX_BINTOOL="OBJCOPY=/data/URP_26_spring/bbosseong/tools/llvm-vortex/bin/llvm-objcopy /data/URP_26_spring/bbosseong/vortex_aware_scheduler/kernel/scripts/vxbin.py" POCL_VORTEX_CFLAGS="-march=rv32imaf -mabi=ilp32f -O3 -mcmodel=medany --sysroot=/data/URP_26_spring/bbosseong/tools/riscv32-gnu-toolchain/riscv32-unknown-elf --gcc-toolchain=/data/URP_26_spring/bbosseong/tools/riscv32-gnu-toolchain -fno-rtti -fno-exceptions -nostartfiles -nostdlib -fdata-sections -ffunction-sections -I/data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/hw -I/data/URP_26_spring/bbosseong/vortex_aware_scheduler/kernel/include -DXLEN_32 -DNDEBUG -DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE  -Xclang -target-feature -Xclang +vortex -Xclang -target-feature -Xclang +zicond -mllvm -disable-loop-idiom-all	" POCL_VORTEX_LDFLAGS="-Wl,-Bstatic,--gc-sections,-T/data/URP_26_spring/bbosseong/vortex_aware_scheduler/kernel/scripts/link32.ld,--defsym=STARTUP_ADDR=0x80000000 /data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/kernel/libvortex.a -L/data/URP_26_spring/bbosseong/tools/libc32/lib -lm -lc /data/URP_26_spring/bbosseong/tools/libcrt32/lib/baremetal/libclang_rt.builtins-riscv32.a" VORTEX_DRIVER=simx ./spmv -i /data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/spmv/Dubcova3.mtx,/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/spmv/Dubcova3.vec
+CUDA accelerated sparse matrix vector multiplication****
+Original version by Li-Wen Chang <lchang20@illinois.edu> and Shengzhao Wu<wu14@illinois.edu>
+This version maintained by Chris Rodrigues  ***********
+Converting COO to JDS format (146689x146689)
+3636649 matrix entries, warp size = 32, row padding align = 1, pack size = 1
+
+Padding data....146720 rows, 4585 groups
+Allocating data space: 3637664 entries (0.027903% padding)
+Finished converting.
+JDS format has 146720 columns, 49 rows.
+nz_count_len = 4585
+grid size=146720, block size=1, dim=146689
+PERF: core0: lmem reads=0
+PERF: core0: lmem writes=0
+PERF: core0: lmem bank stalls=0 (stall rate=0%)
+PERF: core0: icache reads=2105836
+PERF: core0: icache read misses=396 (hit ratio=99%)
+PERF: core0: icache mshr stalls=158770 (stall rate=1%)
+PERF: core0: dcache reads=2087101
+PERF: core0: dcache writes=247375
+PERF: core0: dcache read misses=1331175 (hit ratio=36%)
+PERF: core0: dcache write misses=237571 (hit ratio=3%)
+PERF: core0: dcache bank stalls=436655 (stall rate=4%)
+PERF: core0: dcache mshr stalls=67115 (stall rate=1%)
+PERF: core0: coalescer misses=810521 (coalesce ratio=65%)
+PERF: l2cache reads=1194332
+PERF: l2cache writes=247375
+PERF: l2cache read misses=485913 (hit ratio=59%)
+PERF: l2cache write misses=45888 (hit ratio=81%)
+PERF: l2cache bank stalls=6 (stall rate=0%)
+PERF: l2cache mshr stalls=17573 (stall rate=0%)
+PERF: memory requests=733337 (reads=485915, writes=247422)
+PERF: memory latency=43 cycles
+PERF: memory bank stalls=0 (stall rate=0%)
+PERF: instrs=67364206, cycles=12322948, IPC=5.466566
+IPAWS_DBG_STALL: 0=11673 1=0 2=0 3=0 4=0 5=0 6=0 7=0 8=0 9=0 10=0 11=0 12=0 13=0 14=0 15=0 16=0 17=0 18=0 19=0 20=0 21=0 22=0 23=0 24=0 25=0 26=0 27=0 28=0 29=0 30=0 31=0
+IPAWS_STATS: decides=2 valid=0 skipped=2 woi_fallback=0 concave=0 convex=2 mm_avg=0.000 mm_min=0.000 mm_max=0.000 woi_avg=0.000 woi_min=0 woi_max=0 gcaws_exec_cycles=0 rr_exec_cycles=12312109 wspawn_events=4 recover_entries=0 recover_cycles=0 test=mean/max<0.5 use_cacp=0 barrier_only_btime=1 use_recover=0
+PASSED!
+Timer Wall Time: 18446744027136.000000
+make: Leaving directory '/data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/tests/opencl/spmv'
