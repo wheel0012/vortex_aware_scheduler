@@ -1,0 +1,113 @@
+CONFIGS=-DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE 
+Running: CONFIGS="-DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE " make -C ./ci/../runtime/simx > /dev/null
+Running: OPTS="-f100 -p5000" make -C "./ci/../tests/opencl/kmeans" run-simx
+make: Entering directory '/data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/tests/opencl/kmeans'
+g++ -std=c++17 -Wall -Wextra -Wfatal-errors -Wno-deprecated-declarations -Wno-unused-parameter -Wno-narrowing -pthread -I/data/URP_26_spring/bbosseong/tools/pocl/include -DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE  -O2 -DNDEBUG -MM /data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/main.cc /data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/read_input.c /data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/rmse.c /data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/kmeans_clustering.c /data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/cluster.c /data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/getopt.c > .depend;
+g++ -std=c++17 -Wall -Wextra -Wfatal-errors -Wno-deprecated-declarations -Wno-unused-parameter -Wno-narrowing -pthread -I/data/URP_26_spring/bbosseong/tools/pocl/include -DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE  -O2 -DNDEBUG -c /data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/main.cc -o main.cc.o
+In file included from /data/URP_26_spring/bbosseong/tools/pocl/include/CL/cl.h:20,
+                 from /data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/main.cc:24:
+/data/URP_26_spring/bbosseong/tools/pocl/include/CL/cl_version.h:22:104: note: ‘#pragma message: cl_version.h: CL_TARGET_OPENCL_VERSION is not defined. Defaulting to 300 (OpenCL 3.0)’
+   22 | #pragma message("cl_version.h: CL_TARGET_OPENCL_VERSION is not defined. Defaulting to 300 (OpenCL 3.0)")
+      |                                                                                                        ^
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/main.cc: In function ‘int initialize(int)’:
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/main.cc:60:10: warning: unused variable ‘size’ [-Wunused-variable]
+   60 |   size_t size;
+      |          ^~~~
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/main.cc: In function ‘int allocate(int, int, int, float**)’:
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/main.cc:231:27: warning: ISO C++ forbids converting a string constant to ‘char*’ [-Wwrite-strings]
+  231 |   char *kernel_kmeans_c = "kmeans_kernel_c";
+      |                           ^~~~~~~~~~~~~~~~~
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/main.cc:232:23: warning: ISO C++ forbids converting a string constant to ‘char*’ [-Wwrite-strings]
+  232 |   char *kernel_swap = "kmeans_swap";
+      |                       ^~~~~~~~~~~~~
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/main.cc:202:10: warning: unused variable ‘binary_status’ [-Wunused-variable]
+  202 |   cl_int binary_status = 0;
+      |          ^~~~~~~~~~~~~
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/main.cc: In function ‘int kmeansOCL(float**, int, int, int, int*, float**, int*, float**)’:
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/main.cc:350:13: warning: unused variable ‘k’ [-Wunused-variable]
+  350 |   int i, j, k;
+      |             ^
+cc -std=c++17 -Wall -Wextra -Wfatal-errors -Wno-deprecated-declarations -Wno-unused-parameter -Wno-narrowing -pthread -I/data/URP_26_spring/bbosseong/tools/pocl/include -DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE  -O2 -DNDEBUG -c /data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/read_input.c -o read_input.c.o
+cc1: warning: command-line option ‘-std=c++17’ is valid for C++/ObjC++ but not for C
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/read_input.c: In function ‘setup’:
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/read_input.c:129:9: warning: variable ‘len’ set but not used [-Wunused-but-set-variable]
+  129 |   float len;
+      |         ^~~
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/read_input.c:195:7: warning: ignoring return value of ‘fread’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  195 |       fread(&npoints, 1, sizeof(int), infile);
+      |       ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/read_input.c:196:7: warning: ignoring return value of ‘fread’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  196 |       fread(&nfeatures, 1, sizeof(int), infile);
+      |       ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/read_input.c:205:7: warning: ignoring return value of ‘fread’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  205 |       fread(buf, 1, npoints * nfeatures * sizeof(float), infile);
+      |       ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+cc -std=c++17 -Wall -Wextra -Wfatal-errors -Wno-deprecated-declarations -Wno-unused-parameter -Wno-narrowing -pthread -I/data/URP_26_spring/bbosseong/tools/pocl/include -DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE  -O2 -DNDEBUG -c /data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/rmse.c -o rmse.c.o
+cc1: warning: command-line option ‘-std=c++17’ is valid for C++/ObjC++ but not for C
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/rmse.c: In function ‘rms_err’:
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/rmse.c:73: warning: ignoring ‘#pragma omp parallel’ [-Wunknown-pragmas]
+   73 |     #pragma omp parallel for \
+      | 
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/rmse.c: In function ‘find_nearest_point’:
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/rmse.c:57:11: warning: ‘index’ may be used uninitialized in this function [-Wmaybe-uninitialized]
+   57 |     return(index);
+      |           ^
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/rmse.c: In function ‘rms_err’:
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/rmse.c:85:88: warning: ‘index’ may be used uninitialized in this function [-Wmaybe-uninitialized]
+   85 |                                                                         cluster_centres[nearest_cluster_index],
+      |                                                                                        ^
+cc -std=c++17 -Wall -Wextra -Wfatal-errors -Wno-deprecated-declarations -Wno-unused-parameter -Wno-narrowing -pthread -I/data/URP_26_spring/bbosseong/tools/pocl/include -DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE  -O2 -DNDEBUG -c /data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/kmeans_clustering.c -o kmeans_clustering.c.o
+cc1: warning: command-line option ‘-std=c++17’ is valid for C++/ObjC++ but not for C
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/kmeans_clustering.c: In function ‘kmeans_clustering’:
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/kmeans_clustering.c:104:5: warning: this ‘for’ clause does not guard... [-Wmisleading-indentation]
+  104 |     for (i=1; i<nclusters; i++)
+      |     ^~~
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/kmeans_clustering.c:108:9: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the ‘for’
+  108 |         initial = (int *) malloc (npoints * sizeof(int));
+      |         ^~~~~~~
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/kmeans_clustering.c:140:5: warning: this ‘for’ clause does not guard... [-Wmisleading-indentation]
+  140 |     for (i=1; i<nclusters; i++)
+      |     ^~~
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/kmeans_clustering.c:144:9: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the ‘for’
+  144 |         do {
+      |         ^~
+cc -std=c++17 -Wall -Wextra -Wfatal-errors -Wno-deprecated-declarations -Wno-unused-parameter -Wno-narrowing -pthread -I/data/URP_26_spring/bbosseong/tools/pocl/include -DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE  -O2 -DNDEBUG -c /data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/cluster.c -o cluster.c.o
+cc1: warning: command-line option ‘-std=c++17’ is valid for C++/ObjC++ but not for C
+cc -std=c++17 -Wall -Wextra -Wfatal-errors -Wno-deprecated-declarations -Wno-unused-parameter -Wno-narrowing -pthread -I/data/URP_26_spring/bbosseong/tools/pocl/include -DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE  -O2 -DNDEBUG -c /data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/kmeans/getopt.c -o getopt.c.o
+cc1: warning: command-line option ‘-std=c++17’ is valid for C++/ObjC++ but not for C
+g++ -std=c++17 -Wall -Wextra -Wfatal-errors -Wno-deprecated-declarations -Wno-unused-parameter -Wno-narrowing -pthread -I/data/URP_26_spring/bbosseong/tools/pocl/include -DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE  -O2 -DNDEBUG main.cc.o read_input.c.o rmse.c.o kmeans_clustering.c.o cluster.c.o getopt.c.o -Wl,-rpath,/data/URP_26_spring/bbosseong/tools/llvm-vortex/lib -L/data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/runtime -lvortex -L/data/URP_26_spring/bbosseong/tools/pocl/lib -lOpenCL -o kmeans
+LD_LIBRARY_PATH=/data/URP_26_spring/bbosseong/tools/pocl/lib:/data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/runtime:/data/URP_26_spring/bbosseong/tools/llvm-vortex/lib: POCL_VORTEX_XLEN=32 LLVM_PREFIX=/data/URP_26_spring/bbosseong/tools/llvm-vortex POCL_VORTEX_BINTOOL="OBJCOPY=/data/URP_26_spring/bbosseong/tools/llvm-vortex/bin/llvm-objcopy /data/URP_26_spring/bbosseong/vortex_aware_scheduler/kernel/scripts/vxbin.py" POCL_VORTEX_CFLAGS="-march=rv32imaf -mabi=ilp32f -O3 -mcmodel=medany --sysroot=/data/URP_26_spring/bbosseong/tools/riscv32-gnu-toolchain/riscv32-unknown-elf --gcc-toolchain=/data/URP_26_spring/bbosseong/tools/riscv32-gnu-toolchain -fno-rtti -fno-exceptions -nostartfiles -nostdlib -fdata-sections -ffunction-sections -I/data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/hw -I/data/URP_26_spring/bbosseong/vortex_aware_scheduler/kernel/include -DXLEN_32 -DNDEBUG -DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE  -Xclang -target-feature -Xclang +vortex -Xclang -target-feature -Xclang +zicond -mllvm -disable-loop-idiom-all	" POCL_VORTEX_LDFLAGS="-Wl,-Bstatic,--gc-sections,-T/data/URP_26_spring/bbosseong/vortex_aware_scheduler/kernel/scripts/link32.ld,--defsym=STARTUP_ADDR=0x80000000 /data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/kernel/libvortex.a -L/data/URP_26_spring/bbosseong/tools/libc32/lib -lm -lc /data/URP_26_spring/bbosseong/tools/libcrt32/lib/baremetal/libclang_rt.builtins-riscv32.a" VORTEX_DRIVER=simx ./kmeans -f100 -p5000
+WG size of kernel_swap = 256, WG size of kernel_kmeans = 256 
+
+I/O completed
+
+Number of objects: 5000
+Number of features: 100
+iterated 2 times
+Number of Iteration: 1
+PERF: core0: lmem reads=0
+PERF: core0: lmem writes=0
+PERF: core0: lmem bank stalls=0 (stall rate=0%)
+PERF: core0: icache reads=662084
+PERF: core0: icache read misses=438 (hit ratio=99%)
+PERF: core0: icache mshr stalls=139422 (stall rate=10%)
+PERF: core0: dcache reads=297206
+PERF: core0: dcache writes=35955
+PERF: core0: dcache read misses=193577 (hit ratio=34%)
+PERF: core0: dcache write misses=35860 (hit ratio=0%)
+PERF: core0: dcache bank stalls=108018 (stall rate=7%)
+PERF: core0: dcache mshr stalls=118315 (stall rate=8%)
+PERF: core0: coalescer misses=507904 (split rate=37%)
+PERF: l2cache reads=189255
+PERF: l2cache writes=35955
+PERF: l2cache read misses=68264 (hit ratio=63%)
+PERF: l2cache write misses=30360 (hit ratio=15%)
+PERF: l2cache bank stalls=140264 (stall rate=10%)
+PERF: l2cache mshr stalls=8112 (stall rate=0%)
+PERF: memory requests=104267 (reads=68266, writes=36001)
+PERF: memory latency=58 cycles
+PERF: memory bank stalls=6 (stall rate=0%)
+PERF: instrs=20949659, cycles=1352077, IPC=15.494428
+IPAWS_DBG_STALL: 0=9450 1=0 2=0 3=0 4=0 5=0 6=0 7=0 8=0 9=0 10=0 11=0 12=0 13=0 14=0 15=0 16=0 17=0 18=0 19=0 20=0 21=0 22=0 23=0 24=0 25=0 26=0 27=0 28=0 29=0 30=0 31=0
+IPAWS_STATS: decides=2 valid=0 skipped=2 woi_fallback=0 concave=0 convex=2 mm_avg=0.000 mm_min=0.000 mm_max=0.000 woi_avg=0.000 woi_min=0 woi_max=0 gcaws_exec_cycles=0 rr_exec_cycles=1343526 wspawn_events=3 recover_entries=0 recover_cycles=0 test=mean/max<0.5 use_cacp=0 barrier_only_btime=1 use_recover=0
+make: Leaving directory '/data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/tests/opencl/kmeans'
