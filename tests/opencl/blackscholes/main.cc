@@ -61,7 +61,7 @@ int main(int argc, char **argv)
         *h_X,
         *h_T;
 
-    const unsigned int   optionCount = 64*64;  // ~112KB working set (sweet-spot for L1 thrash)
+    const unsigned int   optionCount = 64*64*4;  // ~112KB..*4 working set (sweet-spot for L1 thrash)
     const float                    R = 0.02f;
     const float                    V = 0.30f;
 

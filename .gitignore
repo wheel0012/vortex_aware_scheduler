@@ -12,6 +12,9 @@ miscs/apptainer/vortex.sif
 sweep_results*
 ccws_*
 
+third_party/*
+workloads/experiments/**/*.log
+
 # OpenCL input data that should be tracked despite the broad *.txt rule.
 !tests/opencl/b+tree/command.txt
 !tests/opencl/b+tree/mil.txt
