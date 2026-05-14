@@ -18,7 +18,7 @@
 #elif defined(RD_WG_SIZE)                                                        
         #define BLOCK_SIZE RD_WG_SIZE                                            
 #else                                                                                    
-        #define BLOCK_SIZE 4//16                                                            
+        #define BLOCK_SIZE 16 // rodinia orig (4 was repo override)
 #endif                                                                                   
 
 #define STR_SIZE 256

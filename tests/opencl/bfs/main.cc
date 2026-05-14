@@ -15,7 +15,7 @@
 #include "CLHelper.h"
 #include "util.h"
 
-#define MAX_THREADS_PER_BLOCK 16
+#define MAX_THREADS_PER_BLOCK 256 // was 16; bumped to match kmeans WG=256 sweet-spot (8 warps/WG, NUM_THREADS=32)
 
 // Structure to hold a node information
 struct Node {

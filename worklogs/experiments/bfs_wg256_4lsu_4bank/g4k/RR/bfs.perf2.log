@@ -1,0 +1,105 @@
+CONFIGS=-DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=2  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE 
+Running: CONFIGS="-DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=2  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE " make -C ./ci/../runtime/simx > /dev/null
+Running: OPTS="/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/bfs/graph4k.txt" make -C "./ci/../tests/opencl/bfs" run-simx
+make: Entering directory '/data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/tests/opencl/bfs'
+g++ -std=c++17 -Wall -Wextra -Wfatal-errors -Wno-deprecated-declarations -Wno-unused-parameter -Wno-narrowing -pthread -I/data/URP_26_spring/bbosseong/tools/pocl/include -DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=2  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE  -O2 -DNDEBUG -MM /data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/bfs/main.cc > .depend;
+g++ -std=c++17 -Wall -Wextra -Wfatal-errors -Wno-deprecated-declarations -Wno-unused-parameter -Wno-narrowing -pthread -I/data/URP_26_spring/bbosseong/tools/pocl/include -DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=2  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE  -O2 -DNDEBUG -c /data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/bfs/main.cc -o main.cc.o
+In file included from /data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/bfs/main.cc:15:
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/bfs/CLHelper.h:514: warning: ignoring ‘#pragma omp parallel’ [-Wunknown-pragmas]
+  514 | #pragma omp parallel for
+      | 
+In file included from /data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/bfs/main.cc:16:
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/bfs/util.h:38: warning: ignoring ‘#pragma omp parallel’ [-Wunknown-pragmas]
+   38 | #pragma omp parallel for
+      | 
+In file included from /data/URP_26_spring/bbosseong/tools/pocl/include/CL/cl.h:20,
+                 from /data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/bfs/CLHelper.h:9,
+                 from /data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/bfs/main.cc:15:
+/data/URP_26_spring/bbosseong/tools/pocl/include/CL/cl_version.h:22:104: note: ‘#pragma message: cl_version.h: CL_TARGET_OPENCL_VERSION is not defined. Defaulting to 300 (OpenCL 3.0)’
+   22 | #pragma message("cl_version.h: CL_TARGET_OPENCL_VERSION is not defined. Defaulting to 300 (OpenCL 3.0)")
+      |                                                                                                        ^
+In file included from /data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/bfs/main.cc:15:
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/bfs/CLHelper.h: In function ‘void _clInit()’:
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/bfs/CLHelper.h:257:10: warning: unused variable ‘binary_status’ [-Wunused-variable]
+  257 |   cl_int binary_status = 0;
+      |          ^~~~~~~~~~~~~
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/bfs/CLHelper.h: In function ‘void _clRelease()’:
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/bfs/CLHelper.h:377:33: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<_cl_kernel*>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+  377 |   for (int nKernel = 0; nKernel < oclHandles.kernel.size(); nKernel++) {
+      |                         ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/bfs/main.cc: In function ‘int main(int, char**)’:
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/bfs/main.cc:213:9: warning: variable ‘num_of_blocks’ set but not used [-Wunused-but-set-variable]
+  213 |     int num_of_blocks = 1;
+      |         ^~~~~~~~~~~~~
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/bfs/main.cc:293:45: warning: format ‘%s’ expects argument of type ‘char*’, but argument 2 has type ‘std::string’ {aka ‘std::__cxx11::basic_string<char>’} [-Wformat=]
+  293 |     printf("--cambine: exception in main ->%s\n", msg);
+      |                                            ~^
+      |                                             |
+      |                                             char*
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/bfs/main.cc:211:11: warning: ignoring return value of ‘int fscanf(FILE*, const char*, ...)’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  211 |     fscanf(fp, "%d", &no_of_nodes);
+      |     ~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/bfs/main.cc:232:13: warning: ignoring return value of ‘int fscanf(FILE*, const char*, ...)’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  232 |       fscanf(fp, "%d %d", &start, &edgeno);
+      |       ~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/bfs/main.cc:240:11: warning: ignoring return value of ‘int fscanf(FILE*, const char*, ...)’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  240 |     fscanf(fp, "%d", &source);
+      |     ~~~~~~^~~~~~~~~~~~~~~~~~~
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/bfs/main.cc:245:11: warning: ignoring return value of ‘int fscanf(FILE*, const char*, ...)’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  245 |     fscanf(fp, "%d", &edge_list_size);
+      |     ~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/bfs/main.cc:249:13: warning: ignoring return value of ‘int fscanf(FILE*, const char*, ...)’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  249 |       fscanf(fp, "%d", &id);
+      |       ~~~~~~^~~~~~~~~~~~~~~
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/bfs/main.cc:250:13: warning: ignoring return value of ‘int fscanf(FILE*, const char*, ...)’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  250 |       fscanf(fp, "%d", &cost);
+      |       ~~~~~~^~~~~~~~~~~~~~~~~
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/bfs/main.cc:298:9: warning: ‘h_graph_visited’ may be used uninitialized in this function [-Wmaybe-uninitialized]
+  298 |     free(h_graph_visited);
+      |     ~~~~^~~~~~~~~~~~~~~~~
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/bfs/main.cc:297:9: warning: ‘h_updating_graph_mask’ may be used uninitialized in this function [-Wmaybe-uninitialized]
+  297 |     free(h_updating_graph_mask);
+      |     ~~~~^~~~~~~~~~~~~~~~~~~~~~~
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/bfs/main.cc:296:9: warning: ‘h_graph_mask’ may be used uninitialized in this function [-Wmaybe-uninitialized]
+  296 |     free(h_graph_mask);
+      |     ~~~~^~~~~~~~~~~~~~
+/data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/bfs/main.cc:295:9: warning: ‘h_graph_nodes’ may be used uninitialized in this function [-Wmaybe-uninitialized]
+  295 |     free(h_graph_nodes);
+      |     ~~~~^~~~~~~~~~~~~~~
+g++ -std=c++17 -Wall -Wextra -Wfatal-errors -Wno-deprecated-declarations -Wno-unused-parameter -Wno-narrowing -pthread -I/data/URP_26_spring/bbosseong/tools/pocl/include -DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=2  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE  -O2 -DNDEBUG main.cc.o -Wl,-rpath,/data/URP_26_spring/bbosseong/tools/llvm-vortex/lib -L/data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/runtime -lvortex -L/data/URP_26_spring/bbosseong/tools/pocl/lib -lOpenCL -o bfs
+LD_LIBRARY_PATH=/data/URP_26_spring/bbosseong/tools/pocl/lib:/data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/runtime:/data/URP_26_spring/bbosseong/tools/llvm-vortex/lib: POCL_VORTEX_XLEN=32 LLVM_PREFIX=/data/URP_26_spring/bbosseong/tools/llvm-vortex POCL_VORTEX_BINTOOL="OBJCOPY=/data/URP_26_spring/bbosseong/tools/llvm-vortex/bin/llvm-objcopy /data/URP_26_spring/bbosseong/vortex_aware_scheduler/kernel/scripts/vxbin.py" POCL_VORTEX_CFLAGS="-march=rv32imaf -mabi=ilp32f -O3 -mcmodel=medany --sysroot=/data/URP_26_spring/bbosseong/tools/riscv32-gnu-toolchain/riscv32-unknown-elf --gcc-toolchain=/data/URP_26_spring/bbosseong/tools/riscv32-gnu-toolchain -fno-rtti -fno-exceptions -nostartfiles -nostdlib -fdata-sections -ffunction-sections -I/data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/hw -I/data/URP_26_spring/bbosseong/vortex_aware_scheduler/kernel/include -DXLEN_32 -DNDEBUG -DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DVORTEX_SCHED=2  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE  -Xclang -target-feature -Xclang +vortex -Xclang -target-feature -Xclang +zicond -mllvm -disable-loop-idiom-all	" POCL_VORTEX_LDFLAGS="-Wl,-Bstatic,--gc-sections,-T/data/URP_26_spring/bbosseong/vortex_aware_scheduler/kernel/scripts/link32.ld,--defsym=STARTUP_ADDR=0x80000000 /data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/kernel/libvortex.a -L/data/URP_26_spring/bbosseong/tools/libc32/lib -lm -lc /data/URP_26_spring/bbosseong/tools/libcrt32/lib/baremetal/libclang_rt.builtins-riscv32.a" VORTEX_DRIVER=simx ./bfs /data/URP_26_spring/bbosseong/vortex_aware_scheduler/tests/opencl/bfs/graph4k.txt
+enter demo main
+Reading File
+Reading File completed!
+_clInit()
+clReleaseKernel()
+clReleaseKernel()
+clReleaseProgram()
+clReleaseCommandQueue()
+PERF: core0: lmem reads=0
+PERF: core0: lmem writes=0
+PERF: core0: lmem bank stalls=0 (stall rate=0%)
+PERF: core0: icache reads=13080
+PERF: core0: icache read misses=424 (hit ratio=96%)
+PERF: core0: icache mshr stalls=120219 (stall rate=35%)
+PERF: core0: dcache reads=21435
+PERF: core0: dcache writes=33914
+PERF: core0: dcache read misses=18516 (hit ratio=13%)
+PERF: core0: dcache write misses=32224 (hit ratio=4%)
+PERF: core0: dcache bank stalls=362755 (stall rate=107%)
+PERF: core0: dcache mshr stalls=121791 (stall rate=36%)
+PERF: core0: coalescer misses=477312 (split rate=141%)
+PERF: l2cache reads=18540
+PERF: l2cache writes=33914
+PERF: l2cache read misses=15309 (hit ratio=17%)
+PERF: l2cache write misses=28589 (hit ratio=15%)
+PERF: l2cache bank stalls=46016 (stall rate=13%)
+PERF: l2cache mshr stalls=22018 (stall rate=6%)
+PERF: memory requests=49270 (reads=15311, writes=33959)
+PERF: memory latency=164 cycles
+PERF: memory bank stalls=0 (stall rate=0%)
+PERF: instrs=393072, cycles=337855, IPC=1.163434
+clReleaseContext()
+clReleaseDevice()
+Passed!
+make: Leaving directory '/data/URP_26_spring/bbosseong/vortex_aware_scheduler/build/tests/opencl/bfs'

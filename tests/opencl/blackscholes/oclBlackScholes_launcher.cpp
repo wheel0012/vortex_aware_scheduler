@@ -144,7 +144,7 @@ extern "C" void BlackScholes(
 
     //Run the kernel
     size_t globalWorkSize = 128;//60 * 1024;
-    size_t localWorkSize = 1;//128;
+    size_t localWorkSize = 128; // orig 128; was 1 in this repo
     ciErrNum = clEnqueueNDRangeKernel(cqCommandQueue, ckBlackScholes, 1, NULL, &globalWorkSize, &localWorkSize, 0, NULL, NULL);
     shrCheckError(ciErrNum, CL_SUCCESS);
 }
