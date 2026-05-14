@@ -1,12 +1,12 @@
 `verilator_config
 
-lint_off -rule BLKANDNBLK -file "/home/ltj/2026urp/vortex_aware_scheduler/third_party/cvfpu/*"
-lint_off -rule UNOPTFLAT -file "/home/ltj/2026urp/vortex_aware_scheduler/third_party/cvfpu/*"
-lint_off -file "/home/ltj/2026urp/vortex_aware_scheduler/third_party/cvfpu/*"
+lint_off -rule BLKANDNBLK -file "/home/ltj/2026urp/vortex_gcaws/third_party/cvfpu/*"
+lint_off -rule UNOPTFLAT -file "/home/ltj/2026urp/vortex_gcaws/third_party/cvfpu/*"
+lint_off -file "/home/ltj/2026urp/vortex_gcaws/third_party/cvfpu/*"
 
-lint_off -file "/home/ltj/2026urp/vortex_aware_scheduler/hw/rtl/afu/opae/ccip/ccip_if_pkg.sv"
-lint_off -file "/home/ltj/2026urp/vortex_aware_scheduler/hw/rtl/afu/opae/local_mem_cfg_pkg.sv"
+lint_off -file "/home/ltj/2026urp/vortex_gcaws/hw/rtl/afu/opae/ccip/ccip_if_pkg.sv"
+lint_off -file "/home/ltj/2026urp/vortex_gcaws/hw/rtl/afu/opae/local_mem_cfg_pkg.sv"
 
-lint_off -rule BLKANDNBLK -file "/home/ltj/2026urp/vortex_aware_scheduler/third_party/hardfloat/*"
-lint_off -rule UNOPTFLAT -file "/home/ltj/2026urp/vortex_aware_scheduler/third_party/hardfloat/*"
-lint_off -file "/home/ltj/2026urp/vortex_aware_scheduler/third_party/hardfloat/*"
+lint_off -rule BLKANDNBLK -file "/home/ltj/2026urp/vortex_gcaws/third_party/hardfloat/*"
+lint_off -rule UNOPTFLAT -file "/home/ltj/2026urp/vortex_gcaws/third_party/hardfloat/*"
+lint_off -file "/home/ltj/2026urp/vortex_gcaws/third_party/hardfloat/*"

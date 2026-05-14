@@ -100,6 +100,11 @@ set_app_path() {
         APP_PATH="$ROOT_DIR/tests/regression/$APP"
     elif [ -d "$ROOT_DIR/tests/opencl/$APP" ]; then
         APP_PATH="$ROOT_DIR/tests/opencl/$APP"
+    elif [ -d "$ROOT_DIR/../tests/opencl/$APP" ]; then
+        mkdir -p "$ROOT_DIR/tests/opencl"
+        rm -rf "$ROOT_DIR/tests/opencl/$APP"
+        cp -a "$ROOT_DIR/../tests/opencl/$APP" "$ROOT_DIR/tests/opencl/$APP"
+        APP_PATH="$ROOT_DIR/tests/opencl/$APP"
     elif [ -d "$ROOT_DIR/tests/hip/$APP" ]; then
         APP_PATH="$ROOT_DIR/tests/hip/$APP"
     else

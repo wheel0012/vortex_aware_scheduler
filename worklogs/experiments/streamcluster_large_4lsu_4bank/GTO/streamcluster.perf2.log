@@ -1,1 +1,203 @@
-Application folder not found: streamcluster
+CONFIGS=-DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DVORTEX_SCHED=1  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE 
+Running: CONFIGS="-DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DVORTEX_SCHED=1  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE " make -C ./ci/../runtime/simx > /dev/null
+Running: OPTS="2 4 4 16 16 16 none output.txt 1 -t gpu -d 0" make -C "./ci/../tests/opencl/streamcluster" run-simx
+make: Entering directory '/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster'
+g++ -Wall -Wextra -Wfatal-errors -Wno-deprecated-declarations -Wno-unused-parameter -Wno-narrowing -pthread -I/home/ltj/tools/pocl/include -DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DVORTEX_SCHED=1 -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE -O2 -DNDEBUG -std=gnu++14 -MM /home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/streamcluster.cpp > .depend;
+g++ -Wall -Wextra -Wfatal-errors -Wno-deprecated-declarations -Wno-unused-parameter -Wno-narrowing -pthread -I/home/ltj/tools/pocl/include -DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DVORTEX_SCHED=1 -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE -O2 -DNDEBUG -std=gnu++14 -c /home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/streamcluster.cpp -o streamcluster.cpp.o
+In file included from /home/ltj/tools/pocl/include/CL/cl.h:20,
+                 from /home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/CLHelper.h:9,
+                 from /home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/streamcluster.cpp:23:
+/home/ltj/tools/pocl/include/CL/cl_version.h:22:104: note: ‘#pragma message: cl_version.h: CL_TARGET_OPENCL_VERSION is not defined. Defaulting to 300 (OpenCL 3.0)’
+   22 | #pragma message("cl_version.h: CL_TARGET_OPENCL_VERSION is not defined. Defaulting to 300 (OpenCL 3.0)")
+      |                                                                                                        ^
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/CLHelper.h:143:28: warning: dynamic exception specifications are deprecated in C++11 [-Wdeprecated]
+  143 | void _clSetDevice(int idx) throw(string){
+      |                            ^~~~~
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/CLHelper.h:158:59: warning: dynamic exception specifications are deprecated in C++11 [-Wdeprecated]
+  158 | void _clGetDeviceProperties(int idx, _clDeviceProp *prop) throw(string){
+      |                                                           ^~~~~
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/CLHelper.h:276:48: warning: dynamic exception specifications are deprecated in C++11 [-Wdeprecated]
+  276 | void _clInit(string device_type, int device_id)throw(string){
+      |                                                ^~~~~
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/CLHelper.h: In function ‘void _clInit(std::string, int)’:
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/CLHelper.h:328:23: warning: comparison of integer expressions of different signedness: ‘int’ and ‘cl_uint’ {aka ‘unsigned int’} [-Wsign-compare]
+  328 |     for (int i = 0; i < numPlatforms; i++)
+      |                     ~~^~~~~~~~~~~~~~
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/CLHelper.h:418:21: warning: comparison of integer expressions of different signedness: ‘int’ and ‘cl_uint’ {aka ‘unsigned int’} [-Wsign-compare]
+  418 |         if(device_id>(deviceListSize-1))
+      |            ~~~~~~~~~^~~~~~~~~~~~~~~~~~~
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/CLHelper.h:435:27: warning: unused variable ‘cprops’ [-Wunused-variable]
+  435 |     cl_context_properties cprops[3] = { CL_CONTEXT_PLATFORM, (cl_context_properties)targetPlatform, 0 };
+      |                           ^~~~~~
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/CLHelper.h: In function ‘void _clRelease()’:
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/CLHelper.h:609:35: warning: comparison of integer expressions of different signedness: ‘int’ and ‘std::vector<_cl_kernel*>::size_type’ {aka ‘long unsigned int’} [-Wsign-compare]
+  609 |     for (int nKernel = 0; nKernel < oclHandles.kernel.size(); nKernel++){
+      |                           ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/CLHelper.h: At global scope:
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/CLHelper.h:673:28: warning: dynamic exception specifications are deprecated in C++11 [-Wdeprecated]
+  673 | cl_mem _clMalloc(int size) throw(string){
+      |                            ^~~~~
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/CLHelper.h:722:30: warning: dynamic exception specifications are deprecated in C++11 [-Wdeprecated]
+  722 | void* _clMallocHost(int size)throw(string){
+      |                              ^~~~~
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/CLHelper.h:822:58: warning: dynamic exception specifications are deprecated in C++11 [-Wdeprecated]
+  822 | void _clMemcpyH2D(cl_mem dst, const void *src, int size) throw(string){
+      |                                                          ^~~~~
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/CLHelper.h:874:53: warning: dynamic exception specifications are deprecated in C++11 [-Wdeprecated]
+  874 | void _clMemcpyD2H(void * dst, cl_mem src, int size) throw(string){
+      |                                                     ^~~~~
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/CLHelper.h:925:53: warning: dynamic exception specifications are deprecated in C++11 [-Wdeprecated]
+  925 | void _clMemcpyD2D(cl_mem dst, cl_mem src, int size) throw(string){
+      |                                                     ^~~~~
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/CLHelper.h:987:73: warning: dynamic exception specifications are deprecated in C++11 [-Wdeprecated]
+  987 | void _clSetArgs(int kernel_id, int arg_idx, void * d_mem, int size = 0) throw(string){
+      |                                                                         ^~~~~
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/CLHelper.h:1065:18: warning: dynamic exception specifications are deprecated in C++11 [-Wdeprecated]
+ 1065 | void _clFinish() throw(string){
+      |                  ^~~~~
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/CLHelper.h:1097:74: warning: dynamic exception specifications are deprecated in C++11 [-Wdeprecated]
+ 1097 | void _clInvokeKernel(int kernel_id, int work_items, int work_group_size) throw(string){
+      |                                                                          ^~~~~
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/CLHelper.h:1212:58: warning: dynamic exception specifications are deprecated in C++11 [-Wdeprecated]
+ 1212 | void _clMemset(cl_mem mem_d, short val, int number_bytes)throw(string){
+      |                                                          ^~~~~
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/CLHelper.h:1333:91: warning: dynamic exception specifications are deprecated in C++11 [-Wdeprecated]
+ 1333 | void _clInvokeKernel2D(int kernel_id, int range_x, int range_y, int group_x, int group_y) throw(string){
+      |                                                                                           ^~~~~
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/CLHelper.h:1445:25: warning: dynamic exception specifications are deprecated in C++11 [-Wdeprecated]
+ 1445 | void _clFree(cl_mem ob) throw(string){
+      |                         ^~~~~
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/streamcluster.cpp: In function ‘float pspeedy(Points*, float, long int*, int, pthread_barrier_t*)’:
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/streamcluster.cpp:306:39: warning: format ‘%d’ expects argument of type ‘int’, but argument 3 has type ‘long int’ [-Wformat=]
+  306 |       fprintf(stderr, "Speedy opened %d facilities for total cost %lf\n",
+      |                                      ~^
+      |                                       |
+      |                                       int
+      |                                      %ld
+  307 |               *kcenter, totalcost);
+      |               ~~~~~~~~                 
+      |               |
+      |               long int
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/streamcluster.cpp: In function ‘float pFL(Points*, int*, int, float, long int*, int, float, long int, float, int, pthread_barrier_t*)’:
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/streamcluster.cpp:367:25: warning: format ‘%d’ expects argument of type ‘int’, but argument 3 has type ‘long int’ [-Wformat=]
+  367 |       fprintf(stderr, "%d centers, cost %lf, total distance %lf\n",
+      |                        ~^
+      |                         |
+      |                         int
+      |                        %ld
+  368 |               *k, cost, cost - z*(*k));
+      |               ~~         
+      |               |
+      |               long int
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/streamcluster.cpp:342:8: warning: variable ‘numberOfPoints’ set but not used [-Wunused-but-set-variable]
+  342 |   long numberOfPoints;
+      |        ^~~~~~~~~~~~~~
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/streamcluster.cpp: In function ‘float pkmedian(Points*, long int, long int, long int*, int, pthread_barrier_t*)’:
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/streamcluster.cpp:484:16: warning: format ‘%i’ expects argument of type ‘int’, but argument 2 has type ‘long int’ [-Wformat=]
+  484 |       printf("%i points in %i dimensions\n", numberOfPoints, ptDimension);
+      |               ~^                             ~~~~~~~~~~~~~~
+      |                |                             |
+      |                int                           long int
+      |               %li
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/streamcluster.cpp:484:29: warning: format ‘%i’ expects argument of type ‘int’, but argument 3 has type ‘long int’ [-Wformat=]
+  484 |       printf("%i points in %i dimensions\n", numberOfPoints, ptDimension);
+      |                            ~^                                ~~~~~~~~~~~
+      |                             |                                |
+      |                             int                              long int
+      |                            %li
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/streamcluster.cpp:527:68: warning: format ‘%i’ expects argument of type ‘int’, but argument 4 has type ‘long int’ [-Wformat=]
+  527 |     printf("thread %d: Finished first call to speedy, cost=%lf, k=%i\n",pid,cost,k);
+      |                                                                   ~^             ~
+      |                                                                    |             |
+      |                                                                    int           long int
+      |                                                                   %li
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/streamcluster.cpp:538:60: warning: format ‘%d’ expects argument of type ‘int’, but argument 4 has type ‘long int’ [-Wformat=]
+  538 |     printf("thread %d: second call to speedy, cost=%lf, k=%d\n",pid,cost,k);
+      |                                                           ~^             ~
+      |                                                            |             |
+      |                                                            int           long int
+      |                                                           %ld
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/streamcluster.cpp:461:9: warning: variable ‘lastcost’ set but not used [-Wunused-but-set-variable]
+  461 |   float lastcost;
+      |         ^~~~~~~~
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/streamcluster.cpp: In function ‘void outcenterIDs(Points*, long int*, char*)’:
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/streamcluster.cpp:757:21: warning: format ‘%u’ expects argument of type ‘unsigned int’, but argument 3 has type ‘long int’ [-Wformat=]
+  757 |       fprintf(fp, "%u\n", centerIDs[i]);
+      |                    ~^     ~~~~~~~~~~~~
+      |                     |                |
+      |                     unsigned int     long int
+      |                    %lu
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/streamcluster.cpp: In function ‘void streamCluster(PStream*, long int, long int, int, long int, long int, char*)’:
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/streamcluster.cpp:806:27: warning: format ‘%d’ expects argument of type ‘int’, but argument 3 has type ‘size_t’ {aka ‘long unsigned int’} [-Wformat=]
+  806 |     fprintf(stderr,"read %d points\n",numRead);
+      |                          ~^           ~~~~~~~
+      |                           |           |
+      |                           int         size_t {aka long unsigned int}
+      |                          %ld
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/streamcluster.cpp:808:63: warning: suggest parentheses around ‘&&’ within ‘||’ [-Wparentheses]
+  808 |     if( stream->ferror() || numRead < (unsigned int)chunksize && !stream->feof() ) {
+      |                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/streamcluster.cpp: At global scope:
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/streamcluster.cpp:97:12: warning: ‘int floatcomp(const void*, const void*)’ defined but not used [-Wunused-function]
+   97 | static int floatcomp(const void *i, const void *j)
+      |            ^~~~~~~~~
+/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster/streamcluster.cpp:60:15: warning: ‘gpu_free’ defined but not used [-Wunused-variable]
+   60 | static double gpu_free;
+      |               ^~~~~~~~
+g++ -Wall -Wextra -Wfatal-errors -Wno-deprecated-declarations -Wno-unused-parameter -Wno-narrowing -pthread -I/home/ltj/tools/pocl/include -DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DVORTEX_SCHED=1 -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE -O2 -DNDEBUG -std=gnu++14 streamcluster.cpp.o -Wl,-rpath,/home/ltj/tools/llvm-vortex/lib -L/home/ltj/2026urp/vortex_gcaws/build/runtime -lvortex -L/home/ltj/tools/pocl/lib -lOpenCL -o streamcluster
+LD_LIBRARY_PATH=/home/ltj/tools/pocl/lib:/home/ltj/2026urp/vortex_gcaws/build/runtime:/home/ltj/tools/llvm-vortex/lib: POCL_VORTEX_XLEN=64 LLVM_PREFIX=/home/ltj/tools/llvm-vortex POCL_VORTEX_BINTOOL="OBJCOPY=/home/ltj/tools/llvm-vortex/bin/llvm-objcopy /home/ltj/2026urp/vortex_gcaws/kernel/scripts/vxbin.py" POCL_VORTEX_CFLAGS="-march=rv64imafd -mabi=lp64d -O3 -mcmodel=medany --sysroot=/home/ltj/tools/riscv64-gnu-toolchain/riscv64-unknown-elf --gcc-toolchain=/home/ltj/tools/riscv64-gnu-toolchain -fno-rtti -fno-exceptions -nostartfiles -nostdlib -fdata-sections -ffunction-sections -I/home/ltj/2026urp/vortex_gcaws/build/hw -I/home/ltj/2026urp/vortex_gcaws/kernel/include -DXLEN_64 -DNDEBUG -DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DVORTEX_SCHED=1  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE  -Xclang -target-feature -Xclang +vortex -Xclang -target-feature -Xclang +zicond -mllvm -disable-loop-idiom-all	" POCL_VORTEX_LDFLAGS="-Wl,-Bstatic,--gc-sections,-T/home/ltj/2026urp/vortex_gcaws/kernel/scripts/link64.ld,--defsym=STARTUP_ADDR=0x80000000 /home/ltj/2026urp/vortex_gcaws/build/kernel/libvortex.a -L/home/ltj/tools/libc64/lib -lm -lc /home/ltj/tools/libcrt64/lib/baremetal/libclang_rt.builtins-riscv64.a" VORTEX_DRIVER=simx ./streamcluster 2 4 4 16 16 16 none output.txt 1 -t gpu -d 0
+PARSEC Benchmark Suite
+--cambine: device name=Vortex OpenGPU
+before sc
+PRINTINFO_ON
+read 16 points
+Speedy: facility cost 5.300669
+Speedy opened 1 facilities for total cost 15.902006
+Distance Cost 10.601337
+Speedy: facility cost 5.300669
+Speedy opened 1 facilities for total cost 15.902006
+Distance Cost 10.601337
+Speedy: facility cost 2.650335
+Speedy opened 2 facilities for total cost 10.801641
+Distance Cost 5.500972
+2 centers, cost 10.723531, total distance 5.422862
+2 centers, cost 10.723531, total distance 5.422862
+finish local search
+Starting Kmedian procedure
+16 points in 4 dimensions
+thread 0: Finished first call to speedy, cost=15.902006, k=1
+thread 0: second call to speedy, cost=15.902006, k=1
+0.000000 10.601338
+Speedy indicates we should try lower z
+loz = 0.000000, hiz = 5.300669
+Running Local Search...
+Trying a more accurate local search...
+finish cont center
+finish copy centers
+Starting Kmedian procedure
+2 points in 4 dimensions
+after sc
+PERF: core0: lmem reads=64
+PERF: core0: lmem writes=4
+PERF: core0: lmem bank stalls=1920 (stall rate=0%)
+PERF: core0: icache reads=7815
+PERF: core0: icache read misses=411 (hit ratio=94%)
+PERF: core0: icache mshr stalls=55394 (stall rate=24%)
+PERF: core0: dcache reads=11596
+PERF: core0: dcache writes=26162
+PERF: core0: dcache read misses=10789 (hit ratio=6%)
+PERF: core0: dcache write misses=26116 (hit ratio=0%)
+PERF: core0: dcache bank stalls=1577545 (stall rate=696%)
+PERF: core0: dcache mshr stalls=75808 (stall rate=33%)
+PERF: core0: coalescer misses=858248 (split rate=378%)
+PERF: l2cache reads=10803
+PERF: l2cache writes=26162
+PERF: l2cache read misses=8264 (hit ratio=23%)
+PERF: l2cache write misses=25326 (hit ratio=3%)
+PERF: l2cache bank stalls=129448 (stall rate=57%)
+PERF: l2cache mshr stalls=3908 (stall rate=1%)
+PERF: memory requests=34477 (reads=8293, writes=26184)
+PERF: memory latency=217 cycles
+PERF: memory bank stalls=7 (stall rate=0%)
+PERF: instrs=229008, cycles=226559, IPC=1.010810
+make: Leaving directory '/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster'

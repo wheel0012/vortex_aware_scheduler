@@ -12,6 +12,8 @@ miscs/apptainer/vortex.sif
 *.txt
 sweep_results*
 ccws_*
+/worklogs/experiments/**/*.log
+/worklogs/experiments/leukocyte_4lsu_4bank/
 
 third_party/*
 

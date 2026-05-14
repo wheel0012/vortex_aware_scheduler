@@ -38,8 +38,7 @@ void LocalMemSwitch::tick() {
     DT(4, this->name() << "-lmem-rsp: " << out_rsp);
     RspIn.push(out_rsp, 1);
     RspLmem.pop();
-  }
-  if (!RspDC.empty()) {
+  } else if (!RspDC.empty()) {
     auto& out_rsp = RspDC.front();
     DT(4, this->name() << "-dc-rsp: " << out_rsp);
     RspIn.push(out_rsp, 1);

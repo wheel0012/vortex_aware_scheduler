@@ -37,6 +37,10 @@ cl_mem  switch_membership_d;
 cl_mem p_d;
 
 static int c;			// counters
+static bool dev_mem_allocated = false;
+static int dev_num_capacity = 0;
+static int dev_dim = 0;
+static int dev_work_mem_cols_capacity = 0;
 
 void quit(char *message){
 	printf("%s\n", message);
@@ -45,14 +49,18 @@ void quit(char *message){
 //free memory
 void freeDevMem(){
 	try{
-	_clFree(work_mem_d);
-	_clFree(center_table_d);
-	_clFree(switch_membership_d);
-	_clFree(p_d);
-	_clFree(coord_d);
-	/*if(work_mem_h!=NULL)
-		free(work_mem_h);*/
-	_clFreeHost(1, work_mem_h);
+	if(work_mem_d!=NULL)
+		_clFree(work_mem_d);
+	if(center_table_d!=NULL)
+		_clFree(center_table_d);
+	if(switch_membership_d!=NULL)
+		_clFree(switch_membership_d);
+	if(p_d!=NULL)
+		_clFree(p_d);
+	if(coord_d!=NULL)
+		_clFree(coord_d);
+	if(work_mem_h!=NULL)
+		_clFreeHost(1, work_mem_h);
 	
 	if(coord_h!=NULL)
 		free(coord_h);
@@ -60,6 +68,20 @@ void freeDevMem(){
 		free(gl_lower);
 	if(p_h!=NULL)
 		free(p_h);
+	work_mem_d = NULL;
+	center_table_d = NULL;
+	switch_membership_d = NULL;
+	p_d = NULL;
+	coord_d = NULL;
+	work_mem_h = NULL;
+	coord_h = NULL;
+	gl_lower = NULL;
+	p_h = NULL;
+	dev_mem_allocated = false;
+	dev_num_capacity = 0;
+	dev_dim = 0;
+	dev_work_mem_cols_capacity = 0;
+	c = 0;
 	}
 	catch(string msg){
 		quit(&(msg[0]));
@@ -74,6 +96,10 @@ void allocDevMem(int num, int dim, int kmax){
 		switch_membership_d = _clMalloc(num * sizeof(char));
 		p_d = _clMalloc(num * sizeof(Point));
 		coord_d = _clMalloc(num * dim * sizeof(float));
+		dev_mem_allocated = true;
+		dev_num_capacity = num;
+		dev_dim = dim;
+		dev_work_mem_cols_capacity = kmax;
 	}
 	catch(string msg){
 		quit(&(msg[0]));
@@ -89,8 +115,9 @@ float pgain( long x, Points *points, float z, long int *numcenters, int kmax, bo
 	int K	= *numcenters ;						// number of centers
 	int num    =   points->num;				// number of points
 	int dim     =   points->dim;				// number of dimension
-	kmax++;
-	int work_mem_cols = kmax + 1;
+	int work_mem_cols = kmax + 2;
+	if (work_mem_cols < K + 1)
+		work_mem_cols = K + 1;
 	/***** build center index table 1*****/
 	int count = 0;
 	for( int i=0; i<num; i++){
@@ -103,13 +130,16 @@ float pgain( long x, Points *points, float z, long int *numcenters, int kmax, bo
 	*serial += t2 - t1;
 #endif
 
-	/***** initial memory allocation and preparation for transfer : execute once -1 *****/
+	/***** initial memory allocation and preparation for transfer : execute once per point set or capacity change *****/
+	if( dev_mem_allocated && (num > dev_num_capacity || dim != dev_dim || work_mem_cols > dev_work_mem_cols_capacity) ) {
+		freeDevMem();
+	}
 	if( c == 0 ) {
 #ifdef PROFILE_TMP
 		double t3 = gettime();
 #endif
 	coord_h = (float*) malloc( num * dim * sizeof(float));								// coordinates (host)
-	gl_lower = (float*) malloc( kmax * sizeof(float) );
+	gl_lower = (float*) malloc( work_mem_cols * sizeof(float) );
 	work_mem_h = (float*)_clMallocHost(work_mem_cols*num*sizeof(float));
 	p_h = (Point_Struct*)malloc(num*sizeof(Point_Struct));	//by cambine: not compatibal with original Point
 	

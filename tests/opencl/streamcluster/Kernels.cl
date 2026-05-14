@@ -15,7 +15,8 @@ typedef struct {
 //#define Elements
 __kernel void memset_kernel(__global char * mem_d, short val, int number_bytes){
 	const int thread_id = get_global_id(0);
-	mem_d[thread_id] = val;
+	if (thread_id < number_bytes)
+		mem_d[thread_id] = val;
 }
 //--9 parameters
 /* kernel */
@@ -33,15 +34,16 @@ __kernel void pgain_kernel(
 	/* block ID and global thread ID */
 	const int thread_id = get_global_id(0);
 	const int local_id = get_local_id(0);
-	
+
+	// All work-items in the group must reach the barrier. The global size is
+	// rounded up to the work-group size, so some work-items can have id >= num.
+	if(local_id == 0)
+		for(int i=0; i<dim; i++){
+			coord_s[i] = coord_d[i*num + x];
+		}
+	barrier(CLK_LOCAL_MEM_FENCE);
+
 	if(thread_id<num){
-	  // coordinate mapping of point[x] to shared mem
-	  if(local_id == 0)
-	   	for(int i=0; i<dim; i++){ 
-	   		coord_s[i] = coord_d[i*num + x];
-	   	}
-	  barrier(CLK_LOCAL_MEM_FENCE);
-	
 	  // cost between this point and point[x]: euclidean distance multiplied by weight
 	  float x_cost = 0.0f;
 	  for(int i=0; i<dim; i++)

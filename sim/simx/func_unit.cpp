@@ -169,7 +169,6 @@ void LsuUnit::reset() {
 		state.reset();
 	}
 	pending_loads_ = 0;
-	remain_addrs_ = 0;
 }
 
 void LsuUnit::tick() {
@@ -206,7 +205,14 @@ void LsuUnit::tick() {
 		auto& state = states_.at(block_idx);
 		if (state.fence_lock) {
 			// wait for all pending memory operations to complete
-			if (!state.pending_rd_reqs.empty())
+			bool pending_reads = false;
+			for (auto& lsu_state : states_) {
+				if (!lsu_state.pending_rd_reqs.empty()) {
+					pending_reads = true;
+					break;
+				}
+			}
+			if (pending_reads)
 				continue;
 			Outputs.at(iw).push(state.fence_trace, 1);
 			state.fence_lock = false;
@@ -262,8 +268,8 @@ void LsuUnit::tick() {
 			trace->log_once(false);
 		}
 
-		if (remain_addrs_ == 0) {
-			pending_addrs_.clear();
+		if (state.remain_addrs == 0) {
+			state.pending_addrs.clear();
 			if (trace->data) {
 			#ifdef EXT_V_ENABLE
 				if (std::get_if<VlsType>(&trace->op_type)) {
@@ -272,7 +278,7 @@ void LsuUnit::tick() {
 						if (!trace->tmask.test(t))
 							continue;
 						for (auto addr : trace_data->mem_addrs.at(t)) {
-							pending_addrs_.push_back(addr);
+							state.pending_addrs.push_back(addr);
 						}
 					}
 				} else
@@ -282,28 +288,28 @@ void LsuUnit::tick() {
 					for (uint32_t t = 0; t < trace_data->mem_addrs.size(); ++t) {
 						if (!trace->tmask.test(t))
 							continue;
-						pending_addrs_.push_back(trace_data->mem_addrs.at(t));
+						state.pending_addrs.push_back(trace_data->mem_addrs.at(t));
 					}
 				}
-				remain_addrs_ = pending_addrs_.size();
+				state.remain_addrs = state.pending_addrs.size();
 			}
 		}
 
-		if (remain_addrs_ != 0) {
+		if (state.remain_addrs != 0) {
 			// setup memory request
 			LsuReq lsu_req(NUM_LSU_LANES);
 			lsu_req.write = is_write;
-			uint32_t t0 = pending_addrs_.size() - remain_addrs_;
+			uint32_t t0 = state.pending_addrs.size() - state.remain_addrs;
 			for (uint32_t i = 0; i < NUM_LSU_LANES; ++i) {
 				lsu_req.mask.set(i);
-				lsu_req.addrs.at(i) = pending_addrs_.at(t0 + i).addr;
-				--remain_addrs_;
-				if (remain_addrs_ == 0)
+				lsu_req.addrs.at(i) = state.pending_addrs.at(t0 + i).addr;
+				--state.remain_addrs;
+				if (state.remain_addrs == 0)
 					break;
 			}
 
 			uint32_t count = lsu_req.mask.count();
-			bool is_eop = (remain_addrs_ == 0);
+			bool is_eop = (state.remain_addrs == 0);
 
 			uint32_t tag = 0;
 			if (!is_write) {
@@ -328,9 +334,9 @@ void LsuUnit::tick() {
 			}
 		}
 
-		if (remain_addrs_ == 0) {
+		if (state.remain_addrs == 0) {
 			// do not wait on writes
-			if (is_write || 0 == pending_addrs_.size()) {
+			if (is_write || 0 == state.pending_addrs.size()) {
 				Outputs.at(iw).push(trace, 1);
 			}
 			// remove input

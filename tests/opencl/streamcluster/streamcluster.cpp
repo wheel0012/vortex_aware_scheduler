@@ -43,6 +43,7 @@ using namespace std;
 
 #define CACHE_LINE 512 		// cache line in byte
 
+#define ENABLE_THREADS
 
 /* global */
 static char *switch_membership;	//whether to switch membership in pgain
@@ -819,6 +820,7 @@ void streamCluster( PStream* stream,
     center_table = (int*)malloc(points.num*sizeof(int));
 
     localSearch(&points,kmin, kmax,&kfinal);
+    freeDevMem();
 
     fprintf(stderr,"finish local search\n");
     contcenters(&points);
@@ -852,6 +854,7 @@ void streamCluster( PStream* stream,
   center_table = (int*)malloc(centers.num*sizeof(int));
 
   localSearch( &centers, kmin, kmax ,&kfinal );
+  freeDevMem();
   contcenters(&centers);
   outcenterIDs( &centers, centerIDs, outfile);
 }
@@ -932,6 +935,9 @@ int main(int argc, char **argv)
 	cnt_speedy = 0;
 #endif
   std::cout<<"before sc"<<std::endl;
+  #ifdef PRINTINFO
+  std::cout<<"PRINTINFO_ON"<<std::endl;
+  #endif
   streamCluster(stream, kmin, kmax, dim, chunksize, clustersize, outfilename );
   std::cout<<"after sc"<<std::endl;
 #ifdef PROFILE_TMP 

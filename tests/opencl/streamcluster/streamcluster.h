@@ -22,6 +22,8 @@
 #ifndef STREAMCLUSTER_H
 #define STREAMCLUSTER_H
 
+#define PRINTINFO 123
+
 #include <stdio.h>
 #include <iostream>
 #include <fstream>

@@ -1,1 +1,50 @@
-Application folder not found: streamcluster
+CONFIGS=-DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE 
+Running: CONFIGS="-DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE " make -C ./ci/../runtime/simx > /dev/null
+Running: OPTS="2 4 4 16 16 16 none output.txt 1 -t gpu -d 0" make -C "./ci/../tests/opencl/streamcluster" run-simx
+make: Entering directory '/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster'
+LD_LIBRARY_PATH=/home/ltj/tools/pocl/lib:/home/ltj/2026urp/vortex_gcaws/build/runtime:/home/ltj/tools/llvm-vortex/lib: POCL_VORTEX_XLEN=64 LLVM_PREFIX=/home/ltj/tools/llvm-vortex POCL_VORTEX_BINTOOL="OBJCOPY=/home/ltj/tools/llvm-vortex/bin/llvm-objcopy /home/ltj/2026urp/vortex_gcaws/kernel/scripts/vxbin.py" POCL_VORTEX_CFLAGS="-march=rv64imafd -mabi=lp64d -O3 -mcmodel=medany --sysroot=/home/ltj/tools/riscv64-gnu-toolchain/riscv64-unknown-elf --gcc-toolchain=/home/ltj/tools/riscv64-gnu-toolchain -fno-rtti -fno-exceptions -nostartfiles -nostdlib -fdata-sections -ffunction-sections -I/home/ltj/2026urp/vortex_gcaws/build/hw -I/home/ltj/2026urp/vortex_gcaws/kernel/include -DXLEN_64 -DNDEBUG -DPERF_ENABLE -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4 -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DVORTEX_SCHED=4  -DNUM_CORES=1 -DNUM_WARPS=32 -DNUM_THREADS=32 -DL2_ENABLE -DPERF_ENABLE  -Xclang -target-feature -Xclang +vortex -Xclang -target-feature -Xclang +zicond -mllvm -disable-loop-idiom-all	" POCL_VORTEX_LDFLAGS="-Wl,-Bstatic,--gc-sections,-T/home/ltj/2026urp/vortex_gcaws/kernel/scripts/link64.ld,--defsym=STARTUP_ADDR=0x80000000 /home/ltj/2026urp/vortex_gcaws/build/kernel/libvortex.a -L/home/ltj/tools/libc64/lib -lm -lc /home/ltj/tools/libcrt64/lib/baremetal/libclang_rt.builtins-riscv64.a" VORTEX_DRIVER=simx ./streamcluster 2 4 4 16 16 16 none output.txt 1 -t gpu -d 0
+PARSEC Benchmark Suite
+--cambine: device name=Vortex OpenGPU
+before sc
+PRINTINFO_ON
+read 16 points
+Speedy: facility cost 5.300669
+Speedy opened 1 facilities for total cost 15.902006
+Distance Cost 10.601337
+Speedy: facility cost 5.300669
+Speedy opened 1 facilities for total cost 15.902006
+Distance Cost 10.601337
+Speedy: facility cost 2.650335
+Speedy opened 2 facilities for total cost 10.801641
+Distance Cost 5.500972
+2 centers, cost 10.723531, total distance 5.422862
+2 centers, cost 10.723531, total distance 5.422862
+finish local search
+Starting Kmedian procedure
+16 points in 4 dimensions
+thread 0: Finished first call to speedy, cost=15.902006, k=1
+thread 0: second call to speedy, cost=15.902006, k=1
+0.000000 10.601338
+Speedy indicates we should try lower z
+loz = 0.000000, hiz = 5.300669
+Running Local Search...
+Trying a more accurate local search...
+finish cont center
+finish copy centers
+Starting Kmedian procedure
+2 points in 4 dimensions
+after sc
+PERF: scheduler idle=219720 (96%)
+PERF: scheduler stalls=0 (0%)
+PERF: ibuffer stalls=34952 (15%)
+PERF: scoreboard stalls=218540 (96%) (alu=0%, lsu=99%, csrs=0%, wctl=0%, fpu=0%)
+PERF: operands stalls=358 (0%)
+PERF: ifetches=7837
+PERF: loads=19451
+PERF: stores=34919
+PERF: ifetch latency=282 cycles
+PERF: load latency=545 cycles
+PERF: instrs=229456, cycles=227507, IPC=1.008567
+IPAWS_DBG_STALL: 0=9855 1=0 2=0 3=0 4=0 5=0 6=0 7=0 8=0 9=0 10=0 11=0 12=0 13=0 14=0 15=0 16=0 17=0 18=0 19=0 20=0 21=0 22=0 23=0 24=0 25=0 26=0 27=0 28=0 29=0 30=0 31=0
+IPAWS_STATS: decides=2 valid=0 skipped=2 woi_fallback=0 concave=0 convex=2 mm_avg=0.000 mm_min=0.000 mm_max=0.000 woi_avg=0.000 woi_min=0 woi_max=0 gcaws_exec_cycles=0 rr_exec_cycles=218120 wspawn_events=3 recover_entries=0 recover_cycles=0 test=mean/max<0.5 barrier_only_btime=1 use_recover=0
+make: Leaving directory '/home/ltj/2026urp/vortex_gcaws/build/tests/opencl/streamcluster'

@@ -304,7 +304,7 @@ proc run_setup {} {
     CONFIG.Assume_Synchronous_Clk {true} \
     CONFIG.Byte_Size {8} \
     CONFIG.Load_Init_File {true} \
-    CONFIG.Coe_File {/home/ltj/2026urp/vortex_aware_scheduler/hw/syn/xilinx/sandbox/kernel.bin.coe} \
+    CONFIG.Coe_File {/home/ltj/2026urp/vortex_gcaws/hw/syn/xilinx/sandbox/kernel.bin.coe} \
     CONFIG.EN_SAFETY_CKT {true} \
     CONFIG.Enable_32bit_Address {true} \
     CONFIG.Fill_Remaining_Memory_Locations {false} \

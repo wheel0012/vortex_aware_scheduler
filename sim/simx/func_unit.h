@@ -81,13 +81,22 @@ private:
 
 	struct lsu_state_t {
 		HashTable<pending_req_t> pending_rd_reqs;
+		std::vector<mem_addr_size_t> pending_addrs;
+		uint32_t remain_addrs;
 		instr_trace_t* fence_trace;
 		bool fence_lock;
 
-		lsu_state_t() : pending_rd_reqs(LSUQ_IN_SIZE) {}
+		lsu_state_t()
+			: pending_rd_reqs(LSUQ_IN_SIZE)
+			, remain_addrs(0)
+			, fence_trace(nullptr)
+			, fence_lock(false)
+		{}
 
 		void reset() {
 			this->pending_rd_reqs.clear();
+			this->pending_addrs.clear();
+			this->remain_addrs = 0;
 			this->fence_trace = nullptr;
 			this->fence_lock = false;
 		}
@@ -95,8 +104,6 @@ private:
 
 	std::array<lsu_state_t, NUM_LSU_BLOCKS> states_;
 	uint64_t pending_loads_;
-	std::vector<mem_addr_size_t> pending_addrs_;
-	uint32_t remain_addrs_;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
