@@ -1,6 +1,6 @@
 EXE := leukocyte
 KERNEL_SRCS := find_ellipse_kernel.cl track_ellipse_kernel.cl
-OPTS ?= $(VORTEX_HOME)/tests/opencl/leukocyte/testfile.avi 10
+OPTS ?= $(VORTEX_HOME)/tests/opencl/leukocyte/testfile.avi 1
 
 include ../rodinia.mk
 

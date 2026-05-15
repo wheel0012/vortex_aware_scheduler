@@ -22,6 +22,7 @@ EXPS = {
     "hotspot": ROOT / "experiments/hotspot_wg256_4lsu_4bank",
     "sgemm3":  ROOT / "experiments/sgemm3_wg1024_4lsu_4bank",
     "bfs":     ROOT / "experiments/bfs_wg256_4lsu_4bank/g128k",
+    "streamcluster":     ROOT / "experiments/streamcluster_large_4lsu_4bank"
 }
 POLICIES = ["RR", "GTO", "gCAWS", "iPAWS"]
 COLORS = {"RR": "#a0a0a0", "GTO": "#4c8bf2", "gCAWS": "#f4a83d", "iPAWS": "#2bb673"}

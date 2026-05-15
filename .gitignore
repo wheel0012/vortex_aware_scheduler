@@ -13,6 +13,7 @@ miscs/apptainer/vortex.sif
 sweep_results*
 ccws_*
 /worklogs/experiments/**/*.log
+/worklogs/experiments/*_normalized_ipc_l1d_mpki_vs_rr.png
 /worklogs/experiments/leukocyte_4lsu_4bank/
 
 third_party/*

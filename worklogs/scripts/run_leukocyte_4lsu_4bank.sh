@@ -5,6 +5,7 @@
 # Output: worklogs/experiments/leukocyte_4lsu_4bank/<policy>/{build.log,leukocyte.perf{1,2}.log}
 # Usage:
 #   ./worklogs/scripts/run_leukocyte_4lsu_4bank.sh
+#   LEUKOCYTE_FRAMES=10 ./worklogs/scripts/run_leukocyte_4lsu_4bank.sh
 #   LEUKOCYTE_OPTS="/path/to/testfile.avi 10" ./worklogs/scripts/run_leukocyte_4lsu_4bank.sh
 
 set -u
@@ -21,7 +22,8 @@ HW_TWEAK="-DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4"
 BASE_FLAGS="-DPERF_ENABLE $HW_TWEAK"
 ARCH_FLAGS="-DNUM_CORES=$CORES -DNUM_WARPS=$WARPS -DNUM_THREADS=$THREADS"
 
-LEUKOCYTE_OPTS="${LEUKOCYTE_OPTS:-$ROOT_DIR/tests/opencl/leukocyte/testfile.avi 10}"
+LEUKOCYTE_FRAMES="${LEUKOCYTE_FRAMES:-3}"
+LEUKOCYTE_OPTS="${LEUKOCYTE_OPTS:-$ROOT_DIR/tests/opencl/leukocyte/testfile.avi $LEUKOCYTE_FRAMES}"
 
 declare -A SCHED=( [GTO]=1 [RR]=2 [gCAWS]=3 [iPAWS]=4 )
 POLICIES=(RR GTO gCAWS iPAWS)
@@ -49,7 +51,7 @@ trap cleanup_child EXIT
 input_file="${LEUKOCYTE_OPTS%% *}"
 if [ ! -f "$input_file" ]; then
   echo "ERROR: leukocyte input file not found: $input_file"
-  echo "Set LEUKOCYTE_OPTS=\"/path/to/testfile.avi 10\" before running this script."
+  echo "Set LEUKOCYTE_OPTS=\"/path/to/testfile.avi 1\" before running this script."
   exit 1
 fi
 
