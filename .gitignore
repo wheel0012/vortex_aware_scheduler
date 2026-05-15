@@ -75,3 +75,5 @@ third_party/*
 /tests/regression/**/trace/
 /tests/regression/**/ramulator.stats.log
 /sim/simx/*_config.stamp
+tests/opencl/leukocyte/test.avi
+tests/opencl/leukocyte/testfile.avi
