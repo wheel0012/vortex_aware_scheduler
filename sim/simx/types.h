@@ -17,6 +17,8 @@
 #include <bitset>
 #include <queue>
 #include <vector>
+#include <algorithm>
+#include <limits>
 #include <unordered_map>
 #include <variant>
 #include <util.h>
@@ -743,7 +745,9 @@ struct mem_addr_size_t {
 enum class ArbiterType {
   Priority,
   RoundRobin,
-  Matrix
+  Matrix,
+  GTO,
+  gCAWS
 };
 
 inline std::ostream &operator<<(std::ostream &os, const ArbiterType& type) {
@@ -751,6 +755,8 @@ inline std::ostream &operator<<(std::ostream &os, const ArbiterType& type) {
   case ArbiterType::Priority:   os << "Priority"; break;
   case ArbiterType::RoundRobin: os << "RoundRobin"; break;
   case ArbiterType::Matrix:     os << "Matrix"; break;
+  case ArbiterType::GTO:        os << "GTO"; break;
+  case ArbiterType::gCAWS:      os << "gCAWS"; break;
   default: assert(false);
   }
   return os;
@@ -761,6 +767,15 @@ public:
   IArbiterImpl() {}
   virtual ~IArbiterImpl() {}
   virtual uint32_t grant(const BitVector<>& requests) = 0;
+  virtual void tick() {}
+  virtual void update(uint32_t index, bool ready, bool stalled) {
+    __unused(index);
+    __unused(ready);
+    __unused(stalled);
+  }
+  virtual void issued(uint32_t index) {
+    __unused(index);
+  }
   virtual void reset() = 0;
 };
 
@@ -868,6 +883,161 @@ private:
   std::vector<std::vector<bool>> priority_matrix_;
 };
 
+class GTOArbiter : public IArbiterImpl {
+public:
+  GTOArbiter(uint32_t size)
+    : size_(size)
+    , ready_timestamps_(size, 0) {
+    this->reset();
+  }
+
+  void tick() override {
+    ++cycle_;
+  }
+
+  void update(uint32_t index, bool ready, bool stalled) override {
+    __unused(stalled);
+    assert(index < size_);
+    if (ready) {
+      if (ready_timestamps_.at(index) == 0) {
+        ready_timestamps_.at(index) = cycle_;
+      }
+    } else {
+      ready_timestamps_.at(index) = 0;
+    }
+  }
+
+  uint32_t grant(const BitVector<>& requests) override {
+    assert(requests.size() == size_);
+    if (greedy_index_ >= 0 && requests.test(greedy_index_)) {
+      return static_cast<uint32_t>(greedy_index_);
+    }
+
+    uint32_t selected = -1;
+    uint64_t oldest_timestamp = std::numeric_limits<uint64_t>::max();
+    for (uint32_t i = 0; i < size_; ++i) {
+      if (!requests.test(i))
+        continue;
+      uint64_t ts = ready_timestamps_.at(i);
+      if (ts != 0 && ts < oldest_timestamp) {
+        oldest_timestamp = ts;
+        selected = i;
+      }
+    }
+    greedy_index_ = static_cast<int>(selected);
+    return selected;
+  }
+
+  void issued(uint32_t index) override {
+    assert(index < size_);
+    ready_timestamps_.at(index) = 0;
+  }
+
+  void reset() override {
+    greedy_index_ = -1;
+    cycle_ = 0;
+    std::fill(ready_timestamps_.begin(), ready_timestamps_.end(), 0);
+  }
+
+private:
+  uint32_t size_;
+  int greedy_index_;
+  uint64_t cycle_;
+  std::vector<uint64_t> ready_timestamps_;
+};
+
+class GCAWSArbiter : public IArbiterImpl {
+  struct cpl_t {
+    uint64_t instr_count;
+    uint64_t stall_cycles;
+    uint64_t criticality;
+
+    cpl_t()
+      : instr_count(0)
+      , stall_cycles(0)
+      , criticality(0)
+    {}
+  };
+
+public:
+  GCAWSArbiter(uint32_t size)
+    : size_(size)
+    , ready_timestamps_(size, 0)
+    , warp_cpl_(size) {
+    this->reset();
+  }
+
+  void tick() override {
+    ++cycle_;
+  }
+
+  void update(uint32_t index, bool ready, bool stalled) override {
+    assert(index < size_);
+    if (ready) {
+      if (ready_timestamps_.at(index) == 0) {
+        ready_timestamps_.at(index) = cycle_;
+      }
+    } else {
+      ready_timestamps_.at(index) = 0;
+    }
+    if (stalled) {
+      ++warp_cpl_.at(index).stall_cycles;
+    }
+  }
+
+  uint32_t grant(const BitVector<>& requests) override {
+    assert(requests.size() == size_);
+
+    uint64_t max_inst = 0;
+    for (uint32_t i = 0; i < size_; ++i) {
+      max_inst = std::max(max_inst, warp_cpl_.at(i).instr_count);
+    }
+    for (uint32_t i = 0; i < size_; ++i) {
+      auto& cpl = warp_cpl_.at(i);
+      uint64_t nInst = max_inst - cpl.instr_count;
+      uint64_t cpi_avg = (cpl.instr_count > 0)
+          ? std::max<uint64_t>(1, cycle_ / cpl.instr_count)
+          : 1;
+      cpl.criticality = nInst * cpi_avg + cpl.stall_cycles;
+    }
+
+    uint32_t selected = -1;
+    uint64_t best_crit = 0;
+    uint64_t best_ts = std::numeric_limits<uint64_t>::max();
+    for (uint32_t i = 0; i < size_; ++i) {
+      if (!requests.test(i))
+        continue;
+      uint64_t crit = warp_cpl_.at(i).criticality;
+      uint64_t ts = ready_timestamps_.at(i);
+      if (ts == 0) ts = std::numeric_limits<uint64_t>::max();
+      if (selected == uint32_t(-1) || crit > best_crit || (crit == best_crit && ts < best_ts)) {
+        selected = i;
+        best_crit = crit;
+        best_ts = ts;
+      }
+    }
+    return selected;
+  }
+
+  void issued(uint32_t index) override {
+    assert(index < size_);
+    ++warp_cpl_.at(index).instr_count;
+    ready_timestamps_.at(index) = 0;
+  }
+
+  void reset() override {
+    cycle_ = 0;
+    std::fill(ready_timestamps_.begin(), ready_timestamps_.end(), 0);
+    std::fill(warp_cpl_.begin(), warp_cpl_.end(), cpl_t());
+  }
+
+private:
+  uint32_t size_;
+  uint64_t cycle_;
+  std::vector<uint64_t> ready_timestamps_;
+  std::vector<cpl_t> warp_cpl_;
+};
+
 class Arbiter {
 public:
   Arbiter(ArbiterType type = ArbiterType::Priority, uint32_t size = 0) {
@@ -881,6 +1051,12 @@ public:
     case ArbiterType::Matrix:
       impl_ = std::make_shared<MatrixArbiter>(size);
       break;
+    case ArbiterType::GTO:
+      impl_ = std::make_shared<GTOArbiter>(size);
+      break;
+    case ArbiterType::gCAWS:
+      impl_ = std::make_shared<GCAWSArbiter>(size);
+      break;
     default:
       assert(false); // Should never reach here
     }
@@ -890,6 +1066,18 @@ public:
 
   uint32_t grant(const BitVector<>& requests) {
     return impl_->grant(requests);
+  }
+
+  void tick() {
+    impl_->tick();
+  }
+
+  void update(uint32_t index, bool ready, bool stalled) {
+    impl_->update(index, ready, stalled);
+  }
+
+  void issued(uint32_t index) {
+    impl_->issued(index);
   }
 
   void reset() {

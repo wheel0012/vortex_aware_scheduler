@@ -26,6 +26,27 @@
 
 using namespace vortex;
 
+#if !defined(VORTEX_ARB) && defined(VORTEX_ARBITS)
+#define VORTEX_ARB VORTEX_ARBITS
+#endif
+#ifndef VORTEX_ARB
+#define VORTEX_ARB 0
+#endif
+
+namespace {
+
+ArbiterType ibuffer_arbiter_type() {
+#if (VORTEX_ARB == 1)
+  return ArbiterType::GTO;
+#elif (VORTEX_ARB == 3)
+  return ArbiterType::gCAWS;
+#else
+  return ArbiterType::RoundRobin;
+#endif
+}
+
+} // namespace
+
 Core::Core(const SimContext& ctx,
            uint32_t core_id,
            Socket* socket,
@@ -56,7 +77,7 @@ Core::Core(const SimContext& ctx,
   , mem_coalescers_(NUM_LSU_BLOCKS)
   , pending_icache_(arch_.num_warps())
   , commit_arbs_(ISSUE_WIDTH)
-  , ibuffer_arbs_(ISSUE_WIDTH, {ArbiterType::RoundRobin, PER_ISSUE_WARPS})
+  , ibuffer_arbs_(ISSUE_WIDTH, {ibuffer_arbiter_type(), PER_ISSUE_WARPS})
 {
   char sname[100];
 
@@ -296,6 +317,10 @@ void Core::decode() {
 }
 
 void Core::issue() {
+  for (auto& arb : ibuffer_arbs_) {
+    arb.tick();
+  }
+
   // dispatch operands
   for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
     auto& operand = operands_.at(iw);
@@ -313,12 +338,15 @@ void Core::issue() {
     for (uint32_t w = 0; w < PER_ISSUE_WARPS; ++w) {
       uint32_t wid = w * ISSUE_WIDTH + iw;
       auto& ibuffer = ibuffers_.at(wid);
-      if (ibuffer.empty())
+      if (ibuffer.empty()) {
+        ibuffer_arbs_.at(iw).update(w, false, false);
         continue;
+      }
       // check scoreboard
       has_instrs = true;
       auto trace = ibuffer.top();
       if (scoreboard_.in_use(trace)) {
+        ibuffer_arbs_.at(iw).update(w, false, true);
         auto uses = scoreboard_.get_uses(trace);
         if (!trace->log_once(true)) {
           DTH(4, "*** scoreboard-stall: dependents={");
@@ -356,12 +384,13 @@ void Core::issue() {
       } else {
         trace->log_once(false);
         ready_set.set(w); // mark instruction as ready
+        ibuffer_arbs_.at(iw).update(w, true, false);
       }
     }
 
     if (ready_set.any()) {
       // select one instruction from ready set
-      auto w = ibuffer_arbs_.at(iw).grant(ready_set);
+      uint32_t w = ibuffer_arbs_.at(iw).grant(ready_set);
       uint32_t wid = w * ISSUE_WIDTH + iw;
       auto& ibuffer = ibuffers_.at(wid);
       auto trace = ibuffer.top();
@@ -373,6 +402,7 @@ void Core::issue() {
       // to operand stage
       operands_.at(iw)->Input.push(trace, 1);
       ibuffer.pop();
+      ibuffer_arbs_.at(iw).issued(w);
     }
 
     // track scoreboard stalls
