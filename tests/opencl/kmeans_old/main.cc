@@ -35,7 +35,7 @@ double gettime() {
 #elif defined(RD_WG_SIZE)
 #define BLOCK_SIZE RD_WG_SIZE
 #else
-#define BLOCK_SIZE 256 // rodinia orig 256; was 1 in this repo before
+#define BLOCK_SIZE 1 //256
 #endif
 
 #ifdef RD_WG_SIZE_1_0
@@ -45,7 +45,7 @@ double gettime() {
 #elif defined(RD_WG_SIZE)
 #define BLOCK_SIZE2 RD_WG_SIZE
 #else
-#define BLOCK_SIZE2 256 // rodinia orig 256; was 1 in this repo before
+#define BLOCK_SIZE2 1 //256
 #endif
 
 // local variables
@@ -326,19 +326,6 @@ int main(int argc, char **argv) {
   printf("WG size of kernel_swap = %d, WG size of kernel_kmeans = %d \n",
          BLOCK_SIZE, BLOCK_SIZE2);
   setup(argc, argv);
-   if (cmd_queue)
-    clFinish(cmd_queue);
-
-  //deallocateMemory();
-
-  if (kernel_s)
-    clReleaseKernel(kernel_s);
-
-  if (kernel2)
-    clReleaseKernel(kernel2);
-
-  if (kernel)
-    clReleaseKernel(kernel);
   shutdown();
 }
 

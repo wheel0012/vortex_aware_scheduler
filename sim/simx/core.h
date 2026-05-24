@@ -187,6 +187,7 @@ private:
   void issue();
   void execute();
   void commit();
+  void cpl_update_score(uint32_t wid);
 
   uint32_t core_id_;
   Socket* socket_;
@@ -224,7 +225,12 @@ private:
   std::vector<TraceArbiter::Ptr> commit_arbs_;
 
   uint32_t commit_exe_;
+  std::vector<std::vector<uint64_t>> ibuffer_spawn_times_;
+  std::vector<std::vector<uint64_t>> ibuffer_criticality_;
   std::vector<Arbiter> ibuffer_arbs_;
+  std::vector<uint64_t> cpl_inst_pending_;
+  std::vector<uint64_t> cpl_stall_cycles_;
+  std::vector<uint64_t> cpl_committed_instrs_;
 
   PoolAllocator<instr_trace_t, 64> trace_pool_;
 

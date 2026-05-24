@@ -13,6 +13,7 @@
 
 #include <iostream>
 #include <iomanip>
+#include <algorithm>
 #include <string.h>
 #include <assert.h>
 #include <util.h>
@@ -55,12 +56,18 @@ Core::Core(const SimContext& ctx,
   , mem_coalescers_(NUM_LSU_BLOCKS)
   , pending_icache_(arch_.num_warps())
   , commit_arbs_(ISSUE_WIDTH)
-  , ibuffer_arbs_(ISSUE_WIDTH, {ArbiterType::RoundRobin, PER_ISSUE_WARPS})
+  , ibuffer_spawn_times_(ISSUE_WIDTH, std::vector<uint64_t>(PER_ISSUE_WARPS, 0))
+  , ibuffer_criticality_(ISSUE_WIDTH, std::vector<uint64_t>(PER_ISSUE_WARPS, 0))
+  , ibuffer_arbs_(ISSUE_WIDTH)
+  , cpl_inst_pending_(arch_.num_warps(), 0)
+  , cpl_stall_cycles_(arch_.num_warps(), 0)
+  , cpl_committed_instrs_(arch_.num_warps(), 0)
 {
   char sname[100];
 
   for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
     operands_.at(iw) = Operands::Create(this);
+    ibuffer_arbs_.at(iw) = Arbiter(configured_issue_arbiter(), PER_ISSUE_WARPS, &ibuffer_spawn_times_.at(iw), &ibuffer_criticality_.at(iw));
   }
 
   // create the memory coalescer
@@ -195,6 +202,12 @@ void Core::reset() {
   for (auto& arb : ibuffer_arbs_) {
     arb.reset();
   }
+  for (auto& counters : ibuffer_criticality_) {
+    std::fill(counters.begin(), counters.end(), 0);
+  }
+  std::fill(cpl_inst_pending_.begin(), cpl_inst_pending_.end(), 0);
+  std::fill(cpl_stall_cycles_.begin(), cpl_stall_cycles_.end(), 0);
+  std::fill(cpl_committed_instrs_.begin(), cpl_committed_instrs_.end(), 0);
 
   pending_instrs_.clear();
   pending_ifetches_ = 0;
@@ -290,8 +303,24 @@ void Core::decode() {
 
   // insert to ibuffer
   ibuffer.push(trace);
+  if (trace->cpl_inst_delta != 0) {
+    cpl_inst_pending_.at(trace->wid) += trace->cpl_inst_delta;
+    this->cpl_update_score(trace->wid);
+  }
 
   decode_latch_.pop();
+}
+
+void Core::cpl_update_score(uint32_t wid) {
+  uint32_t iw = wid % ISSUE_WIDTH;
+  uint32_t w = wid / ISSUE_WIDTH;
+  ibuffer_spawn_times_.at(iw).at(w) = emulator_.get_warp(wid).spawn_time;
+
+  auto committed = cpl_committed_instrs_.at(wid);
+  auto elapsed = SimPlatform::instance().cycles() - emulator_.get_warp(wid).spawn_time + 1;
+  auto cpi_avg = committed ? std::max<uint64_t>(1, elapsed / committed) : uint64_t(1);
+  ibuffer_criticality_.at(iw).at(w) =
+      cpl_inst_pending_.at(wid) * cpi_avg + cpl_stall_cycles_.at(wid);
 }
 
 void Core::issue() {
@@ -311,6 +340,7 @@ void Core::issue() {
     BitVector<> ready_set(PER_ISSUE_WARPS);
     for (uint32_t w = 0; w < PER_ISSUE_WARPS; ++w) {
       uint32_t wid = w * ISSUE_WIDTH + iw;
+      this->cpl_update_score(wid);
       auto& ibuffer = ibuffers_.at(wid);
       if (ibuffer.empty())
         continue;
@@ -358,9 +388,11 @@ void Core::issue() {
       }
     }
 
+    uint32_t issued_w = uint32_t(-1);
     if (ready_set.any()) {
       // select one instruction from ready set
       auto w = ibuffer_arbs_.at(iw).grant(ready_set);
+      issued_w = w;
       uint32_t wid = w * ISSUE_WIDTH + iw;
       auto& ibuffer = ibuffers_.at(wid);
       auto trace = ibuffer.top();
@@ -372,6 +404,15 @@ void Core::issue() {
       // to operand stage
       operands_.at(iw)->Input.push(trace, 1);
       ibuffer.pop();
+    }
+
+    for (uint32_t w = 0; w < PER_ISSUE_WARPS; ++w) {
+      uint32_t wid = w * ISSUE_WIDTH + iw;
+      auto& ibuffer = ibuffers_.at(wid);
+      if (w != issued_w && !ibuffer.empty()) {
+        ++cpl_stall_cycles_.at(wid);
+        this->cpl_update_score(wid);
+      }
     }
 
     // track scoreboard stalls
@@ -417,6 +458,11 @@ void Core::commit() {
       pending_instrs_.remove(trace);
       if (pending_instrs_.size() != orig_size) {
         perf_stats_.instrs += trace->tmask.count();
+        ++cpl_committed_instrs_.at(trace->wid);
+        if (cpl_inst_pending_.at(trace->wid) != 0) {
+          --cpl_inst_pending_.at(trace->wid);
+        }
+        this->cpl_update_score(trace->wid);
       #ifdef EXT_V_ENABLE
         if (std::get_if<VsetType>(&trace->op_type)
          || std::get_if<VlsType>(&trace->op_type)

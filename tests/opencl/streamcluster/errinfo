@@ -1,0 +1,2 @@
+warning: /home/ltj/.cache/pocl/uncached/tempfile_VCx1eN.cl:46:19: double precision constant requires cl_khr_fp64, casting to single precision
+

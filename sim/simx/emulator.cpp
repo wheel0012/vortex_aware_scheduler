@@ -36,12 +36,14 @@ warp_t::warp_t(uint32_t num_threads)
   , tmask(num_threads)
   , PC(0)
   , uuid(0)
+  , spawn_time(0)
 {}
 
 void warp_t::reset(uint64_t startup_addr) {
   this->tmask.reset();
   this->PC = startup_addr;
   this->uuid = 0;
+  this->spawn_time = 0;
   this->fcsr = 0;
 
   for (auto& reg_file : this->ireg_file) {
@@ -125,6 +127,7 @@ void Emulator::reset() {
   // activate first warp and thread
   active_warps_.set(0);
   warps_[0].tmask.set(0);
+  warps_[0].spawn_time = SimPlatform::instance().cycles();
   wspawn_.valid = false;
 }
 
@@ -159,6 +162,7 @@ instr_trace_t* Emulator::step() {
       auto& warp = warps_.at(i);
       warp.PC = wspawn_.nextPC;
       warp.tmask.set(0);
+      warp.spawn_time = SimPlatform::instance().cycles();
       active_warps_.set(i);
     }
     wspawn_.valid = false;

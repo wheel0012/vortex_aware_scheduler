@@ -1,0 +1,2 @@
+>>> [GTO/streamcluster/perf2] args="2 4 4 16 16 16 none output.txt 1 -t gpu -d 0"
+Application folder not found: streamcluster

@@ -12,6 +12,7 @@
 // limitations under the License.
 
 #include <iostream>
+#include <algorithm>
 #include <stdlib.h>
 #include <unistd.h>
 #include <math.h>
@@ -449,6 +450,11 @@ instr_trace_t* Emulator::execute(const Instr &instr, uint32_t wid) {
           }
         }
         trace->fetch_stall = true;
+        if (next_pc != (trace->PC + 4)) {
+          auto lower_pc = std::min<uint64_t>(next_pc, trace->PC + 4);
+          auto upper_pc = std::max<uint64_t>(next_pc, trace->PC + 4);
+          trace->cpl_inst_delta = (upper_pc - lower_pc) / sizeof(uint32_t);
+        }
       } break;
       case BrType::JAL: { // RV32I: JAL
         for (uint32_t t = thread_start; t < num_threads; ++t) {

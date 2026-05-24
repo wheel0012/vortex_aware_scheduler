@@ -743,14 +743,50 @@ struct mem_addr_size_t {
 enum class ArbiterType {
   Priority,
   RoundRobin,
-  Matrix
+  Matrix,
+  GTO,
+  GCAWS
 };
+
+#define VORTEX_ARBITER_PRIORITY 0
+#define VORTEX_ARBITER_GTO      1
+#define VORTEX_ARBITER_RR       2
+#define VORTEX_ARBITER_MATRIX   3
+#define VORTEX_ARBITER_GCAWS    4
+
+#define ARBITER_PRIORITY VORTEX_ARBITER_PRIORITY
+#define ARBITER_GTO      VORTEX_ARBITER_GTO
+#define ARBITER_RR       VORTEX_ARBITER_RR
+#define ARBITER_MATRIX   VORTEX_ARBITER_MATRIX
+#define ARBITER_GCAWS    VORTEX_ARBITER_GCAWS
+
+#ifndef VORTEX_ARBITER
+  #ifdef ARBITER
+    #define VORTEX_ARBITER ARBITER
+  #else
+    #define VORTEX_ARBITER VORTEX_ARBITER_GTO
+  #endif
+#endif
+
+inline ArbiterType configured_issue_arbiter() {
+  constexpr ArbiterType arbiter_table[] = {
+    ArbiterType::Priority,
+    ArbiterType::GTO,
+    ArbiterType::RoundRobin,
+    ArbiterType::Matrix,
+    ArbiterType::GCAWS
+  };
+  static_assert(VORTEX_ARBITER >= 0 && VORTEX_ARBITER < 5, "Invalid VORTEX_ARBITER value");
+  return arbiter_table[VORTEX_ARBITER];
+}
 
 inline std::ostream &operator<<(std::ostream &os, const ArbiterType& type) {
   switch (type) {
   case ArbiterType::Priority:   os << "Priority"; break;
   case ArbiterType::RoundRobin: os << "RoundRobin"; break;
   case ArbiterType::Matrix:     os << "Matrix"; break;
+  case ArbiterType::GTO:        os << "GTO"; break;
+  case ArbiterType::GCAWS:      os << "GCAWS"; break;
   default: assert(false);
   }
   return os;
@@ -868,9 +904,107 @@ private:
   std::vector<std::vector<bool>> priority_matrix_;
 };
 
+class GTOArbiter : public IArbiterImpl {
+public:
+  GTOArbiter(uint32_t size, const std::vector<uint64_t>* spawn_times)
+    : size_(size)
+    , spawn_times_(spawn_times) {
+    assert(spawn_times_ != nullptr);
+    assert(spawn_times_->size() == size_);
+    this->reset();
+  }
+
+  uint32_t grant(const BitVector<>& requests) override {
+    assert(requests.size() == size_);
+    assert(spawn_times_->size() == size_);
+
+    if (current_grant_ != uint32_t(-1) && requests.test(current_grant_)) {
+      return current_grant_;
+    }
+
+    uint32_t grant = uint32_t(-1);
+    uint64_t oldest_time = 0;
+    for (uint32_t i = 0; i < size_; ++i) {
+      if (!requests.test(i))
+        continue;
+      auto spawn_time = spawn_times_->at(i);
+      if (grant == uint32_t(-1) || spawn_time < oldest_time) {
+        grant = i;
+        oldest_time = spawn_time;
+      }
+    }
+
+    current_grant_ = grant;
+    return grant;
+  }
+
+  void reset() override {
+    current_grant_ = uint32_t(-1);
+  }
+
+private:
+  uint32_t size_;
+  const std::vector<uint64_t>* spawn_times_;
+  uint32_t current_grant_;
+};
+
+class GCAWSArbiter : public IArbiterImpl {
+public:
+  GCAWSArbiter(uint32_t size, const std::vector<uint64_t>* spawn_times, const std::vector<uint64_t>* criticality)
+    : size_(size)
+    , spawn_times_(spawn_times)
+    , criticality_(criticality) {
+    assert(spawn_times_ != nullptr);
+    assert(criticality_ != nullptr);
+    assert(spawn_times_->size() == size_);
+    assert(criticality_->size() == size_);
+    this->reset();
+  }
+
+  uint32_t grant(const BitVector<>& requests) override {
+    assert(requests.size() == size_);
+    assert(spawn_times_->size() == size_);
+    assert(criticality_->size() == size_);
+
+    if (current_grant_ != uint32_t(-1) && requests.test(current_grant_)) {
+      return current_grant_;
+    }
+
+    uint32_t grant = uint32_t(-1);
+    uint64_t best_criticality = 0;
+    uint64_t oldest_time = 0;
+    for (uint32_t i = 0; i < size_; ++i) {
+      if (!requests.test(i))
+        continue;
+      auto criticality = criticality_->at(i);
+      auto spawn_time = spawn_times_->at(i);
+      if (grant == uint32_t(-1)
+       || criticality > best_criticality
+       || (criticality == best_criticality && spawn_time < oldest_time)) {
+        grant = i;
+        best_criticality = criticality;
+        oldest_time = spawn_time;
+      }
+    }
+
+    current_grant_ = grant;
+    return grant;
+  }
+
+  void reset() override {
+    current_grant_ = uint32_t(-1);
+  }
+
+private:
+  uint32_t size_;
+  const std::vector<uint64_t>* spawn_times_;
+  const std::vector<uint64_t>* criticality_;
+  uint32_t current_grant_;
+};
+
 class Arbiter {
 public:
-  Arbiter(ArbiterType type = ArbiterType::Priority, uint32_t size = 0) {
+  Arbiter(ArbiterType type = ArbiterType::Priority, uint32_t size = 0, const std::vector<uint64_t>* spawn_times = nullptr, const std::vector<uint64_t>* criticality = nullptr) {
     switch (type) {
     case ArbiterType::Priority:
       impl_ = std::make_shared<PriorityArbiter>(size);
@@ -880,6 +1014,12 @@ public:
       break;
     case ArbiterType::Matrix:
       impl_ = std::make_shared<MatrixArbiter>(size);
+      break;
+    case ArbiterType::GTO:
+      impl_ = std::make_shared<GTOArbiter>(size, spawn_times);
+      break;
+    case ArbiterType::GCAWS:
+      impl_ = std::make_shared<GCAWSArbiter>(size, spawn_times, criticality);
       break;
     default:
       assert(false); // Should never reach here

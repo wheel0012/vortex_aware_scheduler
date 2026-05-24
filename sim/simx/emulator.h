@@ -60,6 +60,7 @@ struct warp_t {
   Word                              PC;
   Byte                              fcsr;
   uint32_t                          uuid;
+  uint64_t                          spawn_time;
 
   warp_t(uint32_t num_threads);
 
@@ -107,6 +108,10 @@ public:
   void dcache_read(void* data, uint64_t addr, uint32_t size);
 
   void dcache_write(const void* data, uint64_t addr, uint32_t size);
+
+  warp_t& get_warp(uint32_t wid) {
+    return warps_.at(wid);
+  }
 
 private:
 
