@@ -43,10 +43,10 @@ declare -A ARBITER=(
 )
 
 declare -A BENCH_ARGS=(
-  [bfs]="${ROOT_DIR}/tests/opencl/bfs/graph4k.txt"
-  [kmeans]="-f100 -p1000"
+  [bfs]="${ROOT_DIR}/tests/opencl/bfs/graph128k.txt"
+  [kmeans]="-f100 -p5000"
   [hotspot]="128 1 2 temp_128 power_128 output.out"
-  [sgemm3]="-n96"
+  [sgemm3]="-n128"
   [blackscholes]=""
   [vecadd]="-n10000"
   [streamcluster]="2 4 4 16 16 16 none output.txt 1 -t gpu -d 0"

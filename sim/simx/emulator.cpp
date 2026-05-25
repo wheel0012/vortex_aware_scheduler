@@ -159,12 +159,20 @@ instr_trace_t* Emulator::step() {
   // process pending wspawn
   if (wspawn_.valid && active_warps_.count() == 1) {
     DP(3, "*** Activate " << (wspawn_.num_warps-1) << " warps at PC: " << std::hex << wspawn_.nextPC << std::dec);
+    // Refresh warp 0 too — it was active from boot, its spawn_time is stale,
+    // and its CPL accumulators carry stale state across kernel launches.
+    warps_.at(0).spawn_time = SimPlatform::instance().cycles();
+    core_->reset_warp_cpl(0);
     for (uint32_t i = 1; i < wspawn_.num_warps; ++i) {
       auto& warp = warps_.at(i);
       warp.PC = wspawn_.nextPC;
       warp.tmask.set(0);
       warp.spawn_time = SimPlatform::instance().cycles();
       active_warps_.set(i);
+      // Reset CPL state for newly-activated warp — wid is reused across
+      // kernel launches; previous kernel's pending/stall/criticality state
+      // is not meaningful to this new thread group.
+      core_->reset_warp_cpl(i);
     }
     wspawn_.valid = false;
     stalled_warps_.reset(0);

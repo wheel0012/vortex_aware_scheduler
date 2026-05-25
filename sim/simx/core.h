@@ -179,6 +179,12 @@ public:
 
   int get_exitcode() const;
 
+  // Reset per-warp CPL state at kernel-launch (wspawn) boundary.
+  // Without this, cumulative criticality from prior kernel leaks into the
+  // newly-spawned warp that reuses the same wid — leads to misleading
+  // priority decisions and warp 0 cpi_avg overflow.
+  void reset_warp_cpl(uint32_t wid);
+
 private:
 
   void schedule();
@@ -231,6 +237,17 @@ private:
   std::vector<uint64_t> cpl_inst_pending_;
   std::vector<uint64_t> cpl_stall_cycles_;
   std::vector<uint64_t> cpl_committed_instrs_;
+
+  // Debug counters for diagnosing scheduler behavior.
+  std::vector<uint64_t> dbg_grant_count_;        // per-wid: how often each warp was granted issue
+  std::vector<uint32_t> dbg_last_grant_;         // per-slot: last grant index (for stick/swap)
+  std::vector<uint64_t> dbg_stick_count_;        // per-slot: arbiter returned same warp as last cycle
+  std::vector<uint64_t> dbg_swap_count_;         // per-slot: arbiter switched to a different warp
+  std::vector<uint64_t> dbg_warp_ibuf_empty_;    // per-wid: count of issue() checks where this warp's ibuffer was empty
+  std::vector<uint64_t> dbg_slot_all_empty_;     // per-slot: cycles where ALL warps in slot had empty ibuffer (no work)
+  std::vector<uint64_t> dbg_slot_scrb_block_;    // per-slot: cycles where ibuffer had instrs but all scoreboard-blocked
+  std::vector<uint64_t> dbg_slot_issued_;        // per-slot: cycles where actual issue happened
+  void dump_cpl_stats() const;
 
   PoolAllocator<instr_trace_t, 64> trace_pool_;
 

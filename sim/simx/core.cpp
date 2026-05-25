@@ -14,6 +14,7 @@
 #include <iostream>
 #include <iomanip>
 #include <algorithm>
+#include <limits>
 #include <string.h>
 #include <assert.h>
 #include <util.h>
@@ -62,6 +63,14 @@ Core::Core(const SimContext& ctx,
   , cpl_inst_pending_(arch_.num_warps(), 0)
   , cpl_stall_cycles_(arch_.num_warps(), 0)
   , cpl_committed_instrs_(arch_.num_warps(), 0)
+  , dbg_grant_count_(arch_.num_warps(), 0)
+  , dbg_last_grant_(ISSUE_WIDTH, uint32_t(-1))
+  , dbg_stick_count_(ISSUE_WIDTH, 0)
+  , dbg_swap_count_(ISSUE_WIDTH, 0)
+  , dbg_warp_ibuf_empty_(arch_.num_warps(), 0)
+  , dbg_slot_all_empty_(ISSUE_WIDTH, 0)
+  , dbg_slot_scrb_block_(ISSUE_WIDTH, 0)
+  , dbg_slot_issued_(ISSUE_WIDTH, 0)
 {
   char sname[100];
 
@@ -179,7 +188,89 @@ Core::Core(const SimContext& ctx,
 }
 
 Core::~Core() {
-  //--
+  this->dump_cpl_stats();
+}
+
+void Core::dump_cpl_stats() const {
+  const uint32_t nw = arch_.num_warps();
+  // Per-warp dump: grant count (issue freq), committed, pending, stall, criticality.
+  std::cerr << "[CPL_DUMP core=" << core_id_ << "] arbiter=" << configured_issue_arbiter() << "\n";
+  std::cerr << "[CPL_DUMP wid] grant_count  committed   pending  stall   crit\n";
+  uint64_t g_min = std::numeric_limits<uint64_t>::max(), g_max = 0, g_sum = 0;
+  uint64_t c_min = std::numeric_limits<uint64_t>::max(), c_max = 0, c_sum = 0;
+  uint32_t alive = 0;
+  for (uint32_t wid = 0; wid < nw; ++wid) {
+    uint64_t g = dbg_grant_count_.at(wid);
+    uint64_t c = cpl_committed_instrs_.at(wid);
+    uint64_t p = cpl_inst_pending_.at(wid);
+    uint64_t s = cpl_stall_cycles_.at(wid);
+    uint32_t iw = wid % ISSUE_WIDTH;
+    uint32_t w  = wid / ISSUE_WIDTH;
+    uint64_t k = ibuffer_criticality_.at(iw).at(w);
+    std::cerr << "[CPL_DUMP "
+              << std::setw(3) << wid << "] "
+              << std::setw(10) << g << "  "
+              << std::setw(10) << c << "  "
+              << std::setw(8) << p << "  "
+              << std::setw(6) << s << "  "
+              << std::setw(10) << k << "\n";
+    if (c > 0) {  // only consider warps that actually ran
+      ++alive;
+      if (g < g_min) g_min = g;
+      if (g > g_max) g_max = g;
+      g_sum += g;
+      if (c < c_min) c_min = c;
+      if (c > c_max) c_max = c;
+      c_sum += c;
+    }
+  }
+  if (alive > 0) {
+    double g_mean = double(g_sum) / alive;
+    double c_mean = double(c_sum) / alive;
+    double g_skew = (g_mean > 0) ? double(g_max) / g_mean : 0.0;
+    double c_skew = (c_mean > 0) ? double(c_max) / c_mean : 0.0;
+    std::cerr << "[CPL_DUMP STATS core=" << core_id_ << "] alive=" << alive
+              << "  grant: min=" << g_min << " max=" << g_max
+              << " mean=" << std::fixed << std::setprecision(1) << g_mean
+              << " max/mean=" << std::setprecision(2) << g_skew
+              << "  committed: min=" << c_min << " max=" << c_max
+              << " mean=" << std::setprecision(1) << c_mean
+              << " max/mean=" << std::setprecision(2) << c_skew << "\n";
+  }
+  // Per-slot arbiter stick/swap ratio
+  for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
+    uint64_t st = dbg_stick_count_.at(iw);
+    uint64_t sw = dbg_swap_count_.at(iw);
+    uint64_t total = st + sw;
+    double stick_pct = (total > 0) ? (100.0 * st / total) : 0.0;
+    std::cerr << "[CPL_DUMP ARB core=" << core_id_ << " slot=" << iw << "] "
+              << "stick=" << st << " swap=" << sw
+              << " total=" << total
+              << " stick%=" << std::fixed << std::setprecision(1) << stick_pct
+              << "\n";
+  }
+  // Per-slot cycle classification: all_empty / scrb_blocked / issued
+  for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
+    uint64_t ae = dbg_slot_all_empty_.at(iw);
+    uint64_t sb = dbg_slot_scrb_block_.at(iw);
+    uint64_t is = dbg_slot_issued_.at(iw);
+    uint64_t total = ae + sb + is;
+    if (total == 0) continue;
+    double ae_pct = 100.0 * ae / total;
+    double sb_pct = 100.0 * sb / total;
+    double is_pct = 100.0 * is / total;
+    std::cerr << "[CPL_DUMP SLOT core=" << core_id_ << " slot=" << iw << "] "
+              << "all_empty=" << ae << " (" << std::fixed << std::setprecision(1) << ae_pct << "%)"
+              << "  scrb_block=" << sb << " (" << sb_pct << "%)"
+              << "  issued=" << is << " (" << is_pct << "%)"
+              << "  total=" << total << "\n";
+  }
+  // Per-warp ibuffer empty count (sorted by wid)
+  std::cerr << "[CPL_DUMP IBUF_EMPTY core=" << core_id_ << "] per-warp ibuffer empty cycles (issue() checks):\n";
+  for (uint32_t wid = 0; wid < nw; ++wid) {
+    std::cerr << "[CPL_DUMP IBUF_EMPTY " << std::setw(3) << wid << "] "
+              << std::setw(10) << dbg_warp_ibuf_empty_.at(wid) << "\n";
+  }
 }
 
 void Core::reset() {
@@ -311,6 +402,20 @@ void Core::decode() {
   decode_latch_.pop();
 }
 
+void Core::reset_warp_cpl(uint32_t wid) {
+  // Clear per-warp CPL accumulators on wspawn (kernel boundary). Per paper
+  // Algorithm 1-3 intent ("identify critical warp within current thread
+  // block"), state from the previous kernel is not meaningful to the newly
+  // re-activated warp that reuses the same wid.
+  cpl_inst_pending_.at(wid) = 0;
+  cpl_stall_cycles_.at(wid) = 0;
+  cpl_committed_instrs_.at(wid) = 0;
+  uint32_t iw = wid % ISSUE_WIDTH;
+  uint32_t w  = wid / ISSUE_WIDTH;
+  ibuffer_criticality_.at(iw).at(w) = 0;
+  ibuffer_spawn_times_.at(iw).at(w) = SimPlatform::instance().cycles();
+}
+
 void Core::cpl_update_score(uint32_t wid) {
   uint32_t iw = wid % ISSUE_WIDTH;
   uint32_t w = wid / ISSUE_WIDTH;
@@ -342,8 +447,10 @@ void Core::issue() {
       uint32_t wid = w * ISSUE_WIDTH + iw;
       this->cpl_update_score(wid);
       auto& ibuffer = ibuffers_.at(wid);
-      if (ibuffer.empty())
+      if (ibuffer.empty()) {
+        ++dbg_warp_ibuf_empty_.at(wid);   // dbg: this warp had no work this cycle
         continue;
+      }
       // check scoreboard
       has_instrs = true;
       auto trace = ibuffer.top();
@@ -394,6 +501,14 @@ void Core::issue() {
       auto w = ibuffer_arbs_.at(iw).grant(ready_set);
       issued_w = w;
       uint32_t wid = w * ISSUE_WIDTH + iw;
+      // dbg: track per-warp grant frequency and arbiter stick/swap behavior
+      ++dbg_grant_count_.at(wid);
+      if (w == dbg_last_grant_.at(iw)) {
+        ++dbg_stick_count_.at(iw);
+      } else {
+        ++dbg_swap_count_.at(iw);
+        dbg_last_grant_.at(iw) = w;
+      }
       auto& ibuffer = ibuffers_.at(wid);
       auto trace = ibuffer.top();
       // update scoreboard
@@ -406,10 +521,17 @@ void Core::issue() {
       ibuffer.pop();
     }
 
+    // CAWA Algorithm 3: stallCycles = total stall time between two consecutive
+    // instructions. Count every cycle where this warp is *alive* (committed >=1)
+    // but not issuing — captures scheduler delay, scoreboard hold, fetch /
+    // memory latency (ibuffer empty), barrier wait (stalled_warps_ → no fetch),
+    // and divergence mask-off. The committed>0 guard implements the "between
+    // two consecutive instructions" semantic: don't count the warm-up gap
+    // before the very first issue.
     for (uint32_t w = 0; w < PER_ISSUE_WARPS; ++w) {
       uint32_t wid = w * ISSUE_WIDTH + iw;
-      auto& ibuffer = ibuffers_.at(wid);
-      if (w != issued_w && !ibuffer.empty()) {
+      if (w == issued_w) continue;
+      if (cpl_committed_instrs_.at(wid) > 0) {
         ++cpl_stall_cycles_.at(wid);
         this->cpl_update_score(wid);
       }
@@ -418,6 +540,15 @@ void Core::issue() {
     // track scoreboard stalls
     if (has_instrs && !ready_set.any()) {
       ++perf_stats_.scrb_stalls;
+    }
+
+    // dbg: per-slot classification of this cycle
+    if (!has_instrs) {
+      ++dbg_slot_all_empty_.at(iw);          // all 16 warps in this slot had empty ibuffer
+    } else if (!ready_set.any()) {
+      ++dbg_slot_scrb_block_.at(iw);         // had instrs but all blocked by scoreboard
+    } else {
+      ++dbg_slot_issued_.at(iw);             // grant happened
     }
   }
 }

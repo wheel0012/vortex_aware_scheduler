@@ -61,7 +61,7 @@ int main(int argc, char **argv)
         *h_X,
         *h_T;
 
-    const unsigned int   optionCount = 16*16; //64*64;
+    const unsigned int   optionCount = 64*64*4;  // run4-aligned: ~16K options
     const float                    R = 0.02f;
     const float                    V = 0.30f;
 

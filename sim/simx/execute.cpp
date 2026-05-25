@@ -451,9 +451,11 @@ instr_trace_t* Emulator::execute(const Instr &instr, uint32_t wid) {
         }
         trace->fetch_stall = true;
         if (next_pc != (trace->PC + 4)) {
+          // CAWA paper Algorithm 2: ΔInst = nextPC - currPC + 1
+          // ("+1" counts the branch instruction itself, paper-exact).
           auto lower_pc = std::min<uint64_t>(next_pc, trace->PC + 4);
           auto upper_pc = std::max<uint64_t>(next_pc, trace->PC + 4);
-          trace->cpl_inst_delta = (upper_pc - lower_pc) / sizeof(uint32_t);
+          trace->cpl_inst_delta = (upper_pc - lower_pc) / sizeof(uint32_t) + 1;
         }
       } break;
       case BrType::JAL: { // RV32I: JAL
