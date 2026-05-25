@@ -248,7 +248,17 @@ private:
   std::vector<uint64_t> dbg_slot_all_empty_;     // per-slot: cycles where ALL warps in slot had empty ibuffer (no work)
   std::vector<uint64_t> dbg_slot_scrb_block_;    // per-slot: cycles where ibuffer had instrs but all scoreboard-blocked
   std::vector<uint64_t> dbg_slot_issued_;        // per-slot: cycles where actual issue happened
+
+  // RR-vs-GCAWS divergence diagnostic: a shadow RR arbiter per slot is fed the
+  // same ready_set every issue cycle; if its grant matches the real arbiter's
+  // grant, the real policy made the same decision as RR would.  Cumulative
+  // diff%=0 ⇒ the policy is behaviourally identical to RR for this workload.
+  std::vector<Arbiter> dbg_shadow_rr_;
+  std::vector<uint64_t> dbg_pick_same_as_rr_;    // per-slot
+  std::vector<uint64_t> dbg_pick_diff_from_rr_;  // per-slot
+  uint64_t dbg_crit_snap_last_cycle_;            // last CRIT_SNAP emit
   void dump_cpl_stats() const;
+  void cpl_snap() const;
 
   PoolAllocator<instr_trace_t, 64> trace_pool_;
 

@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <sstream>
 #include <limits>
+#include <cmath>
 #include <string.h>
 #include <assert.h>
 #include <util.h>
@@ -148,12 +149,16 @@ Core::Core(const SimContext& ctx,
   , dbg_slot_all_empty_(ISSUE_WIDTH, 0)
   , dbg_slot_scrb_block_(ISSUE_WIDTH, 0)
   , dbg_slot_issued_(ISSUE_WIDTH, 0)
+  , dbg_pick_same_as_rr_(ISSUE_WIDTH, 0)
+  , dbg_pick_diff_from_rr_(ISSUE_WIDTH, 0)
+  , dbg_crit_snap_last_cycle_(0)
 {
   char sname[100];
 
   for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
     operands_.at(iw) = Operands::Create(this);
     ibuffer_arbs_.at(iw) = Arbiter(configured_issue_arbiter(), PER_ISSUE_WARPS, &ibuffer_spawn_times_.at(iw), &ibuffer_criticality_.at(iw));
+    dbg_shadow_rr_.emplace_back(ArbiterType::RoundRobin, PER_ISSUE_WARPS);
   }
 
   // create the memory coalescer
@@ -348,6 +353,56 @@ void Core::dump_cpl_stats() const {
     std::cerr << "[CPL_DUMP IBUF_EMPTY " << std::setw(3) << wid << "] "
               << std::setw(10) << dbg_warp_ibuf_empty_.at(wid) << "\n";
   }
+  // RR-vs-current-policy divergence: smoking-gun metric.  If diff% == 0 then
+  // the policy reached the exact same decisions as RR for this workload.
+  for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
+    uint64_t same = dbg_pick_same_as_rr_.at(iw);
+    uint64_t diff = dbg_pick_diff_from_rr_.at(iw);
+    uint64_t tot = same + diff;
+    if (tot == 0) continue;
+    std::cerr << "[CPL_DUMP DIVERGE core=" << core_id_ << " slot=" << iw << "] "
+              << "same_as_rr=" << same << " diff_from_rr=" << diff
+              << " total=" << tot
+              << " diff%=" << std::fixed << std::setprecision(2)
+              << (100.0 * diff / tot) << "\n";
+  }
+}
+
+void Core::cpl_snap() const {
+  // Periodic per-warp criticality snapshot.  alive = warps with committed>0.
+  // spread = max/mean (1.0 ⇒ perfectly flat).  std = stddev across alive warps.
+  const uint32_t nw = arch_.num_warps();
+  uint64_t mn = std::numeric_limits<uint64_t>::max();
+  uint64_t mx = 0;
+  long double sum = 0;
+  long double sqsum = 0;
+  uint32_t alive = 0;
+  for (uint32_t wid = 0; wid < nw; ++wid) {
+    if (cpl_committed_instrs_.at(wid) == 0) continue;
+    uint32_t iw = wid % ISSUE_WIDTH;
+    uint32_t w  = wid / ISSUE_WIDTH;
+    uint64_t k = ibuffer_criticality_.at(iw).at(w);
+    if (k < mn) mn = k;
+    if (k > mx) mx = k;
+    sum += k;
+    sqsum += (long double)k * k;
+    ++alive;
+  }
+  if (alive == 0) return;
+  long double mean = sum / alive;
+  long double var = sqsum / alive - mean * mean;
+  if (var < 0) var = 0;
+  long double sd = std::sqrt((double)var);
+  double spread = (mean > 0) ? double(mx) / double(mean) : 0.0;
+  std::cerr << "[CRIT_SNAP cycle=" << perf_stats_.cycles
+            << " core=" << core_id_
+            << " alive=" << alive
+            << " min=" << mn
+            << " max=" << mx
+            << " mean=" << std::fixed << std::setprecision(0) << double(mean)
+            << " std=" << std::setprecision(0) << double(sd)
+            << " spread=" << std::setprecision(3) << spread
+            << "]" << std::endl;
 }
 
 void Core::reset() {
@@ -393,6 +448,11 @@ void Core::tick() {
   this->schedule();
 
   ++perf_stats_.cycles;
+  // Periodic criticality-distribution snapshot for offline analysis.
+  if (perf_stats_.cycles - dbg_crit_snap_last_cycle_ >= 10000) {
+    dbg_crit_snap_last_cycle_ = perf_stats_.cycles;
+    this->cpl_snap();
+  }
   DPN(2, std::flush);
 }
 
@@ -593,6 +653,15 @@ void Core::issue() {
     if (ready_set.any()) {
       // select one instruction from ready set
       auto w = ibuffer_arbs_.at(iw).grant(ready_set);
+      // shadow-RR diagnostic: what would a plain RR have picked, given the
+      // same ready set?  Cumulative diff% measures the actual policy's
+      // behavioural divergence from RR (0% ⇒ policy ≡ RR for this workload).
+      auto rr_pick = dbg_shadow_rr_.at(iw).grant(ready_set);
+      if (rr_pick == w) {
+        ++dbg_pick_same_as_rr_.at(iw);
+      } else {
+        ++dbg_pick_diff_from_rr_.at(iw);
+      }
       uint32_t wid = w * ISSUE_WIDTH + iw;
       // dbg: track per-warp grant frequency and arbiter stick/swap behavior
       ++dbg_grant_count_.at(wid);
