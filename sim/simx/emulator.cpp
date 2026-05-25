@@ -123,6 +123,7 @@ void Emulator::reset() {
 
   stalled_warps_.reset();
   active_warps_.reset();
+  rr_last_warp_ = -1;
 
   // activate first warp and thread
   active_warps_.set(0);
@@ -169,12 +170,13 @@ instr_trace_t* Emulator::step() {
     stalled_warps_.reset(0);
   }
 
-  // find next ready warp
-  for (size_t wid = 0, nw = arch_.num_warps(); wid < nw; ++wid) {
-    bool warp_active = active_warps_.test(wid);
-    bool warp_stalled = stalled_warps_.test(wid);
-    if (warp_active && !warp_stalled) {
-      scheduled_warp = wid;
+  // find next ready warp — round-robin from rr_last_warp_+1
+  uint32_t nw = arch_.num_warps();
+  for (uint32_t i = 1; i <= nw; ++i) {
+    uint32_t wid = (uint32_t(rr_last_warp_ + 1) + (i - 1)) % nw;
+    if (active_warps_.test(wid) && !stalled_warps_.test(wid)) {
+      scheduled_warp = static_cast<int>(wid);
+      rr_last_warp_ = scheduled_warp;
       break;
     }
   }

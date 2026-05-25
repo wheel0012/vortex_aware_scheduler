@@ -153,6 +153,7 @@ private:
   std::vector<warp_t> warps_;
   WarpMask    active_warps_;
   WarpMask    stalled_warps_;
+  int         rr_last_warp_;  // fetch-stage RR pointer (last selected wid)
   std::vector<WarpMask> barriers_;
   std::unordered_map<int, std::stringstream> print_bufs_;
   MemoryUnit  mmu_;

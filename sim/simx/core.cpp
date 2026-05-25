@@ -459,7 +459,14 @@ void Core::commit() {
       if (pending_instrs_.size() != orig_size) {
         perf_stats_.instrs += trace->tmask.count();
         ++cpl_committed_instrs_.at(trace->wid);
-        if (cpl_inst_pending_.at(trace->wid) != 0) {
+        // CAWA pending decrement (paper Algorithm 2: nInst -= 1 per commit).
+        // Vortex SIMT extension: while this warp is in a divergent region
+        // (ipdom_stack non-empty after a vx_split), freeze the decrement —
+        // the other path is still owed, so the warp is not yet "done" with
+        // one logical instruction's worth of work. Decrement resumes after
+        // the matching vx_join pops the ipdom entry.
+        bool warp_divergent = !emulator_.get_warp(trace->wid).ipdom_stack.empty();
+        if (!warp_divergent && cpl_inst_pending_.at(trace->wid) != 0) {
           --cpl_inst_pending_.at(trace->wid);
         }
         this->cpl_update_score(trace->wid);

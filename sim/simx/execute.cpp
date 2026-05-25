@@ -1358,6 +1358,14 @@ instr_trace_t* Emulator::execute(const Instr &instr, uint32_t wid) {
           // push reconvergence and not-taken thread mask onto the stack
           auto ntaken_tmask = ~next_tmask & warp.tmask;
           warp.ipdom_stack.emplace(warp.tmask, ntaken_tmask, next_pc);
+
+          // CAWA criticality spike on thread-divergent vx_split.
+          // RISC-V SIMT extension doesn't encode path size in the
+          // instruction (unlike PTX @p0 bra), so we inject a fixed-size
+          // pending-work signal at divergence entry. K=8 ≈ avg basic
+          // block size; the matching commit-time freeze (core.cpp)
+          // sustains the signal until vx_join reconverges.
+          trace->cpl_inst_delta = 8;
         }
         // return divergent state
         for (uint32_t t = thread_start; t < num_threads; ++t) {
