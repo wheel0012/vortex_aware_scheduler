@@ -51,7 +51,7 @@ ProcessorImpl::ProcessorImpl(const Arch& arch)
     L3_WRITEBACK,             // write-back
     false,                    // write response
     L3_MSHR_SIZE,             // mshr size
-    2,                        // pipeline latency
+    SIMX_CACHE_LATENCY,       // pipeline latency
     }
   );
 

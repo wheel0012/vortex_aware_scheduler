@@ -27,6 +27,69 @@ DISABLE_WARNING_POP
 
 using namespace vortex;
 
+#ifndef SIMX_FIXED_MEM_LATENCY
+#define SIMX_FIXED_MEM_LATENCY 0
+#endif
+
+#if SIMX_FIXED_MEM_LATENCY > 0
+
+class DramSim::Impl {
+private:
+	struct mem_rsp_t {
+		uint32_t cycles_left;
+		ResponseCallback callback;
+		void* arg;
+	};
+
+	std::queue<mem_rsp_t> pending_rsps_;
+
+public:
+	Impl(uint32_t num_channels, uint32_t channel_size, float clock_ratio) {
+		__unused(num_channels);
+		__unused(channel_size);
+		__unused(clock_ratio);
+	}
+
+	~Impl() {
+		while (!pending_rsps_.empty()) {
+			auto rsp = pending_rsps_.front();
+			pending_rsps_.pop();
+			if (rsp.callback) {
+				rsp.callback(rsp.arg);
+			}
+		}
+	}
+
+	void reset() {
+		std::queue<mem_rsp_t> empty;
+		pending_rsps_.swap(empty);
+	}
+
+	void tick() {
+		auto count = pending_rsps_.size();
+		for (uint32_t i = 0; i < count; ++i) {
+			auto rsp = pending_rsps_.front();
+			pending_rsps_.pop();
+			if (rsp.cycles_left <= 1) {
+				if (rsp.callback) {
+					rsp.callback(rsp.arg);
+				}
+			} else {
+				--rsp.cycles_left;
+				pending_rsps_.push(rsp);
+			}
+		}
+	}
+
+	void send_request(uint64_t addr, bool is_write, ResponseCallback response_cb, void* arg) {
+		__unused(addr);
+		__unused(is_write);
+		pending_rsps_.push({SIMX_FIXED_MEM_LATENCY, response_cb, arg});
+	}
+};
+
+#else
+
 class DramSim::Impl {
 private:
 	struct mem_req_t {
@@ -143,6 +206,8 @@ public:
 		}
 	}
 };
+
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 

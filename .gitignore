@@ -3,3 +3,16 @@
 *.cache
 *.code-workspace
 miscs/apptainer/vortex.sif
+
+# simx warp scheduler trace/analysis outputs
+/issue_trace.csv
+/summary.txt
+/mismatch_report.csv
+/wid_timeline.png
+/pc_timeline.png
+/score_timeline.png
+/warp_sched_trace/
+/worklogs/runs/
+/worklogs/trace_runs/
+/ramulator.stats.log
+/trace/

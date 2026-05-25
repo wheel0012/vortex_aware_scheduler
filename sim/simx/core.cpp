@@ -14,6 +14,7 @@
 #include <iostream>
 #include <iomanip>
 #include <algorithm>
+#include <sstream>
 #include <limits>
 #include <string.h>
 #include <assert.h>
@@ -24,8 +25,83 @@
 #include "core.h"
 #include "debug.h"
 #include "constants.h"
+#include "warp_sched_trace.h"
 
 using namespace vortex;
+
+namespace {
+
+uint64_t wid_bit(uint32_t wid) {
+  return wid < 64 ? (1ull << wid) : 0;
+}
+
+std::string to_hex_string(uint64_t value) {
+  std::ostringstream os;
+  os << "0x" << std::hex << value;
+  return os.str();
+}
+
+std::string trace_inst_type(const instr_trace_t* trace) {
+  std::ostringstream os;
+  std::visit([&](auto&& op_type) {
+    os << op_type;
+  }, trace->op_type);
+  return os.str();
+}
+
+std::string trace_score_vector(const std::vector<uint64_t>& scores) {
+  std::ostringstream os;
+  for (uint32_t i = 0, n = scores.size(); i < n; ++i) {
+    if (i) {
+      os << '|';
+    }
+    os << scores.at(i);
+  }
+  return os.str();
+}
+
+void write_warp_sched_trace(uint32_t core_id,
+                            uint32_t issue_slot,
+                            bool issued,
+                            int intended_wid,
+                            int actual_wid,
+                            const instr_trace_t* trace,
+                            const std::string& score,
+                            const std::string& score_vector,
+                            uint64_t candidate_mask,
+                            uint64_t ready_mask,
+                            uint64_t ibuffer_empty_mask,
+                            const std::string& stall_reason,
+                            const std::string& mismatch_reason) {
+  if (!WarpSchedTrace::enabled())
+    return;
+
+  WarpSchedTrace::Row row;
+  row.cycle = SimPlatform::instance().cycles();
+  row.core_id = core_id;
+  row.issue_slot = issue_slot;
+  row.issued = issued;
+  row.intended_wid = intended_wid;
+  row.actual_wid = actual_wid;
+  row.selected_wid = actual_wid;
+  if (trace) {
+    row.pc = to_hex_string(trace->PC);
+    row.inst_type = trace_inst_type(trace);
+  }
+  row.score = score;
+  row.score_vector = score_vector;
+  row.candidate_mask = to_hex_string(candidate_mask);
+  row.ready_mask = to_hex_string(ready_mask);
+  row.ibuffer_empty_mask = to_hex_string(ibuffer_empty_mask);
+  row.ibuffer_empty = actual_wid >= 0 ? false : (candidate_mask == 0);
+  row.fallback = issued && intended_wid >= 0 && actual_wid >= 0 && intended_wid != actual_wid;
+  row.stall_reason = stall_reason;
+  row.mismatch = row.fallback;
+  row.mismatch_reason = row.mismatch ? mismatch_reason : "none";
+  WarpSchedTrace::write_issue(row);
+}
+
+} // namespace
 
 Core::Core(const SimContext& ctx,
            uint32_t core_id,
@@ -423,7 +499,6 @@ void Core::cpl_update_score(uint32_t wid) {
   uint32_t iw = wid % ISSUE_WIDTH;
   uint32_t w = wid / ISSUE_WIDTH;
   ibuffer_spawn_times_.at(iw).at(w) = emulator_.get_warp(wid).spawn_time;
-
   auto committed = cpl_committed_instrs_.at(wid);
   auto elapsed = SimPlatform::instance().cycles() - emulator_.get_warp(wid).spawn_time + 1;
   auto cpi_avg = committed ? std::max<uint64_t>(1, elapsed / committed) : uint64_t(1);
@@ -445,17 +520,24 @@ void Core::issue() {
   // issue ibuffer instructions
   for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
     bool has_instrs = false;
+    BitVector<> candidate_set(PER_ISSUE_WARPS);
     BitVector<> ready_set(PER_ISSUE_WARPS);
+    uint64_t candidate_mask = 0;
+    uint64_t ready_mask = 0;
+    uint64_t ibuffer_empty_mask = 0;
     for (uint32_t w = 0; w < PER_ISSUE_WARPS; ++w) {
       uint32_t wid = w * ISSUE_WIDTH + iw;
       this->cpl_update_score(wid);
       auto& ibuffer = ibuffers_.at(wid);
       if (ibuffer.empty()) {
+        ibuffer_empty_mask |= wid_bit(wid);
         ++dbg_warp_ibuf_empty_.at(wid);   // dbg: this warp had no work this cycle
         continue;
       }
       // check scoreboard
       has_instrs = true;
+      candidate_set.set(w);
+      candidate_mask |= wid_bit(wid);
       auto trace = ibuffer.top();
       if (scoreboard_.in_use(trace)) {
         auto uses = scoreboard_.get_uses(trace);
@@ -495,6 +577,16 @@ void Core::issue() {
       } else {
         trace->log_once(false);
         ready_set.set(w); // mark instruction as ready
+        ready_mask |= wid_bit(wid);
+      }
+    }
+    auto score_vector = trace_score_vector(ibuffer_criticality_.at(iw));
+
+    int intended_wid = -1;
+    if (candidate_set.any()) {
+      auto intended_w = ibuffer_arbs_.at(iw).peek(candidate_set);
+      if (intended_w != uint32_t(-1)) {
+        intended_wid = static_cast<int>(intended_w * ISSUE_WIDTH + iw);
       }
     }
 
@@ -519,14 +611,49 @@ void Core::issue() {
       }
       last_issue_cycle = curr_cycle;
       this->cpl_update_score(wid);
+      auto mismatch_reason = std::string("none");
+      if (intended_wid >= 0 && intended_wid != static_cast<int>(wid)) {
+        if ((ready_mask & wid_bit(intended_wid)) == 0) {
+          mismatch_reason = "intended_warp_not_ready";
+        } else {
+          mismatch_reason = "fallback_path";
+        }
+      }
       // update scoreboard
       DT(3, "pipeline-ibuffer: " << *trace);
       if (trace->wb) {
         scoreboard_.reserve(trace);
       }
+      write_warp_sched_trace(core_id_,
+                             iw,
+                             true,
+                             intended_wid,
+                             wid,
+                             trace,
+                             std::to_string(ibuffer_criticality_.at(iw).at(w)),
+                             score_vector,
+                             candidate_mask,
+                             ready_mask,
+                             ibuffer_empty_mask,
+                             mismatch_reason == "none" ? "none" : mismatch_reason,
+                             mismatch_reason);
       // to operand stage
       operands_.at(iw)->Input.push(trace, 1);
       ibuffer.pop();
+    } else {
+      write_warp_sched_trace(core_id_,
+                             iw,
+                             false,
+                             intended_wid,
+                             -1,
+                             nullptr,
+                             "",
+                             score_vector,
+                             candidate_mask,
+                             ready_mask,
+                             ibuffer_empty_mask,
+                             has_instrs ? "operand_not_ready" : "ibuffer_empty",
+                             "none");
     }
 
     // track scoreboard stalls
