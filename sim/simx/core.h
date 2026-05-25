@@ -237,6 +237,7 @@ private:
   std::vector<uint64_t> cpl_inst_pending_;
   std::vector<uint64_t> cpl_stall_cycles_;
   std::vector<uint64_t> cpl_committed_instrs_;
+  std::vector<uint64_t> cpl_last_issue_cycle_;
 
   // Debug counters for diagnosing scheduler behavior.
   std::vector<uint64_t> dbg_grant_count_;        // per-wid: how often each warp was granted issue

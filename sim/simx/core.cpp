@@ -63,6 +63,7 @@ Core::Core(const SimContext& ctx,
   , cpl_inst_pending_(arch_.num_warps(), 0)
   , cpl_stall_cycles_(arch_.num_warps(), 0)
   , cpl_committed_instrs_(arch_.num_warps(), 0)
+  , cpl_last_issue_cycle_(arch_.num_warps(), std::numeric_limits<uint64_t>::max())
   , dbg_grant_count_(arch_.num_warps(), 0)
   , dbg_last_grant_(ISSUE_WIDTH, uint32_t(-1))
   , dbg_stick_count_(ISSUE_WIDTH, 0)
@@ -299,6 +300,7 @@ void Core::reset() {
   std::fill(cpl_inst_pending_.begin(), cpl_inst_pending_.end(), 0);
   std::fill(cpl_stall_cycles_.begin(), cpl_stall_cycles_.end(), 0);
   std::fill(cpl_committed_instrs_.begin(), cpl_committed_instrs_.end(), 0);
+  std::fill(cpl_last_issue_cycle_.begin(), cpl_last_issue_cycle_.end(), std::numeric_limits<uint64_t>::max());
 
   pending_instrs_.clear();
   pending_ifetches_ = 0;
@@ -410,6 +412,7 @@ void Core::reset_warp_cpl(uint32_t wid) {
   cpl_inst_pending_.at(wid) = 0;
   cpl_stall_cycles_.at(wid) = 0;
   cpl_committed_instrs_.at(wid) = 0;
+  cpl_last_issue_cycle_.at(wid) = std::numeric_limits<uint64_t>::max();
   uint32_t iw = wid % ISSUE_WIDTH;
   uint32_t w  = wid / ISSUE_WIDTH;
   ibuffer_criticality_.at(iw).at(w) = 0;
@@ -495,11 +498,9 @@ void Core::issue() {
       }
     }
 
-    uint32_t issued_w = uint32_t(-1);
     if (ready_set.any()) {
       // select one instruction from ready set
       auto w = ibuffer_arbs_.at(iw).grant(ready_set);
-      issued_w = w;
       uint32_t wid = w * ISSUE_WIDTH + iw;
       // dbg: track per-warp grant frequency and arbiter stick/swap behavior
       ++dbg_grant_count_.at(wid);
@@ -511,6 +512,13 @@ void Core::issue() {
       }
       auto& ibuffer = ibuffers_.at(wid);
       auto trace = ibuffer.top();
+      auto& last_issue_cycle = cpl_last_issue_cycle_.at(wid);
+      auto curr_cycle = SimPlatform::instance().cycles();
+      if (last_issue_cycle != std::numeric_limits<uint64_t>::max()) {
+        cpl_stall_cycles_.at(wid) += curr_cycle - last_issue_cycle - 1;
+      }
+      last_issue_cycle = curr_cycle;
+      this->cpl_update_score(wid);
       // update scoreboard
       DT(3, "pipeline-ibuffer: " << *trace);
       if (trace->wb) {
@@ -519,22 +527,6 @@ void Core::issue() {
       // to operand stage
       operands_.at(iw)->Input.push(trace, 1);
       ibuffer.pop();
-    }
-
-    // CAWA Algorithm 3: stallCycles = total stall time between two consecutive
-    // instructions. Count every cycle where this warp is *alive* (committed >=1)
-    // but not issuing — captures scheduler delay, scoreboard hold, fetch /
-    // memory latency (ibuffer empty), barrier wait (stalled_warps_ → no fetch),
-    // and divergence mask-off. The committed>0 guard implements the "between
-    // two consecutive instructions" semantic: don't count the warm-up gap
-    // before the very first issue.
-    for (uint32_t w = 0; w < PER_ISSUE_WARPS; ++w) {
-      uint32_t wid = w * ISSUE_WIDTH + iw;
-      if (w == issued_w) continue;
-      if (cpl_committed_instrs_.at(wid) > 0) {
-        ++cpl_stall_cycles_.at(wid);
-        this->cpl_update_score(wid);
-      }
     }
 
     // track scoreboard stalls
