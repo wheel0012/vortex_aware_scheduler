@@ -796,6 +796,7 @@ class IArbiterImpl {
 public:
   IArbiterImpl() {}
   virtual ~IArbiterImpl() {}
+  virtual uint32_t peek(const BitVector<>& requests) const = 0;
   virtual uint32_t grant(const BitVector<>& requests) = 0;
   virtual void reset() = 0;
 };
@@ -806,7 +807,7 @@ public:
     this->reset();
   }
 
-  uint32_t grant(const BitVector<>& requests) override {
+  uint32_t peek(const BitVector<>& requests) const override {
     assert(requests.size() == size_);
     for (uint32_t i = 0; i < size_; ++i) {
       if (requests.test(i)) {
@@ -814,6 +815,10 @@ public:
       }
     }
     return -1;
+  }
+
+  uint32_t grant(const BitVector<>& requests) override {
+    return this->peek(requests);
   }
 
   void reset() override {
@@ -829,17 +834,24 @@ public:
     this->reset();
   }
 
-  uint32_t grant(const BitVector<>& requests) override {
+  uint32_t peek(const BitVector<>& requests) const override {
     assert(requests.size() == size_);
     uint32_t start = (last_grant_ + 1) % size_;
     for (uint32_t i = 0; i < size_; ++i) {
       uint32_t idx = (start + i) % size_;
       if (requests.test(idx)) {
-        last_grant_ = idx;
         return idx;
       }
     }
     return -1;
+  }
+
+  uint32_t grant(const BitVector<>& requests) override {
+    auto idx = this->peek(requests);
+    if (idx != uint32_t(-1)) {
+      last_grant_ = idx;
+    }
+    return idx;
   }
 
   void reset() override {
@@ -859,7 +871,7 @@ public:
     this->reset();
   }
 
-  uint32_t grant(const BitVector<>& requests) override {
+  uint32_t peek(const BitVector<>& requests) const override {
     assert(requests.size() == size_);
     for (uint32_t i = 0; i < size_; ++i) {
       if (requests[i]) {
@@ -874,18 +886,25 @@ public:
         }
 
         if (highest_priority) {
-          // Update the priority matrix: clear the row and set the column
-          for (uint32_t j = 0; j < size_; ++j) {
-            if (i != j) {
-              priority_matrix_[i][j] = false;
-              priority_matrix_[j][i] = true;
-            }
-          }
           return i; // Return the granted request index
         }
       }
     }
     return -1;
+  }
+
+  uint32_t grant(const BitVector<>& requests) override {
+    auto i = this->peek(requests);
+    if (i != uint32_t(-1)) {
+      // Update the priority matrix: clear the row and set the column
+      for (uint32_t j = 0; j < size_; ++j) {
+        if (i != j) {
+          priority_matrix_[i][j] = false;
+          priority_matrix_[j][i] = true;
+        }
+      }
+    }
+    return i;
   }
 
   void reset() override {
@@ -914,7 +933,7 @@ public:
     this->reset();
   }
 
-  uint32_t grant(const BitVector<>& requests) override {
+  uint32_t peek(const BitVector<>& requests) const override {
     assert(requests.size() == size_);
     assert(spawn_times_->size() == size_);
 
@@ -934,6 +953,11 @@ public:
       }
     }
 
+    return grant;
+  }
+
+  uint32_t grant(const BitVector<>& requests) override {
+    auto grant = this->peek(requests);
     current_grant_ = grant;
     return grant;
   }
@@ -961,7 +985,7 @@ public:
     this->reset();
   }
 
-  uint32_t grant(const BitVector<>& requests) override {
+  uint32_t peek(const BitVector<>& requests) const override {
     assert(requests.size() == size_);
     assert(spawn_times_->size() == size_);
     assert(criticality_->size() == size_);
@@ -987,6 +1011,11 @@ public:
       }
     }
 
+    return grant;
+  }
+
+  uint32_t grant(const BitVector<>& requests) override {
+    auto grant = this->peek(requests);
     current_grant_ = grant;
     return grant;
   }
@@ -1027,6 +1056,10 @@ public:
   }
 
   virtual ~Arbiter() {}
+
+  uint32_t peek(const BitVector<>& requests) const {
+    return impl_->peek(requests);
+  }
 
   uint32_t grant(const BitVector<>& requests) {
     return impl_->grant(requests);

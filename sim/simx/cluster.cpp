@@ -56,7 +56,7 @@ Cluster::Cluster(const SimContext& ctx,
     L2_WRITEBACK,           // write-back
     false,                  // write response
     L2_MSHR_SIZE,           // mshr size
-    2,                      // pipeline latency
+    SIMX_CACHE_LATENCY,     // pipeline latency
   });
 
   // connect l2cache core interfaces

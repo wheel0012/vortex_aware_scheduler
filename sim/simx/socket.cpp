@@ -45,7 +45,7 @@ Socket::Socket(const SimContext& ctx,
     false,                  // write-back
     false,                  // write response
     ICACHE_MSHR_SIZE,       // mshr size
-    2,                      // pipeline latency
+    SIMX_CACHE_LATENCY,     // pipeline latency
   });
 
   snprintf(sname, 100, "%s-dcaches", this->name().c_str());
@@ -62,7 +62,7 @@ Socket::Socket(const SimContext& ctx,
     DCACHE_WRITEBACK,       // write-back
     false,                  // write response
     DCACHE_MSHR_SIZE,       // mshr size
-    2,                      // pipeline latency
+    SIMX_CACHE_LATENCY,     // pipeline latency
   });
 
   // find overlap

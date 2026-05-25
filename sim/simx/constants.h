@@ -24,6 +24,12 @@
 #define MEM_CLOCK_RATIO   1
 #endif
 
+#ifndef SIMX_CACHE_LATENCY
+#define SIMX_CACHE_LATENCY 2
+#endif
+
+static_assert(SIMX_CACHE_LATENCY >= 1, "SIMX_CACHE_LATENCY must be at least 1");
+
 namespace vortex {
 
 inline constexpr uint32_t XLENB           = (XLEN / 8);

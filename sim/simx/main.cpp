@@ -18,18 +18,22 @@
 #include <fstream>
 #include <stdlib.h>
 #include <unistd.h>
+#include <getopt.h>
 #include <sys/stat.h>
 #include "processor.h"
 #include "mem.h"
 #include "constants.h"
 #include <util.h>
 #include "core.h"
+#include "warp_sched_trace.h"
 #include "VX_types.h"
 
 using namespace vortex;
 
 static void show_usage() {
-   std::cout << "Usage: [-c <cores>] [-w <warps>] [-t <threads>] [-v: vector-test] [-s: stats] [-h: help] <program>" << std::endl;
+   std::cout << "Usage: [-c <cores>] [-w <warps>] [-t <threads>] [-v: vector-test] [-s: stats] [-h: help]\n"
+                "       [--trace-warp-sched[=FILE]] [--trace-warp-sched-file FILE]\n"
+                "       [--warp-sched-policy NAME] <program>" << std::endl;
 }
 
 uint32_t num_threads = NUM_THREADS;
@@ -37,19 +41,40 @@ uint32_t num_warps = NUM_WARPS;
 uint32_t num_cores = NUM_CORES;
 bool showStats = false;
 bool vector_test = false;
+bool trace_warp_sched = false;
+std::string trace_warp_sched_file = "issue_trace.csv";
+std::string warp_sched_policy;
 const char* program = nullptr;
 
+static std::string default_warp_sched_policy() {
+  std::ostringstream os;
+  os << configured_issue_arbiter();
+  return os.str();
+}
+
 static void parse_args(int argc, char **argv) {
-  	int c;
-  	while ((c = getopt(argc, argv, "t:w:c:vsh")) != -1) {
-    	switch (c) {
+    enum {
+      OPT_TRACE_WARP_SCHED = 1000,
+      OPT_TRACE_WARP_SCHED_FILE,
+      OPT_WARP_SCHED_POLICY
+    };
+    static struct option long_options[] = {
+      {"trace-warp-sched", optional_argument, 0, OPT_TRACE_WARP_SCHED},
+      {"trace-warp-sched-file", required_argument, 0, OPT_TRACE_WARP_SCHED_FILE},
+      {"warp-sched-policy", required_argument, 0, OPT_WARP_SCHED_POLICY},
+      {0, 0, 0, 0}
+    };
+
+    int c;
+    while ((c = getopt_long(argc, argv, "t:w:c:vsh", long_options, nullptr)) != -1) {
+      switch (c) {
       case 't':
         num_threads = atoi(optarg);
         break;
       case 'w':
         num_warps = atoi(optarg);
         break;
-		  case 'c':
+      case 'c':
         num_cores = atoi(optarg);
         break;
       case 'v':
@@ -58,29 +83,47 @@ static void parse_args(int argc, char **argv) {
       case 's':
         showStats = true;
         break;
-    	case 'h':
-      	show_usage();
-      	exit(0);
-    		break;
-    	default:
-      	show_usage();
-      	exit(-1);
-    	}
-	}
+      case OPT_TRACE_WARP_SCHED:
+        trace_warp_sched = true;
+        if (optarg) {
+          trace_warp_sched_file = optarg;
+        }
+        break;
+      case OPT_TRACE_WARP_SCHED_FILE:
+        trace_warp_sched = true;
+        trace_warp_sched_file = optarg;
+        break;
+      case OPT_WARP_SCHED_POLICY:
+        warp_sched_policy = optarg;
+        break;
+      case 'h':
+        show_usage();
+        exit(0);
+        break;
+      default:
+        show_usage();
+        exit(-1);
+      }
+    }
 
-	if (optind < argc) {
-		program = argv[optind];
+    if (optind < argc) {
+      program = argv[optind];
     std::cout << "Running " << program << "..." << std::endl;
-	} else {
-		show_usage();
+    } else {
+      show_usage();
     exit(-1);
-	}
+    }
 }
 
 int main(int argc, char **argv) {
   int exitcode = 0;
 
   parse_args(argc, argv);
+  if (trace_warp_sched) {
+    WarpSchedTrace::configure(true,
+                              trace_warp_sched_file,
+                              warp_sched_policy.empty() ? default_warp_sched_policy() : warp_sched_policy);
+  }
 
   {
     // create processor configuation
