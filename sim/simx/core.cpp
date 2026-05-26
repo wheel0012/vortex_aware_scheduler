@@ -124,6 +124,7 @@ Core::Core(const SimContext& ctx,
 #ifdef EXT_V_ENABLE
   , vec_unit_(VecUnit::Create("vpu", arch, this))
 #endif
+  , sched_criticality_(arch.num_warps(), 0)
   , emulator_(arch, dcrs, this)
   , ibuffers_(arch.num_warps(), IBUF_SIZE)
   , scoreboard_(arch_)
@@ -149,6 +150,8 @@ Core::Core(const SimContext& ctx,
   , dbg_slot_all_empty_(ISSUE_WIDTH, 0)
   , dbg_slot_scrb_block_(ISSUE_WIDTH, 0)
   , dbg_slot_issued_(ISSUE_WIDTH, 0)
+  , dbg_warp_scrb_block_(arch_.num_warps(), 0)
+  , dbg_ready_size_hist_(ISSUE_WIDTH, std::array<uint64_t, 5>{0, 0, 0, 0, 0})
   , dbg_pick_same_as_rr_(ISSUE_WIDTH, 0)
   , dbg_pick_diff_from_rr_(ISSUE_WIDTH, 0)
   , dbg_crit_snap_last_cycle_(0)
@@ -353,6 +356,59 @@ void Core::dump_cpl_stats() const {
     std::cerr << "[CPL_DUMP IBUF_EMPTY " << std::setw(3) << wid << "] "
               << std::setw(10) << dbg_warp_ibuf_empty_.at(wid) << "\n";
   }
+  // Per-warp scrb_block + mean issue-gap.  Asymmetry across warps here is the
+  // *prerequisite* for criticality differentiation; if all warps see the same
+  // scrb_block & gap, the workload is fundamentally lockstep and no scheduler
+  // can produce per-warp differentiation.
+  std::cerr << "[CPL_DUMP WARP_DIST core=" << core_id_
+            << "] per-wid {scrb_block, mean_issue_gap, committed}:\n";
+  uint64_t sb_min = std::numeric_limits<uint64_t>::max(), sb_max = 0;
+  long double sb_sum = 0;
+  uint32_t alive_w = 0;
+  for (uint32_t wid = 0; wid < nw; ++wid) {
+    uint64_t sb = dbg_warp_scrb_block_.at(wid);
+    uint64_t grants = dbg_grant_count_.at(wid);
+    uint64_t stalls = cpl_stall_cycles_.at(wid);
+    uint64_t commit = cpl_committed_instrs_.at(wid);
+    uint64_t gap = (grants > 0) ? stalls / grants : 0;
+    std::cerr << "[CPL_DUMP WARP_DIST " << std::setw(3) << wid << "] "
+              << std::setw(10) << sb << "  "
+              << std::setw(8) << gap << "  "
+              << std::setw(8) << commit << "\n";
+    if (commit > 0) {
+      sb_sum += sb;
+      if (sb < sb_min) sb_min = sb;
+      if (sb > sb_max) sb_max = sb;
+      ++alive_w;
+    }
+  }
+  if (alive_w > 0) {
+    long double sb_mean = sb_sum / alive_w;
+    double sb_skew = (sb_mean > 0) ? double(sb_max) / double(sb_mean) : 0.0;
+    std::cerr << "[CPL_DUMP WARP_DIST STATS core=" << core_id_ << "] alive=" << alive_w
+              << "  scrb_block: min=" << sb_min << " max=" << sb_max
+              << " mean=" << std::fixed << std::setprecision(0) << double(sb_mean)
+              << " max/mean=" << std::setprecision(3) << sb_skew
+              << "\n";
+  }
+  // Ready-set size histogram per slot — tells us how often the policy
+  // actually has a CHOICE.  ready_set size 1 ⇒ no choice, only size ≥ 2
+  // matters for differentiation.
+  for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
+    auto& h = dbg_ready_size_hist_.at(iw);
+    uint64_t total = h[0] + h[1] + h[2] + h[3] + h[4];
+    if (total == 0) continue;
+    auto pct = [&](uint64_t v) {
+      return std::to_string(int(100.0 * double(v) / double(total) + 0.5));
+    };
+    std::cerr << "[CPL_DUMP READY_HIST core=" << core_id_ << " slot=" << iw << "] "
+              << "size0=" << h[0] << "(" << pct(h[0]) << "%) "
+              << "size1=" << h[1] << "(" << pct(h[1]) << "%) "
+              << "size2-3=" << h[2] << "(" << pct(h[2]) << "%) "
+              << "size4-7=" << h[3] << "(" << pct(h[3]) << "%) "
+              << "size8+=" << h[4] << "(" << pct(h[4]) << "%) "
+              << "total=" << total << "\n";
+  }
   // RR-vs-current-policy divergence: smoking-gun metric.  If diff% == 0 then
   // the policy reached the exact same decisions as RR for this workload.
   for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
@@ -432,6 +488,7 @@ void Core::reset() {
   std::fill(cpl_stall_cycles_.begin(), cpl_stall_cycles_.end(), 0);
   std::fill(cpl_committed_instrs_.begin(), cpl_committed_instrs_.end(), 0);
   std::fill(cpl_last_issue_cycle_.begin(), cpl_last_issue_cycle_.end(), std::numeric_limits<uint64_t>::max());
+  std::fill(sched_criticality_.begin(), sched_criticality_.end(), 0);
 
   pending_instrs_.clear();
   pending_ifetches_ = 0;
@@ -549,6 +606,7 @@ void Core::reset_warp_cpl(uint32_t wid) {
   cpl_stall_cycles_.at(wid) = 0;
   cpl_committed_instrs_.at(wid) = 0;
   cpl_last_issue_cycle_.at(wid) = std::numeric_limits<uint64_t>::max();
+  sched_criticality_.at(wid) = 0;
   uint32_t iw = wid % ISSUE_WIDTH;
   uint32_t w  = wid / ISSUE_WIDTH;
   ibuffer_criticality_.at(iw).at(w) = 0;
@@ -562,8 +620,9 @@ void Core::cpl_update_score(uint32_t wid) {
   auto committed = cpl_committed_instrs_.at(wid);
   auto elapsed = SimPlatform::instance().cycles() - emulator_.get_warp(wid).spawn_time + 1;
   auto cpi_avg = committed ? std::max<uint64_t>(1, elapsed / committed) : uint64_t(1);
-  ibuffer_criticality_.at(iw).at(w) =
-      cpl_inst_pending_.at(wid) * cpi_avg + cpl_stall_cycles_.at(wid);
+  auto crit = cpl_inst_pending_.at(wid) * cpi_avg + cpl_stall_cycles_.at(wid);
+  ibuffer_criticality_.at(iw).at(w) = crit;
+  sched_criticality_.at(wid) = crit;
 }
 
 void Core::issue() {
@@ -600,6 +659,8 @@ void Core::issue() {
       candidate_mask |= wid_bit(wid);
       auto trace = ibuffer.top();
       if (scoreboard_.in_use(trace)) {
+        // per-wid scrb_block counter: drives the asymmetry diagnostic
+        ++dbg_warp_scrb_block_.at(wid);
         auto uses = scoreboard_.get_uses(trace);
         if (!trace->log_once(true)) {
           DTH(4, "*** scoreboard-stall: dependents={");
@@ -737,6 +798,18 @@ void Core::issue() {
       ++dbg_slot_scrb_block_.at(iw);         // had instrs but all blocked by scoreboard
     } else {
       ++dbg_slot_issued_.at(iw);             // grant happened
+    }
+    // dbg: ready_set size histogram.  bucket 0 = no ready, 1 = exactly 1
+    // (policy has no choice), 2 = size 2-3, 3 = size 4-7, 4 = size 8+.
+    {
+      auto sz = ready_set.count();
+      uint32_t bucket;
+      if (sz == 0)        bucket = 0;
+      else if (sz == 1)   bucket = 1;
+      else if (sz <= 3)   bucket = 2;
+      else if (sz <= 7)   bucket = 3;
+      else                bucket = 4;
+      ++dbg_ready_size_hist_.at(iw)[bucket];
     }
   }
 }

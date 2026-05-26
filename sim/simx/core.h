@@ -14,6 +14,7 @@
 #pragma once
 
 #include <vector>
+#include <array>
 #include <simobject.h>
 #include "types.h"
 #include "emulator.h"
@@ -185,6 +186,13 @@ public:
   // priority decisions and warp 0 cpi_avg overflow.
   void reset_warp_cpl(uint32_t wid);
 
+  // Read-only view of per-wid criticality for the schedule-stage policy.
+  // Updated in cpl_update_score() whenever the issue stage refreshes the
+  // per-slot criticality vector.
+  const std::vector<uint64_t>& sched_criticality() const {
+    return sched_criticality_;
+  }
+
 private:
 
   void schedule();
@@ -206,6 +214,11 @@ private:
 #ifdef EXT_V_ENABLE
   VecUnit::Ptr vec_unit_;
 #endif
+
+  // Per-wid flat criticality mirror — must be declared (and constructed)
+  // BEFORE emulator_, because Emulator's sched_policy_ Arbiter holds a
+  // pointer to this vector and asserts its size at ctor time.
+  std::vector<uint64_t> sched_criticality_;
 
   Emulator emulator_;
 
@@ -238,6 +251,10 @@ private:
   std::vector<uint64_t> cpl_stall_cycles_;
   std::vector<uint64_t> cpl_committed_instrs_;
   std::vector<uint64_t> cpl_last_issue_cycle_;
+  // sched_criticality_ is declared earlier in this class (before emulator_)
+  // so the schedule-stage policy can reference it during Emulator
+  // construction; it's a per-wid mirror of ibuffer_criticality_ updated in
+  // cpl_update_score().
 
   // Debug counters for diagnosing scheduler behavior.
   std::vector<uint64_t> dbg_grant_count_;        // per-wid: how often each warp was granted issue
@@ -248,6 +265,10 @@ private:
   std::vector<uint64_t> dbg_slot_all_empty_;     // per-slot: cycles where ALL warps in slot had empty ibuffer (no work)
   std::vector<uint64_t> dbg_slot_scrb_block_;    // per-slot: cycles where ibuffer had instrs but all scoreboard-blocked
   std::vector<uint64_t> dbg_slot_issued_;        // per-slot: cycles where actual issue happened
+  std::vector<uint64_t> dbg_warp_scrb_block_;    // per-wid: cycles where this warp's head-of-ibuf was scoreboard-blocked
+  // ready_set size histogram per slot: hist[0]=empty, [1]=size-1, [2]=size 2-3,
+  // [3]=size 4-7, [4]=size 8+.  Size=1 means policy has no choice this cycle.
+  std::vector<std::array<uint64_t, 5>> dbg_ready_size_hist_;
 
   // RR-vs-GCAWS divergence diagnostic: a shadow RR arbiter per slot is fed the
   // same ready_set every issue cycle; if its grant matches the real arbiter's

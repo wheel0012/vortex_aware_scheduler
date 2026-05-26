@@ -154,6 +154,15 @@ private:
   WarpMask    active_warps_;
   WarpMask    stalled_warps_;
   int         rr_last_warp_;  // fetch-stage RR pointer (last selected wid)
+  // Schedule-stage (fetch) policy.  When VORTEX_SCHED_POLICY != RR the
+  // cyclic-RR loop in step() is bypassed in favour of this arbiter object,
+  // which is fed a per-wid ready mask plus warp spawn_times and the per-wid
+  // criticality vector owned by Core.  Keeps the fetch arbiter independent
+  // of the issue arbiter so the two stages can be configured separately.
+  // NB: sched_spawn_times_ must be declared (and sized) BEFORE sched_policy_,
+  // because the Arbiter ctor asserts spawn_times->size() == arch.num_warps().
+  std::vector<uint64_t> sched_spawn_times_;
+  Arbiter sched_policy_;
   std::vector<WarpMask> barriers_;
   std::unordered_map<int, std::stringstream> print_bufs_;
   MemoryUnit  mmu_;

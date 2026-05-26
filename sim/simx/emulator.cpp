@@ -12,6 +12,7 @@
 // limitations under the License.
 
 #include <iostream>
+#include <algorithm>
 #include <stdlib.h>
 #include <unistd.h>
 #include <math.h>
@@ -79,6 +80,11 @@ Emulator::Emulator(const Arch &arch, const DCRS &dcrs, Core* core)
     , dcrs_(dcrs)
     , core_(core)
     , warps_(arch.num_warps(), arch.num_threads())
+    , sched_spawn_times_(arch.num_warps(), 0)
+    , sched_policy_(configured_sched_policy(),
+                    arch.num_warps(),
+                    &sched_spawn_times_,
+                    &core->sched_criticality())
     , barriers_(arch.num_barriers(), 0)
     , ipdom_size_(arch.num_threads()-1)
   #ifdef EXT_TCU_ENABLE
@@ -124,6 +130,8 @@ void Emulator::reset() {
   stalled_warps_.reset();
   active_warps_.reset();
   rr_last_warp_ = -1;
+  sched_policy_.reset();
+  std::fill(sched_spawn_times_.begin(), sched_spawn_times_.end(), 0);
 
   // activate first warp and thread
   active_warps_.set(0);
@@ -183,14 +191,38 @@ instr_trace_t* Emulator::step() {
     stalled_warps_.reset(0);
   }
 
-  // find next ready warp — round-robin from rr_last_warp_+1
   uint32_t nw = arch_.num_warps();
-  for (uint32_t i = 1; i <= nw; ++i) {
-    uint32_t wid = (uint32_t(rr_last_warp_ + 1) + (i - 1)) % nw;
-    if (active_warps_.test(wid) && !stalled_warps_.test(wid)) {
-      scheduled_warp = static_cast<int>(wid);
-      rr_last_warp_ = scheduled_warp;
-      break;
+  // Schedule-stage warp selection.  Policy is configured via
+  // VORTEX_SCHED_POLICY: RR (default) keeps the original cyclic loop;
+  // non-RR (GTO, gCAWS, …) goes through sched_policy_ which sees the
+  // ready bitmap, per-wid spawn_times, and Core's per-wid criticality.
+  if (configured_sched_policy() == ArbiterType::RoundRobin) {
+    // find next ready warp — round-robin from rr_last_warp_+1
+    for (uint32_t i = 1; i <= nw; ++i) {
+      uint32_t wid = (uint32_t(rr_last_warp_ + 1) + (i - 1)) % nw;
+      if (active_warps_.test(wid) && !stalled_warps_.test(wid)) {
+        scheduled_warp = static_cast<int>(wid);
+        rr_last_warp_ = scheduled_warp;
+        break;
+      }
+    }
+  } else {
+    // refresh per-wid spawn_times (Arbiter holds a pointer to this vector)
+    for (uint32_t wid = 0; wid < nw; ++wid) {
+      sched_spawn_times_.at(wid) = warps_.at(wid).spawn_time;
+    }
+    BitVector<> ready(nw);
+    for (uint32_t wid = 0; wid < nw; ++wid) {
+      if (active_warps_.test(wid) && !stalled_warps_.test(wid)) {
+        ready.set(wid);
+      }
+    }
+    if (ready.any()) {
+      auto pick = sched_policy_.grant(ready);
+      if (pick != uint32_t(-1)) {
+        scheduled_warp = static_cast<int>(pick);
+        rr_last_warp_ = scheduled_warp;
+      }
     }
   }
 

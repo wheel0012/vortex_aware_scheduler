@@ -144,7 +144,11 @@ public:
 		dram_config["MemorySystem"]["Controller"]["impl"] = "Generic";
 		dram_config["MemorySystem"]["Controller"]["Scheduler"]["impl"] = "FRFCFS";
 		dram_config["MemorySystem"]["Controller"]["RefreshManager"]["impl"] = "AllBank";
+#ifdef VX_DRAM_CLOSED_ROW
+		dram_config["MemorySystem"]["Controller"]["RowPolicy"]["impl"] = "ClosedRowPolicy";
+#else
 		dram_config["MemorySystem"]["Controller"]["RowPolicy"]["impl"] = "OpenRowPolicy";
+#endif
 		{
 			YAML::Node draw_plugin;
 			draw_plugin["ControllerPlugin"]["impl"] = "TraceRecorder";

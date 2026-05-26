@@ -768,6 +768,16 @@ enum class ArbiterType {
   #endif
 #endif
 
+// Schedule (fetch) stage warp-selection policy — independent of the
+// issue-stage arbiter.  In Vortex's split fetch/issue pipeline the
+// "active warp limiting" effect of CAWS-style policies emerges at the
+// fetch arbiter rather than at issue (scoreboard forces issue-stage swap
+// every memory-dep stall, so issue policy can't sustain warp-stick).
+// Default RR preserves the original cyclic-RR fetch behaviour.
+#ifndef VORTEX_SCHED_POLICY
+  #define VORTEX_SCHED_POLICY VORTEX_ARBITER_RR
+#endif
+
 inline ArbiterType configured_issue_arbiter() {
   constexpr ArbiterType arbiter_table[] = {
     ArbiterType::Priority,
@@ -778,6 +788,18 @@ inline ArbiterType configured_issue_arbiter() {
   };
   static_assert(VORTEX_ARBITER >= 0 && VORTEX_ARBITER < 5, "Invalid VORTEX_ARBITER value");
   return arbiter_table[VORTEX_ARBITER];
+}
+
+inline ArbiterType configured_sched_policy() {
+  constexpr ArbiterType policy_table[] = {
+    ArbiterType::Priority,
+    ArbiterType::GTO,
+    ArbiterType::RoundRobin,
+    ArbiterType::Matrix,
+    ArbiterType::GCAWS
+  };
+  static_assert(VORTEX_SCHED_POLICY >= 0 && VORTEX_SCHED_POLICY < 5, "Invalid VORTEX_SCHED_POLICY value");
+  return policy_table[VORTEX_SCHED_POLICY];
 }
 
 inline std::ostream &operator<<(std::ostream &os, const ArbiterType& type) {
