@@ -27,6 +27,7 @@ public:
     uint32_t core_id = 0;
     uint32_t issue_slot = 0;
     bool issued = false;
+    int preferred_wid = -1;
     int intended_wid = -1;
     int actual_wid = -1;
     int selected_wid = -1;
@@ -37,6 +38,9 @@ public:
     std::string ready_mask;
     std::string ibuffer_empty_mask;
     bool ibuffer_empty = false;
+    bool preferred_blocked = false;
+    std::string preferred_block_reason = "none";
+    bool not_ready_fallback = false;
     bool fallback = false;
     std::string stall_reason = "none";
     bool mismatch = false;
@@ -83,7 +87,8 @@ public:
           << row.core_id << ','
           << row.issue_slot << ',';
     write_csv(row.issued ? "true" : "false");
-    file_ << row.intended_wid << ','
+    file_ << row.preferred_wid << ','
+          << row.intended_wid << ','
           << row.actual_wid << ','
           << row.selected_wid << ',';
     write_csv(row.pc);
@@ -93,7 +98,10 @@ public:
     write_csv(row.ready_mask);
     write_csv(row.ibuffer_empty_mask);
     file_ << (row.ibuffer_empty ? "true" : "false") << ','
-          << (row.fallback ? "true" : "false") << ',';
+          << (row.preferred_blocked ? "true" : "false") << ',';
+    write_csv(row.preferred_block_reason);
+    file_ << (row.not_ready_fallback ? "true" : "false") << ',';
+    file_ << (row.fallback ? "true" : "false") << ',';
     write_csv(row.stall_reason);
     file_ << (row.mismatch ? "true" : "false") << ',';
     write_csv(row.mismatch_reason);
@@ -138,9 +146,10 @@ private:
     if (header_written_)
       return;
 
-    file_ << "policy,cycle,core_id,issue_slot,issued,intended_wid,actual_wid,"
+    file_ << "policy,cycle,core_id,issue_slot,issued,preferred_wid,intended_wid,actual_wid,"
              "selected_wid,pc,inst_type,score,candidate_mask,ready_mask,"
-             "ibuffer_empty_mask,ibuffer_empty,fallback,stall_reason,mismatch,"
+             "ibuffer_empty_mask,ibuffer_empty,preferred_blocked,preferred_block_reason,"
+             "not_ready_fallback,fallback,stall_reason,mismatch,"
              "mismatch_reason,score_vector\n";
     header_written_ = true;
   }

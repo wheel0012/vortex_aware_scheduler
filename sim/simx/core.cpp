@@ -64,6 +64,7 @@ std::string trace_score_vector(const std::vector<uint64_t>& scores) {
 void write_warp_sched_trace(uint32_t core_id,
                             uint32_t issue_slot,
                             bool issued,
+                            int preferred_wid,
                             int intended_wid,
                             int actual_wid,
                             const instr_trace_t* trace,
@@ -72,6 +73,8 @@ void write_warp_sched_trace(uint32_t core_id,
                             uint64_t candidate_mask,
                             uint64_t ready_mask,
                             uint64_t ibuffer_empty_mask,
+                            bool preferred_blocked,
+                            const std::string& preferred_block_reason,
                             const std::string& stall_reason,
                             const std::string& mismatch_reason) {
   if (!WarpSchedTrace::enabled())
@@ -82,6 +85,7 @@ void write_warp_sched_trace(uint32_t core_id,
   row.core_id = core_id;
   row.issue_slot = issue_slot;
   row.issued = issued;
+  row.preferred_wid = preferred_wid;
   row.intended_wid = intended_wid;
   row.actual_wid = actual_wid;
   row.selected_wid = actual_wid;
@@ -95,6 +99,9 @@ void write_warp_sched_trace(uint32_t core_id,
   row.ready_mask = to_hex_string(ready_mask);
   row.ibuffer_empty_mask = to_hex_string(ibuffer_empty_mask);
   row.ibuffer_empty = actual_wid >= 0 ? false : (candidate_mask == 0);
+  row.preferred_blocked = preferred_blocked;
+  row.preferred_block_reason = preferred_blocked ? preferred_block_reason : "none";
+  row.not_ready_fallback = preferred_blocked;
   row.fallback = issued && intended_wid >= 0 && actual_wid >= 0 && intended_wid != actual_wid;
   row.stall_reason = stall_reason;
   row.mismatch = row.fallback;
@@ -703,9 +710,17 @@ void Core::issue() {
     }
     auto score_vector = trace_score_vector(ibuffer_criticality_.at(iw));
 
-    int intended_wid = -1;
+    int preferred_wid = -1;
     if (candidate_set.any()) {
-      auto intended_w = ibuffer_arbs_.at(iw).peek(candidate_set);
+      auto preferred_w = ibuffer_arbs_.at(iw).peek(candidate_set);
+      if (preferred_w != uint32_t(-1)) {
+        preferred_wid = static_cast<int>(preferred_w * ISSUE_WIDTH + iw);
+      }
+    }
+
+    int intended_wid = -1;
+    if (ready_set.any()) {
+      auto intended_w = ibuffer_arbs_.at(iw).peek(ready_set);
       if (intended_w != uint32_t(-1)) {
         intended_wid = static_cast<int>(intended_w * ISSUE_WIDTH + iw);
       }
@@ -749,6 +764,14 @@ void Core::issue() {
           mismatch_reason = "fallback_path";
         }
       }
+      bool preferred_blocked = false;
+      std::string preferred_block_reason = "none";
+      if (preferred_wid >= 0 && preferred_wid != static_cast<int>(wid)) {
+        if ((ready_mask & wid_bit(preferred_wid)) == 0) {
+          preferred_blocked = true;
+          preferred_block_reason = "preferred_warp_not_ready";
+        }
+      }
       // update scoreboard
       DT(3, "pipeline-ibuffer: " << *trace);
       if (trace->wb) {
@@ -757,6 +780,7 @@ void Core::issue() {
       write_warp_sched_trace(core_id_,
                              iw,
                              true,
+                             preferred_wid,
                              intended_wid,
                              wid,
                              trace,
@@ -765,6 +789,8 @@ void Core::issue() {
                              candidate_mask,
                              ready_mask,
                              ibuffer_empty_mask,
+                             preferred_blocked,
+                             preferred_block_reason,
                              mismatch_reason == "none" ? "none" : mismatch_reason,
                              mismatch_reason);
       // to operand stage
@@ -774,6 +800,7 @@ void Core::issue() {
       write_warp_sched_trace(core_id_,
                              iw,
                              false,
+                             preferred_wid,
                              intended_wid,
                              -1,
                              nullptr,
@@ -782,6 +809,8 @@ void Core::issue() {
                              candidate_mask,
                              ready_mask,
                              ibuffer_empty_mask,
+                             false,
+                             "none",
                              has_instrs ? "operand_not_ready" : "ibuffer_empty",
                              "none");
     }
