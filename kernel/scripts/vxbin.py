@@ -15,6 +15,7 @@
 # limitations under the License.
 
 import os
+import shutil
 import subprocess
 import struct
 import sys
@@ -52,6 +53,36 @@ def get_vma_size(elf_file):
 
 def create_vxbin_binary(input_elf, output_bin, objcopy_path):
     min_vma, max_vma = get_vma_size(input_elf)
+
+    save_elf_dir = os.getenv('VXBIN_SAVE_ELF_DIR')
+    if save_elf_dir:
+        os.makedirs(save_elf_dir, exist_ok=True)
+        base_name = os.path.basename(input_elf) or 'program.elf'
+        if not base_name.endswith('.elf'):
+            base_name += '.elf'
+        save_path = os.path.join(save_elf_dir, base_name)
+        index = 1
+        while os.path.exists(save_path):
+            stem, ext = os.path.splitext(base_name)
+            save_path = os.path.join(save_elf_dir, '{}_{}{}'.format(stem, index, ext))
+            index += 1
+        shutil.copy2(input_elf, save_path)
+        objdump_path = os.getenv('OBJDUMP')
+        if objdump_path is None:
+            objcopy_name = os.path.basename(objcopy_path)
+            if objcopy_name == 'llvm-objcopy':
+                objdump_path = os.path.join(os.path.dirname(objcopy_path), 'llvm-objdump')
+            else:
+                objdump_path = 'objdump'
+        dump_path = os.path.splitext(save_path)[0] + '.dump'
+        try:
+            with open(dump_path, 'w') as dump_file:
+                subprocess.check_call(
+                    [objdump_path, '-d', input_elf],
+                    stdout=dump_file,
+                )
+        except Exception as e:
+            print("Warning: failed to create objdump file {}: {}".format(dump_path, str(e)), file=sys.stderr)
 
     # Create a binary data from the ELF file using objcopy
     temp_bin_path = '/tmp/temp_kernel.bin'
