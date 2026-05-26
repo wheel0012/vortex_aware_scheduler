@@ -401,6 +401,7 @@ package VX_gpu_pkg;
     localparam PER_ISSUE_WARPS = `NUM_WARPS / `ISSUE_WIDTH;
     localparam ISSUE_WIS_BITS = `CLOG2(PER_ISSUE_WARPS);
     localparam ISSUE_WIS_W = `UP(ISSUE_WIS_BITS);
+    localparam ISSUE_SPAWN_ORDER_BITS = `CLOG2(`NUM_WARPS + 1) + 8;
 
     function automatic logic [NW_WIDTH-1:0] wis_to_wid(
         input logic [ISSUE_WIS_W-1:0] wis,

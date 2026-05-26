@@ -26,6 +26,7 @@ module VX_issue_slice import VX_gpu_pkg::*; #(
     output issue_perf_t     issue_perf,
 `endif
 
+    input wire [PER_ISSUE_WARPS-1:0][ISSUE_SPAWN_ORDER_BITS-1:0] spawn_order,
     VX_decode_if.slave      decode_if,
     VX_writeback_if.slave   writeback_if,
     VX_dispatch_if.master   dispatch_if [NUM_EX_UNITS],
@@ -62,6 +63,7 @@ module VX_issue_slice import VX_gpu_pkg::*; #(
         .perf_sfu_uses  (issue_perf.sfu_uses),
     `endif
         .writeback_if   (writeback_if),
+        .spawn_order    (spawn_order),
         .ibuffer_if     (ibuffer_if),
         .scoreboard_if  (scoreboard_if)
     );

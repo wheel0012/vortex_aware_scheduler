@@ -35,6 +35,8 @@ module VX_issue_top import VX_gpu_pkg::*; #(
     input wire [NUM_REGS_BITS-1:0]          decode_rs2,
     input wire [NUM_REGS_BITS-1:0]          decode_rs3,
     output wire                             decode_ready,
+    input wire                              spawn_valid,
+    input wire [`NUM_WARPS-1:0]             spawn_wmask,
 
     input wire                              writeback_valid[`ISSUE_WIDTH],
     input wire [UUID_WIDTH-1:0]             writeback_uuid[`ISSUE_WIDTH],
@@ -148,6 +150,8 @@ module VX_issue_top import VX_gpu_pkg::*; #(
     `endif
 
         .decode_if      (decode_if),
+        .spawn_valid    (spawn_valid),
+        .spawn_wmask    (spawn_wmask),
         .writeback_if   (writeback_if),
         .dispatch_if    (dispatch_if),
         .issue_sched_if (issue_sched_if)

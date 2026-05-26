@@ -89,6 +89,8 @@ module VX_dispatch_unit import VX_gpu_pkg::*; #(
             .clk          (clk),
             .reset        (reset),
             .requests     (valid_batches),
+            .request_order('0),
+            .request_priority('0),
             .grant_index  (batch_idx_n),
             `UNUSED_PIN (grant_onehot),
             `UNUSED_PIN (grant_valid),

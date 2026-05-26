@@ -53,6 +53,8 @@ module VX_stream_pack #(
             .clk         (clk),
             .reset       (reset),
             .requests    (valid_in),
+            .request_order('0),
+            .request_priority('0),
             .grant_valid (grant_valid),
             .grant_index (grant_index),
             `UNUSED_PIN  (grant_onehot),

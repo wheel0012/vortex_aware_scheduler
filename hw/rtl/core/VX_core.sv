@@ -54,6 +54,8 @@ module VX_core import VX_gpu_pkg::*; #(
     VX_commit_csr_if    commit_csr_if();
     VX_branch_ctl_if    branch_ctl_if[`NUM_ALU_BLOCKS]();
     VX_warp_ctl_if      warp_ctl_if();
+    wire                issue_spawn_valid;
+    wire [`NUM_WARPS-1:0] issue_spawn_wmask;
 
     VX_dispatch_if      dispatch_if[NUM_EX_UNITS * `ISSUE_WIDTH]();
     VX_commit_if        commit_if[NUM_EX_UNITS * `ISSUE_WIDTH]();
@@ -113,6 +115,8 @@ module VX_core import VX_gpu_pkg::*; #(
         .gbar_bus_if    (gbar_bus_if),
     `endif
         .sched_csr_if   (sched_csr_if),
+        .issue_spawn_valid(issue_spawn_valid),
+        .issue_spawn_wmask(issue_spawn_wmask),
 
         .busy           (busy)
     );
@@ -151,6 +155,8 @@ module VX_core import VX_gpu_pkg::*; #(
     `endif
 
         .decode_if      (decode_if),
+        .spawn_valid    (issue_spawn_valid),
+        .spawn_wmask    (issue_spawn_wmask),
         .writeback_if   (writeback_if),
         .dispatch_if    (dispatch_if),
         .issue_sched_if (issue_sched_if)

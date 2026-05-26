@@ -27,6 +27,7 @@ module VX_scoreboard import VX_gpu_pkg::*; #(
 `endif
 
     VX_writeback_if.slave   writeback_if,
+    input wire [PER_ISSUE_WARPS-1:0][ISSUE_SPAWN_ORDER_BITS-1:0] spawn_order,
     VX_ibuffer_if.slave     ibuffer_if [PER_ISSUE_WARPS],
     VX_scoreboard_if.master scoreboard_if
 );
@@ -255,10 +256,88 @@ module VX_scoreboard import VX_gpu_pkg::*; #(
         assign staging_if[w].ready = arb_ready_in[w] && operands_ready[w];
     end
 
+`ifdef ISSUE_ARB_GCAWS
+`define ISSUE_ARB_ORDERED
+`define ISSUE_ARB_TYPE "A"
+`elsif ISSUE_ARB_GTO
+`define ISSUE_ARB_ORDERED
+`define ISSUE_ARB_TYPE "G"
+`endif
+
+`ifdef ISSUE_ARB_ORDERED
+
+    wire [ISSUE_WIS_W-1:0] grant_index;
+    wire [PER_ISSUE_WARPS-1:0] grant_onehot;
+    wire grant_valid;
+    wire grant_ready;
+    wire [PER_ISSUE_WARPS-1:0][0:0] request_priority = '0;
+    wire [IN_DATAW-1:0] grant_data = arb_data_in[grant_index];
+
+    VX_generic_arbiter #(
+        .NUM_REQS  (PER_ISSUE_WARPS),
+        .TYPE      (`ISSUE_ARB_TYPE),
+        .ORDERW    (ISSUE_SPAWN_ORDER_BITS),
+        .PRIORITYW (1)
+    ) issue_arbiter (
+        .clk              (clk),
+        .reset            (reset),
+        .requests         (arb_valid_in),
+        .request_order    (spawn_order),
+        .request_priority (request_priority),
+        .grant_index      (grant_index),
+        .grant_onehot     (grant_onehot),
+        .grant_valid      (grant_valid),
+        .grant_ready      (grant_ready)
+    );
+
+    for (genvar w = 0; w < PER_ISSUE_WARPS; ++w) begin : g_ordered_ready_in
+        assign arb_ready_in[w] = grant_ready && grant_onehot[w];
+    end
+
+    VX_elastic_buffer #(
+        .DATAW   (ISSUE_WIS_W + IN_DATAW),
+        .SIZE    (`TO_OUT_BUF_SIZE(3)),
+        .OUT_REG (`TO_OUT_BUF_REG(3)),
+        .LUTRAM  (`TO_OUT_BUF_LUTRAM(3))
+    ) out_buf (
+        .clk       (clk),
+        .reset     (reset),
+        .valid_in  (grant_valid),
+        .ready_in  (grant_ready),
+        .data_in   ({grant_index, grant_data}),
+        .data_out  ({
+            scoreboard_if.data.wis,
+            scoreboard_if.data.uuid,
+            scoreboard_if.data.tmask,
+            scoreboard_if.data.PC,
+            scoreboard_if.data.ex_type,
+            scoreboard_if.data.op_type,
+            scoreboard_if.data.op_args,
+            scoreboard_if.data.wb,
+            scoreboard_if.data.used_rs,
+            scoreboard_if.data.rd,
+            scoreboard_if.data.rs1,
+            scoreboard_if.data.rs2,
+            scoreboard_if.data.rs3
+        }),
+        .valid_out (scoreboard_if.valid),
+        .ready_out (scoreboard_if.ready)
+    );
+
+`else
+
+    `UNUSED_VAR (spawn_order)
+
+`ifdef ISSUE_ARB_RR
+`define ISSUE_ARB_BASE "R"
+`else
+`define ISSUE_ARB_BASE "C"
+`endif
+
     VX_stream_arb #(
         .NUM_INPUTS (PER_ISSUE_WARPS),
         .DATAW      (IN_DATAW),
-        .ARBITER    ("C"),
+        .ARBITER    (`ISSUE_ARB_BASE),
         .OUT_BUF    (3)
     ) out_arb (
         .clk      (clk),
@@ -284,5 +363,14 @@ module VX_scoreboard import VX_gpu_pkg::*; #(
         .ready_out (scoreboard_if.ready),
         .sel_out   (scoreboard_if.data.wis)
     );
+
+`undef ISSUE_ARB_BASE
+
+`endif
+
+`ifdef ISSUE_ARB_ORDERED
+`undef ISSUE_ARB_ORDERED
+`undef ISSUE_ARB_TYPE
+`endif
 
 endmodule

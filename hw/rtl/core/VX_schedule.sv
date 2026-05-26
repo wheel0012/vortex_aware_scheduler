@@ -40,6 +40,8 @@ module VX_schedule import VX_gpu_pkg::*; #(
     VX_gbar_bus_if.master   gbar_bus_if,
 `endif
     VX_sched_csr_if.master  sched_csr_if,
+    output wire             issue_spawn_valid,
+    output wire [`NUM_WARPS-1:0] issue_spawn_wmask,
 
     // status
     output wire             busy
@@ -103,6 +105,10 @@ module VX_schedule import VX_gpu_pkg::*; #(
     wire [`CLOG2(`NUM_WARPS+1)-1:0] active_warps_cnt;
     `POP_COUNT(active_warps_cnt, active_warps);
 
+    wire wspawn_fire = wspawn.valid && is_single_warp;
+    assign issue_spawn_valid = wspawn_fire;
+    assign issue_spawn_wmask = wspawn.wmask | `NUM_WARPS'(1);
+
     always @(*) begin
         active_warps_n  = active_warps;
         stalled_warps_n = stalled_warps;
@@ -123,7 +129,7 @@ module VX_schedule import VX_gpu_pkg::*; #(
         end
 
         // wspawn handling
-        if (wspawn.valid && is_single_warp) begin
+        if (wspawn_fire) begin
             active_warps_n |= wspawn.wmask;
             for (integer i = 0; i < `NUM_WARPS; ++i) begin
                 if (wspawn.wmask[i]) begin
@@ -248,7 +254,7 @@ module VX_schedule import VX_gpu_pkg::*; #(
                 wspawn.pc    <= warp_ctl_if.wspawn.pc;
                 wspawn_wid   <= warp_ctl_if.wid;
             end
-            if (wspawn.valid && is_single_warp) begin
+            if (wspawn_fire) begin
                 wspawn.valid <= 0;
             end
 
