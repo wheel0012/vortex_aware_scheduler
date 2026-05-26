@@ -14,9 +14,13 @@ from pathlib import Path
 MISMATCH_FIELDS = [
     "cycle",
     "policy",
+    "preferred_wid",
     "intended_wid",
     "actual_wid",
     "pc",
+    "preferred_blocked",
+    "preferred_block_reason",
+    "not_ready_fallback",
     "mismatch_reason",
     "candidate_mask",
     "ready_mask",
@@ -97,6 +101,16 @@ def row_mismatch(row):
 
 def row_fallback(row):
     return parse_bool(row.get("fallback", ""))
+
+
+def row_preferred_blocked(row):
+    return parse_bool(row.get("preferred_blocked", ""))
+
+
+def row_not_ready_fallback(row):
+    if row.get("not_ready_fallback", "") != "":
+        return parse_bool(row.get("not_ready_fallback"))
+    return row_preferred_blocked(row)
 
 
 def load_rows(path):
@@ -199,6 +213,7 @@ def write_userpc_issue_trace(path, rows, pc_base):
         "core_id",
         "issue_slot",
         "selected_wid",
+        "preferred_wid",
         "intended_wid",
         "inst_type",
         "score",
@@ -206,6 +221,10 @@ def write_userpc_issue_trace(path, rows, pc_base):
         "ready_mask",
         "ibuffer_empty_mask",
         "stall_reason",
+        "preferred_blocked",
+        "preferred_block_reason",
+        "not_ready_fallback",
+        "fallback",
         "mismatch",
         "mismatch_reason",
         "policy",
@@ -242,6 +261,7 @@ def write_userpc_issue_trace(path, rows, pc_base):
                 "core_id": row.get("core_id", ""),
                 "issue_slot": row_issue_slot(row),
                 "selected_wid": row_actual_wid(row),
+                "preferred_wid": row.get("preferred_wid", ""),
                 "intended_wid": row.get("intended_wid", ""),
                 "inst_type": row.get("inst_type", ""),
                 "score": row.get("score", ""),
@@ -249,6 +269,10 @@ def write_userpc_issue_trace(path, rows, pc_base):
                 "ready_mask": row.get("ready_mask", ""),
                 "ibuffer_empty_mask": row.get("ibuffer_empty_mask", ""),
                 "stall_reason": row.get("stall_reason", ""),
+                "preferred_blocked": row_preferred_blocked(row),
+                "preferred_block_reason": row.get("preferred_block_reason", ""),
+                "not_ready_fallback": row_not_ready_fallback(row),
+                "fallback": row_fallback(row),
                 "mismatch": row_mismatch(row),
                 "mismatch_reason": row.get("mismatch_reason", ""),
                 "policy": row.get("policy", ""),
@@ -328,6 +352,11 @@ def write_cycle_issue_trace(path, rows, pc_base):
         "selected_userpc",
         "selected_pc",
         "inst_type",
+        "preferred_wid",
+        "preferred_ready",
+        "preferred_blocked",
+        "preferred_block_reason",
+        "not_ready_fallback",
         "intended_wid",
         "intended_ready",
         "candidate_wids",
@@ -353,8 +382,12 @@ def write_cycle_issue_trace(path, rows, pc_base):
         writer.writeheader()
         for _, _, _, row in sorted(ordered):
             selected_wid = row_actual_wid(row)
+            preferred_wid = parse_int(row.get("preferred_wid"))
             intended_wid = parse_int(row.get("intended_wid"))
             ready_mask = parse_int(row.get("ready_mask"))
+            preferred_ready = ""
+            if preferred_wid is not None and preferred_wid >= 0 and ready_mask is not None:
+                preferred_ready = bool(ready_mask & (1 << preferred_wid))
             intended_ready = ""
             if intended_wid is not None and intended_wid >= 0 and ready_mask is not None:
                 intended_ready = bool(ready_mask & (1 << intended_wid))
@@ -368,6 +401,11 @@ def write_cycle_issue_trace(path, rows, pc_base):
                 "selected_userpc": format_userpc(row, pc_base),
                 "selected_pc": f"0x{pc:x}" if pc is not None else "",
                 "inst_type": row.get("inst_type", ""),
+                "preferred_wid": row.get("preferred_wid", ""),
+                "preferred_ready": preferred_ready,
+                "preferred_blocked": row_preferred_blocked(row),
+                "preferred_block_reason": row.get("preferred_block_reason", ""),
+                "not_ready_fallback": row_not_ready_fallback(row),
                 "intended_wid": row.get("intended_wid", ""),
                 "intended_ready": intended_ready,
                 "candidate_wids": mask_to_wids(row.get("candidate_mask")),
@@ -420,6 +458,8 @@ def write_summary(
     issue_cycles = sorted({cycle for cycle in (row_cycle(row) for row in issued) if cycle is not None})
     mismatches = [row for row in issued if row_mismatch(row)]
     fallbacks = [row for row in issued if row_fallback(row)]
+    preferred_blocked = [row for row in issued if row_preferred_blocked(row)]
+    not_ready_fallbacks = [row for row in issued if row_not_ready_fallback(row)]
 
     per_warp_count = defaultdict(int)
     per_warp_first = {}
@@ -442,8 +482,12 @@ def write_summary(
     total = len(issued)
     mismatch_count = len(mismatches)
     fallback_count = len(fallbacks)
+    preferred_blocked_count = len(preferred_blocked)
+    not_ready_fallback_count = len(not_ready_fallbacks)
     mismatch_rate = 100.0 * mismatch_count / total if total else 0.0
     fallback_rate = 100.0 * fallback_count / total if total else 0.0
+    preferred_blocked_rate = 100.0 * preferred_blocked_count / total if total else 0.0
+    not_ready_fallback_rate = 100.0 * not_ready_fallback_count / total if total else 0.0
     logged_span = (all_cycles[-1] - all_cycles[0] + 1) if all_cycles else 0
 
     with path.open("w") as f:
@@ -461,6 +505,10 @@ def write_summary(
         f.write(f"Total issue cycles: {len(issue_cycles)}\n")
         f.write(f"Total logged cycles: {len(all_cycles)}\n")
         f.write(f"Logged cycle span: {logged_span}\n")
+        f.write(f"Not-ready fallback count: {not_ready_fallback_count}\n")
+        f.write(f"Not-ready fallback rate: {not_ready_fallback_rate:.2f}%\n")
+        f.write(f"Preferred blocked count: {preferred_blocked_count}\n")
+        f.write(f"Preferred blocked rate: {preferred_blocked_rate:.2f}%\n")
         f.write(f"Mismatch count: {mismatch_count}\n")
         f.write(f"Mismatch rate: {mismatch_rate:.2f}%\n")
         f.write(f"Fallback count: {fallback_count}\n")
@@ -489,6 +537,20 @@ def write_mismatch_report(path, rows):
         writer = csv.DictWriter(f, fieldnames=MISMATCH_FIELDS)
         writer.writeheader()
         for row in mismatches:
+            out = {field: row.get(field, "") for field in MISMATCH_FIELDS}
+            if out["actual_wid"] == "":
+                out["actual_wid"] = row.get("selected_wid", "")
+            if out["ibuffer_empty"] == "":
+                out["ibuffer_empty"] = row.get("ibuffer_empty_mask", "")
+            writer.writerow(out)
+
+
+def write_preferred_blocked_report(path, rows):
+    blocked = [row for row in rows if row_issued(row) and row_not_ready_fallback(row)]
+    with path.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=MISMATCH_FIELDS)
+        writer.writeheader()
+        for row in blocked:
             out = {field: row.get(field, "") for field in MISMATCH_FIELDS}
             if out["actual_wid"] == "":
                 out["actual_wid"] = row.get("selected_wid", "")
@@ -574,6 +636,39 @@ def plot_wid_timeline(path, rows):
                     linewidths=0.9,
                     label="mismatch",
                 )
+
+            not_ready_points = [point for point in slot_points if row_not_ready_fallback(point[2])]
+            if not_ready_points:
+                ax.scatter(
+                    [point[0] for point in not_ready_points],
+                    [point[1] for point in not_ready_points],
+                    s=42,
+                    marker="x",
+                    color="tab:red",
+                    linewidths=1.2,
+                    label="not-ready fallback selected",
+                )
+                preferred_points = [
+                    (point[0], parse_int(point[2].get("preferred_wid")))
+                    for point in not_ready_points
+                ]
+                preferred_points = [
+                    (cycle, wid)
+                    for cycle, wid in preferred_points
+                    if wid is not None and wid >= 0
+                ]
+                if preferred_points:
+                    ax.scatter(
+                        [cycle for cycle, _ in preferred_points],
+                        [wid for _, wid in preferred_points],
+                        s=48,
+                        marker="D",
+                        facecolors="none",
+                        edgecolors="tab:orange",
+                        linewidths=1.0,
+                        label="blocked preferred",
+                    )
+            if mismatch_points or not_ready_points:
                 ax.legend(loc="upper right", fontsize="small")
             set_integer_wid_ticks(ax, slot_points)
 
@@ -660,6 +755,18 @@ def plot_score_timeline(path, rows, fieldnames):
 
     if points:
         axes[0].scatter([p[0] for p in points], [p[1] for p in points], s=8)
+        not_ready_points = [point for point in points if row_not_ready_fallback(point[2])]
+        if not_ready_points:
+            axes[0].scatter(
+                [point[0] for point in not_ready_points],
+                [point[1] for point in not_ready_points],
+                s=38,
+                marker="x",
+                color="tab:red",
+                linewidths=1.1,
+                label="not-ready fallback",
+            )
+            axes[0].legend(loc="upper right", fontsize="small")
     axes[0].set_ylabel("Selected WID")
     axes[0].grid(True, alpha=0.25)
 
@@ -733,6 +840,8 @@ def analyze_rows(
         pc_base=pc_base,
     )
     write_mismatch_report(out_dir / "mismatch_report.csv", rows)
+    write_preferred_blocked_report(out_dir / "preferred_blocked_report.csv", rows)
+    write_preferred_blocked_report(out_dir / "not_ready_fallback_report.csv", rows)
     write_userpc_issue_trace(out_dir / "userpc_issue_trace.csv", rows, pc_base)
     write_userpc_summary(out_dir / "userpc_summary.csv", rows, pc_base)
     write_cycle_issue_trace(out_dir / "cycle_issue_trace.csv", rows, pc_base)
@@ -866,6 +975,8 @@ def main():
     print(f"Wrote {args.out_dir / 'event_markers.csv'}")
     print(f"Wrote {args.out_dir / 'event_markers_all.csv'}")
     print(f"Wrote {args.out_dir / 'mismatch_report.csv'}")
+    print(f"Wrote {args.out_dir / 'preferred_blocked_report.csv'}")
+    print(f"Wrote {args.out_dir / 'not_ready_fallback_report.csv'}")
     print(f"Wrote {args.out_dir / 'userpc_issue_trace.csv'}")
     print(f"Wrote {args.out_dir / 'userpc_summary.csv'}")
     print(f"Wrote {args.out_dir / 'cycle_issue_trace.csv'}")

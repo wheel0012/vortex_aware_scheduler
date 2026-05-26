@@ -76,6 +76,33 @@ TIMEOUT_SEC=300 \
 
 For a 2x2 tile, make sure `WARPS * THREADS >= 4`.
 
+To collect both perf counter classes for the same trace shape, use `PERFS`.
+Each perf class is written under a separate `perf<N>` directory:
+
+```bash
+PERFS="1 2" \
+POLICIES="RR GTO" \
+BENCHES=sgemm3 \
+WARPS=16 \
+THREADS=1 \
+SGEMM_N=4 \
+SGEMM_TILE=2 \
+LSU_BLOCKS=1 \
+DCACHE_BANKS=4 \
+USER_FROM_EVENT=WSPAWN:3 \
+USER_TO_EVENT=WSPAWN:4 \
+USER_PC_FROM=0x1c4 \
+USER_PC_TO=0x248 \
+TIMEOUT_SEC=900 \
+./worklogs/scripts/trace_small_aware_schedulers.sh
+```
+
+For example, GTO SGEMM outputs land in
+`worklogs/trace_runs/run<N>/GTO/perf1/sgemm3/` and
+`worklogs/trace_runs/run<N>/GTO/perf2/sgemm3/`. Use `PERF=1` when only one
+perf class is needed; the legacy `<policy>/<bench>/` directory layout is kept
+for a single perf class.
+
 ### Tiny BFS Trace
 
 Use `graph32.txt` for a very small BFS trace, then move to `graph4k.txt` when
@@ -212,6 +239,7 @@ USER_PC_SYMBOLS="BFS_1 BFS_2"
 USER_FROM_EVENT=WSPAWN:3
 USER_TO_EVENT=WSPAWN:4
 PERF=1
+PERFS="1 2"
 EXTRA_CONFIGS="-D..."
 ANALYZE_ARGS="..."
 TIMEOUT_SEC=300
