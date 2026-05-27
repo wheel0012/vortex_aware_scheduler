@@ -14,6 +14,7 @@ miscs/apptainer/vortex.sif
 /warp_sched_trace/
 /worklogs/runs/
 /worklogs/experiments/
+/worklogs/experiment_record/
 /worklogs/trace_runs/
 /ramulator.stats.log
 /trace/

@@ -19,10 +19,10 @@ EXP_DIR="$ROOT_DIR/worklogs/experiments/sgemm3_wg1024_4lsu_4bank"
 
 CORES=1
 WARPS=32
-THREADS=32
-HW_TWEAK="-DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4"
+THREADS=16
+HW_TWEAK="-DDCACHE_SIZE=2048 -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4"
 BASE_FLAGS="-DPERF_ENABLE $HW_TWEAK"
-ARGS="-n128"  # 128x128 matrix, tile 32 -> 16 WGs of 1024 threads each
+ARGS="-n128 -t16"  # 128x128 matrix, tile 32 -> 16 WGs of 1024 threads each
 
 SCHED_RR=2
 declare -A ARBITER=( [GTO]=1 [RR]=2 [gCAWS]=4 )
