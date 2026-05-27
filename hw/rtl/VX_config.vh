@@ -106,6 +106,10 @@
 `define NUM_THREADS 4
 `endif
 
+// RTL schedule/fetch warp selection defaults to the original fixed-priority
+// policy.  Define FETCH_SCHED_RR to use round-robin selection at this stage,
+// which matches the simx fetch-stage default used by the RR/GTO studies.
+
 `ifndef NUM_BARRIERS
 `define NUM_BARRIERS `UP(`NUM_WARPS/2)
 `endif

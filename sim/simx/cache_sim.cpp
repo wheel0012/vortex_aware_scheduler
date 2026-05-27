@@ -170,6 +170,7 @@ struct bank_req_t {
 	uint64_t uuid;
 	ReqType  type;
 	bool     write;
+	bool     userpc;
 
 	bank_req_t() {
 		this->reset();
@@ -396,6 +397,7 @@ private:
 				bank_req.type = bank_req_t::Core;
 				bank_req.cid = core_req.cid;
 				bank_req.uuid = core_req.uuid;
+				bank_req.userpc = core_req.userpc;
 				bank_req.set_id = params_.addr_set_id(core_req.addr);
 				bank_req.addr_tag = params_.addr_tag(core_req.addr);
 				bank_req.req_tag = core_req.tag;
@@ -422,7 +424,7 @@ private:
 		case bank_req_t::Replay: {
 			// send core response
 			if (!bank_req.write || config_.write_reponse) {
-				MemRsp core_rsp{bank_req.req_tag, bank_req.cid, bank_req.uuid};
+				MemRsp core_rsp{bank_req.req_tag, bank_req.cid, bank_req.uuid, bank_req.userpc};
 				this->core_rsp_port.push(core_rsp);
 				DT(3, this->name() << "-replay: " << core_rsp);
 			}
@@ -445,6 +447,7 @@ private:
 						mem_req.write = true;
 						mem_req.cid   = bank_req.cid;
 						mem_req.uuid  = bank_req.uuid;
+						mem_req.userpc = bank_req.userpc;
 						this->mem_req_port.push(mem_req);
 						DT(3, this->name() << "-writethrough: " << mem_req);
 					} else {
@@ -454,7 +457,7 @@ private:
 				}
 				// send core response
 				if (!bank_req.write || config_.write_reponse) {
-					MemRsp core_rsp{bank_req.req_tag, bank_req.cid, bank_req.uuid};
+					MemRsp core_rsp{bank_req.req_tag, bank_req.cid, bank_req.uuid, bank_req.userpc};
 					this->core_rsp_port.push(core_rsp);
 					DT(3, this->name() << "-core-rsp: " << core_rsp);
 				}
@@ -474,6 +477,7 @@ private:
 						mem_req.addr  = params_.mem_addr(bank_id_, bank_req.set_id, repl_line.tag);
 						mem_req.write = true;
 						mem_req.cid   = bank_req.cid;
+						mem_req.userpc = bank_req.userpc;
 						this->mem_req_port.push(mem_req);
 						DT(3, this->name() << "-writeback: " << mem_req);
 						++perf_stats_.evictions;
@@ -488,12 +492,13 @@ private:
 						mem_req.write = true;
 						mem_req.cid   = bank_req.cid;
 						mem_req.uuid  = bank_req.uuid;
+						mem_req.userpc = bank_req.userpc;
 						this->mem_req_port.push(mem_req);
 						DT(3, this->name() << "-writethrough: " << mem_req);
 					}
 					// send core response
 					if (config_.write_reponse) {
-						MemRsp core_rsp{bank_req.req_tag, bank_req.cid, bank_req.uuid};
+						MemRsp core_rsp{bank_req.req_tag, bank_req.cid, bank_req.uuid, bank_req.userpc};
 						this->core_rsp_port.push(core_rsp);
 						DT(3, this->name() << "-core-rsp: " << core_rsp);
 					}
@@ -514,6 +519,7 @@ private:
 						mem_req.tag   = mshr_id;
 						mem_req.cid   = bank_req.cid;
 						mem_req.uuid  = bank_req.uuid;
+						mem_req.userpc = bank_req.userpc;
 						this->mem_req_port.push(mem_req);
 						DT(3, this->name() << "-fill-req: " << mem_req);
 						++pending_fill_reqs_;
@@ -689,7 +695,7 @@ private:
 	void processBypassResponse(const MemRsp& mem_rsp) {
 		uint32_t req_id = mem_rsp.tag & ((1 << params_.log2_num_inputs)-1);
 		uint64_t tag = mem_rsp.tag >> params_.log2_num_inputs;
-		MemRsp core_rsp{tag, mem_rsp.cid, mem_rsp.uuid};
+		MemRsp core_rsp{tag, mem_rsp.cid, mem_rsp.uuid, mem_rsp.userpc};
 		simobject_->CoreRspPorts.at(req_id).push(core_rsp, 0);
 		DT(3, simobject_->name() << "-bypass-core-rsp: " << core_rsp);
 	}
@@ -705,7 +711,7 @@ private:
 		}
 
 		if (core_req.write && config_.write_reponse) {
-			MemRsp core_rsp{core_req.tag, core_req.cid, core_req.uuid};
+			MemRsp core_rsp{core_req.tag, core_req.cid, core_req.uuid, core_req.userpc};
 			simobject_->CoreRspPorts.at(req_id).push(core_rsp, 0);
 			DT(3, simobject_->name() << "-bypass-core-rsp: " << core_rsp);
 		}

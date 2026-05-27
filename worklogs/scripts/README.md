@@ -229,6 +229,11 @@ SGEMM_N=4
 SGEMM_TILE=2
 MEM_LATENCY=4
 CACHE_LATENCY=1
+ALL_LATENCY=1
+PIPELINE_LATENCY=1
+EXEC_LATENCY=1
+ALU_LATENCY=1
+FMA_LATENCY=1
 LSU_BLOCKS=2
 DCACHE_BANKS=4
 USER_PC_BASE=0x80000000
@@ -240,6 +245,7 @@ USER_FROM_EVENT=WSPAWN:3
 USER_TO_EVENT=WSPAWN:4
 PERF=1
 PERFS="1 2"
+INTERACTIVE_PLOTS=1
 EXTRA_CONFIGS="-D..."
 ANALYZE_ARGS="..."
 TIMEOUT_SEC=300
@@ -250,6 +256,65 @@ run uses the normal memory simulator path.
 
 `CACHE_LATENCY` controls the simx cache port latency used by the configured
 cache hierarchy. If it is unset, the default is `2`.
+
+`ALL_LATENCY` is a convenience knob for latency-shape experiments. It fills in
+`MEM_LATENCY`, `CACHE_LATENCY`, `PIPELINE_LATENCY`, and `EXEC_LATENCY` unless a
+more specific knob is already set. For example, `ALL_LATENCY=1` makes the small
+trace run use one-cycle memory/cache, simx pipeline, ALU/FPU/LSU/SFU defaults.
+
+Pipeline knobs:
+
+```text
+ICACHE_REQ_LATENCY
+OPERANDS_LATENCY
+DISPATCH_LATENCY
+PIPELINE_LATENCY
+```
+
+Execution-unit knobs:
+
+```text
+ALU_LATENCY
+BRANCH_LATENCY
+VOTE_LATENCY
+SHFL_LATENCY
+IMUL_LATENCY
+IDIV_LATENCY
+FPU_BASE_LATENCY
+FPU_SIMPLE_LATENCY
+FMA_LATENCY
+FDIV_LATENCY
+FSQRT_LATENCY
+FCVT_LATENCY
+LSU_LOAD_RSP_LATENCY
+LSU_STORE_LATENCY
+LSU_FENCE_LATENCY
+SFU_BASE_LATENCY
+SFU_OP_LATENCY
+EXEC_LATENCY
+```
+
+Specific knobs override the broad ones, so this keeps all execution latency at
+one cycle except FMA:
+
+```bash
+EXEC_LATENCY=1 FMA_LATENCY=4 BENCHES=sgemm3 ./worklogs/scripts/trace_small_aware_schedulers.sh
+```
+
+`INTERACTIVE_PLOTS=1` opens an interactive matplotlib WID timeline after the run
+finishes. The script opens one window per policy/workload pair and only uses one
+representative trace when both `PERFS="1 2"` are enabled. Close each plot window
+to advance to the next one.
+
+When `USER_PC_FROM` or `USER_PC_TO` is set, simx also prints CSR-free
+`PERF: userpc ...` and `[USERPC_PERF ...]` blocks to `run.log` for that PC
+window. The `PERF: userpc ...` lines mirror the normal perf summary with
+scheduler idle/stall, ibuffer stall, scoreboard stall, ready-hit ratio,
+ifetch/load/store counts, average ifetch/load latency, and IPC. The
+`[USERPC_PERF ...]` lines keep the detailed scheduler diagnostics, including
+not-ready fallback count, FU issue mix, scoreboard blocker mix, and per-warp
+first/last issue cycles. The script forwards `USER_PC_BASE`, `USER_PC_FROM`,
+and `USER_PC_TO` to simx as `VX_USER_PC_*` environment variables.
 
 ## `sweep_aware_schedulers.sh`
 

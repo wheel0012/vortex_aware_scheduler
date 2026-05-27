@@ -310,18 +310,43 @@ module VX_schedule import VX_gpu_pkg::*; #(
         .stack_ptr  (warp_ctl_if.dvstack_ptr)
     );
 
-    // schedule the next ready warp
+    // Schedule the next ready warp.
+    //
+    // This arbitration point is the RTL fetch-stage warp scheduler: the
+    // selected warp is pushed into the fetch request path, then temporarily
+    // marked stalled until decode unlocks it.  The historical RTL behaviour
+    // was fixed-priority selection through VX_priority_encoder.  Keep that as
+    // the default for compatibility, but allow an RR policy with FETCH_SCHED_RR
+    // so RTL runs can be aligned with simx's RR fetch policy.
 
     wire [`NUM_WARPS-1:0] ready_warps = active_warps & ~stalled_warps;
 
-    VX_priority_encoder #(
-        .N (`NUM_WARPS)
+`ifdef FETCH_SCHED_RR
+`define FETCH_SCHED_ARB_TYPE "R"
+`else
+`define FETCH_SCHED_ARB_TYPE "P"
+`endif
+
+    VX_generic_arbiter #(
+        .NUM_REQS (`NUM_WARPS),
+        .TYPE     (`FETCH_SCHED_ARB_TYPE)
     ) wid_select (
-        .data_in   (ready_warps),
-        .index_out (schedule_wid),
-        .valid_out (schedule_valid),
-        `UNUSED_PIN (onehot_out)
+        .clk              (clk),
+        .reset            (reset),
+        .requests         (ready_warps),
+        .request_order    ('0),
+        .request_priority ('0),
+        .grant_index      (schedule_wid),
+        `UNUSED_PIN       (grant_onehot),
+        .grant_valid      (schedule_valid),
+        // Advance the RR pointer only when the selected warp is actually
+        // accepted by the schedule->fetch buffer.  If fetch back-pressures the
+        // stage, the same warp remains visible and the arbiter state does not
+        // skip over it.
+        .grant_ready      (schedule_ready)
     );
+
+`undef FETCH_SCHED_ARB_TYPE
 
     wire [`NUM_WARPS-1:0][(`NUM_THREADS + PC_BITS)-1:0] schedule_data;
     for (genvar i = 0; i < `NUM_WARPS; ++i) begin : g_schedule_data

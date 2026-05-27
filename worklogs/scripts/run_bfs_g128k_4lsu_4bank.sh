@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # bfs @ graph128k.txt, WG=256, HW(LSU=2, banks=4) — run4 baseline로 perf=1, perf=2 모두 측정.
+# scheduler=RR, arbiter={RR,GTO,gCAWS}.
 # Output: worklogs/experiments/bfs_wg256_4lsu_4bank/g128k/<policy>/bfs.perf{1,2}.log
 
 set -u
@@ -16,8 +17,9 @@ HW_TWEAK="-DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4"
 BASE_FLAGS="-DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 $HW_TWEAK"
 ARGS="$ROOT_DIR/tests/opencl/bfs/graph128k.txt"
 
-declare -A SCHED=( [GTO]=1 [RR]=2 [gCAWS]=3 [iPAWS]=4 )
-POLICIES=(RR GTO gCAWS iPAWS)
+SCHED_RR=2
+declare -A ARBITER=( [GTO]=1 [RR]=2 [gCAWS]=4 )
+POLICIES=(RR GTO gCAWS)
 
 mkdir -p "$EXP_DIR"
 
@@ -26,13 +28,13 @@ MTB=$(grep -E '^#define MAX_THREADS_PER_BLOCK [0-9]+' "$ROOT_DIR/tests/opencl/bf
 echo "[CHECK] bfs MAX_THREADS_PER_BLOCK=$MTB (expect 256)"
 
 for label in "${POLICIES[@]}"; do
-  sched=${SCHED[$label]}
-  conf="$BASE_FLAGS -DVORTEX_SCHED=$sched"
+  arb=${ARBITER[$label]}
+  conf="$BASE_FLAGS -DVORTEX_SCHED=$SCHED_RR -DVORTEX_ARBITER=$arb"
   cfg_dir="$EXP_DIR/$label"
   mkdir -p "$cfg_dir"
   : > "$cfg_dir/build.log"
 
-  echo "===== [$label] build (VORTEX_SCHED=$sched, $HW_TWEAK) ====="
+  echo "===== [$label] build (VORTEX_SCHED=$SCHED_RR, VORTEX_ARBITER=$arb, $HW_TWEAK) ====="
   CONFIGS="$conf" make -C "$BUILD_DIR/sim/simx" -j$(nproc) >> "$cfg_dir/build.log" 2>&1 \
     || { echo "  [$label] sim build FAIL"; continue; }
   CONFIGS="$conf" make -C "$BUILD_DIR/runtime/simx" -j$(nproc) >> "$cfg_dir/build.log" 2>&1 \

@@ -86,7 +86,7 @@ public:
 					auto rsp_args = reinterpret_cast<const DramCallbackArgs*>(arg);
 					if (!rsp_args->request.write) {
 						// only send a response for read requests
-						MemRsp mem_rsp{rsp_args->request.tag, rsp_args->request.cid, rsp_args->request.uuid};
+						MemRsp mem_rsp{rsp_args->request.tag, rsp_args->request.cid, rsp_args->request.uuid, rsp_args->request.userpc};
 						rsp_args->memsim->mem_xbar_->RspOut.at(rsp_args->bank_id).push(mem_rsp, 1);
 						DT(3, rsp_args->memsim->simobject_->name() << "-mem-rsp" << rsp_args->bank_id << ": " << mem_rsp);
 					}

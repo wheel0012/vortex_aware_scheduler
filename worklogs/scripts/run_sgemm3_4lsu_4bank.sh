@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # sgemm3 @ HW(LSU=2, banks=4) + WG=32x32 (=1024 threads = full warp pool).
-# 4 policies x perf={1,2}.
+# scheduler=RR, arbiter={RR,GTO,gCAWS} x perf={1,2}.
 #
 # WG size: 32x32 = 1024 threads = 32 warps (NUM_WARPS=32 entire pool).
 # Workload: -n128 (working set 3 * 128^2 * 4 = 192 KB, ~12x L1, sweet-spot
@@ -19,23 +19,24 @@ EXP_DIR="$ROOT_DIR/worklogs/experiments/sgemm3_wg1024_4lsu_4bank"
 
 CORES=1
 WARPS=32
-THREADS=32
-HW_TWEAK="-DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4"
+THREADS=16
+HW_TWEAK="-DDCACHE_SIZE=2048 -DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4"
 BASE_FLAGS="-DPERF_ENABLE $HW_TWEAK"
-ARGS="-n128"  # 128x128 matrix, tile 32 -> 16 WGs of 1024 threads each
+ARGS="-n128 -t16"  # 128x128 matrix, tile 32 -> 16 WGs of 1024 threads each
 
-declare -A SCHED=( [GTO]=1 [RR]=2 [gCAWS]=3 [iPAWS]=4 )
-POLICIES=(RR GTO gCAWS iPAWS)
+SCHED_RR=2
+declare -A ARBITER=( [GTO]=1 [RR]=2 [gCAWS]=4 )
+POLICIES=(RR GTO gCAWS)
 
 mkdir -p "$EXP_DIR"
 
 for label in "${POLICIES[@]}"; do
-  sched=${SCHED[$label]}
-  conf="$BASE_FLAGS -DVORTEX_SCHED=$sched"
+  arb=${ARBITER[$label]}
+  conf="$BASE_FLAGS -DVORTEX_SCHED=$SCHED_RR -DVORTEX_ARBITER=$arb"
   cfg_dir="$EXP_DIR/$label"
   mkdir -p "$cfg_dir"
   : > "$cfg_dir/build.log"
-  echo "===== [$label] build (VORTEX_SCHED=$sched, $HW_TWEAK) ====="
+  echo "===== [$label] build (VORTEX_SCHED=$SCHED_RR, VORTEX_ARBITER=$arb, $HW_TWEAK) ====="
   CONFIGS="$conf" make -C "$BUILD_DIR/sim/simx" -j$(nproc) >> "$cfg_dir/build.log" 2>&1 \
     || { echo "  sim FAIL"; continue; }
   CONFIGS="$conf" make -C "$BUILD_DIR/runtime/simx" -j$(nproc) >> "$cfg_dir/build.log" 2>&1 \

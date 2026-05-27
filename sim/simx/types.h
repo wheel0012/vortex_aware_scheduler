@@ -1147,6 +1147,7 @@ struct LsuReq {
   uint32_t tag;
   uint32_t cid;
   uint64_t uuid;
+  bool userpc;
 
   LsuReq(uint32_t size)
     : mask(size)
@@ -1155,6 +1156,7 @@ struct LsuReq {
     , tag(0)
     , cid(0)
     , uuid(0)
+    , userpc(false)
   {}
 
   friend std::ostream &operator<<(std::ostream &os, const LsuReq& req) {
@@ -1206,19 +1208,22 @@ struct MemReq {
   uint32_t tag;
   uint32_t cid;
   uint64_t uuid;
+  bool userpc;
 
   MemReq(uint64_t _addr = 0,
           bool _write = false,
           AddrType _type = AddrType::Global,
           uint64_t _tag = 0,
           uint32_t _cid = 0,
-          uint64_t _uuid = 0
+          uint64_t _uuid = 0,
+          bool _userpc = false
   ) : addr(_addr)
     , write(_write)
     , type(_type)
     , tag(_tag)
     , cid(_cid)
     , uuid(_uuid)
+    , userpc(_userpc)
   {}
 
   friend std::ostream &operator<<(std::ostream &os, const MemReq& req) {
@@ -1236,11 +1241,13 @@ struct MemRsp {
   uint64_t tag;
   uint32_t cid;
   uint64_t uuid;
+  bool userpc;
 
-  MemRsp(uint64_t _tag = 0, uint32_t _cid = 0, uint64_t _uuid = 0)
+  MemRsp(uint64_t _tag = 0, uint32_t _cid = 0, uint64_t _uuid = 0, bool _userpc = false)
     : tag (_tag)
     , cid(_cid)
     , uuid(_uuid)
+    , userpc(_userpc)
   {}
 
   friend std::ostream &operator<<(std::ostream &os, const MemRsp& rsp) {

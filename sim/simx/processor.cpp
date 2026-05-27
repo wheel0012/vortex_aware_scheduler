@@ -13,6 +13,7 @@
 
 #include "processor.h"
 #include "processor_impl.h"
+#include <iostream>
 
 using namespace vortex;
 
@@ -76,10 +77,17 @@ ProcessorImpl::ProcessorImpl(const Arch& arch)
       perf_mem_reads_  += !req.write;
       perf_mem_writes_ += req.write;
       perf_mem_pending_reads_ += !req.write;
+      if (req.userpc) {
+        perf_userpc_mem_reads_ += !req.write;
+        perf_userpc_mem_writes_ += req.write;
+        perf_userpc_mem_pending_reads_ += !req.write;
+      }
     });
-    memsim_->MemRspPorts.at(i).tx_callback([&](const MemRsp&, uint64_t cycle){
+    memsim_->MemRspPorts.at(i).tx_callback([&](const MemRsp& rsp, uint64_t cycle){
       __unused (cycle);
       --perf_mem_pending_reads_;
+      if (rsp.userpc && perf_userpc_mem_pending_reads_ != 0)
+        --perf_userpc_mem_pending_reads_;
     });
   }
 
@@ -100,6 +108,14 @@ ProcessorImpl::ProcessorImpl(const Arch& arch)
 }
 
 ProcessorImpl::~ProcessorImpl() {
+  auto userpc_mem_requests = perf_userpc_mem_reads_ + perf_userpc_mem_writes_;
+  if (userpc_mem_requests != 0) {
+    auto avg_latency = perf_userpc_mem_reads_ ? double(perf_userpc_mem_latency_) / perf_userpc_mem_reads_ : 0.0;
+    std::cerr << "PERF: userpc memory requests=" << userpc_mem_requests
+              << " (reads=" << perf_userpc_mem_reads_
+              << ", writes=" << perf_userpc_mem_writes_ << ")\n";
+    std::cerr << "PERF: userpc memory latency=" << avg_latency << " cycles\n";
+  }
   SimPlatform::instance().finalize();
 }
 
@@ -133,6 +149,7 @@ int ProcessorImpl::run() {
       exitcode |= cluster->get_exitcode();
     }
     perf_mem_latency_ += perf_mem_pending_reads_;
+    perf_userpc_mem_latency_ += perf_userpc_mem_pending_reads_;
   } while (!done);
 
   return exitcode;
@@ -143,6 +160,10 @@ void ProcessorImpl::reset() {
   perf_mem_writes_ = 0;
   perf_mem_latency_ = 0;
   perf_mem_pending_reads_ = 0;
+  perf_userpc_mem_reads_ = 0;
+  perf_userpc_mem_writes_ = 0;
+  perf_userpc_mem_latency_ = 0;
+  perf_userpc_mem_pending_reads_ = 0;
 }
 
 void ProcessorImpl::dcr_write(uint32_t addr, uint32_t value) {

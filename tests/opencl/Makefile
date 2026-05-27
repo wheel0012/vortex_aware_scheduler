@@ -10,6 +10,7 @@ all:
 	$(MAKE) -C sfilter
 	$(MAKE) -C sgemm2
 	$(MAKE) -C sgemm3
+	$(MAKE) -C gto_arith_chain
 	$(MAKE) -C psum
 	$(MAKE) -C oclprintf
 	$(MAKE) -C dotproduct
@@ -34,6 +35,7 @@ run-simx:
 	$(MAKE) -C sfilter run-simx
 	$(MAKE) -C sgemm2 run-simx
 	$(MAKE) -C sgemm3 run-simx
+	$(MAKE) -C gto_arith_chain run-simx
 	$(MAKE) -C psum run-simx
 	$(MAKE) -C oclprintf run-simx
 	$(MAKE) -C dotproduct run-simx
@@ -57,6 +59,7 @@ run-rtlsim:
 	$(MAKE) -C sfilter run-rtlsim
 	$(MAKE) -C sgemm2 run-rtlsim
 	$(MAKE) -C sgemm3 run-rtlsim
+	$(MAKE) -C gto_arith_chain run-rtlsim
 	$(MAKE) -C psum run-rtlsim
 	$(MAKE) -C oclprintf run-rtlsim
 	$(MAKE) -C dotproduct run-rtlsim
@@ -80,6 +83,7 @@ clean:
 	$(MAKE) -C sfilter clean
 	$(MAKE) -C sgemm2 clean
 	$(MAKE) -C sgemm3 clean
+	$(MAKE) -C gto_arith_chain clean
 	$(MAKE) -C psum clean
 	$(MAKE) -C oclprintf clean
 	$(MAKE) -C dotproduct clean

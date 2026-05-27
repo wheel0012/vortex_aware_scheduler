@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # kmeans WG-size experiment (ver1): rebuild kmeans kernel with BLOCK_SIZE=64
-# (was 1 in this repo, orig rodinia 256) and sweep 4 policies.
-# Output: worklogs/experiments/kmeans_ver1/{GTO,RR,gCAWS,iPAWS}/kmeans.perf2.log
+# (was 1 in this repo, orig rodinia 256), fix scheduler=RR, and sweep
+# arbiter={RR,GTO,gCAWS}.
+# Output: worklogs/experiments/kmeans_ver1/{RR,GTO,gCAWS}/kmeans.perf2.log
 
 set -u
 set -o pipefail
@@ -15,8 +16,9 @@ WARPS=32
 THREADS=32
 BASE_FLAGS="-DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0"
 
-declare -A SCHED=( [GTO]=1 [RR]=2 [gCAWS]=3 [iPAWS]=4 )
-POLICIES=(GTO RR gCAWS iPAWS)
+SCHED_RR=2
+declare -A ARBITER=( [GTO]=1 [RR]=2 [gCAWS]=4 )
+POLICIES=(RR GTO gCAWS)
 
 ARGS="-f100 -p1000"
 PERF=2
@@ -24,13 +26,13 @@ PERF=2
 mkdir -p "$EXP_DIR"
 
 for label in "${POLICIES[@]}"; do
-  sched=${SCHED[$label]}
-  conf="$BASE_FLAGS -DVORTEX_SCHED=$sched"
+  arb=${ARBITER[$label]}
+  conf="$BASE_FLAGS -DVORTEX_SCHED=$SCHED_RR -DVORTEX_ARBITER=$arb"
   cfg_dir="$EXP_DIR/$label"
   mkdir -p "$cfg_dir"
   build_log="$cfg_dir/build.log"
 
-  echo "===== [$label] build (VORTEX_SCHED=$sched) =====" | tee "$build_log"
+  echo "===== [$label] build (VORTEX_SCHED=$SCHED_RR, VORTEX_ARBITER=$arb) =====" | tee "$build_log"
   CONFIGS="$conf" make -C "$BUILD_DIR/sim/simx" -j$(nproc) >> "$build_log" 2>&1 \
     || { echo "  sim build FAIL"; continue; }
   CONFIGS="$conf" make -C "$BUILD_DIR/runtime/simx" -j$(nproc) >> "$build_log" 2>&1 \

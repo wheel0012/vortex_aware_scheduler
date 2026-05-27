@@ -59,6 +59,10 @@ private:
   uint64_t perf_mem_writes_;
   uint64_t perf_mem_latency_;
   uint64_t perf_mem_pending_reads_;
+  uint64_t perf_userpc_mem_reads_;
+  uint64_t perf_userpc_mem_writes_;
+  uint64_t perf_userpc_mem_latency_;
+  uint64_t perf_userpc_mem_pending_reads_;
 };
 
 }

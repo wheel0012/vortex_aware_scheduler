@@ -29,6 +29,7 @@ MISMATCH_FIELDS = [
 ]
 
 EVENT_INST_TYPES = {"WSPAWN", "TMC", "BAR", "FENCE", "CSRRS", "CSRRW"}
+INTERACTIVE_BACKEND = False
 
 
 def parse_int(value):
@@ -119,6 +120,61 @@ def load_rows(path):
         rows = list(reader)
         fieldnames = reader.fieldnames or []
     return rows, fieldnames
+
+
+def row_mask(row, key):
+    value = parse_int(row.get(key))
+    return 0 if value is None else value
+
+
+def percent(value, total):
+    return 100.0 * value / total if total else 0.0
+
+
+def ratio_hit_percent(misses, accesses):
+    return 100.0 * (accesses - misses) / accesses if accesses else 0.0
+
+
+def metric_na():
+    return None
+
+
+def metric_row(name, value, unit="", source="trace", note=""):
+    return {
+        "metric": name,
+        "value": "" if value is None else value,
+        "unit": unit,
+        "source": source,
+        "note": note,
+    }
+
+
+def load_userpc_perf_log(path):
+    metrics = {}
+    if path is None or not path.exists():
+        return metrics
+    for line in path.read_text(errors="replace").splitlines():
+        m = re.match(r"PERF: userpc dcache requests=(\d+) \(reads=(\d+), writes=(\d+)\)", line)
+        if m:
+            metrics["perf2.dcache_requests"] = int(m.group(1))
+            metrics["perf2.dcache_reads"] = int(m.group(2))
+            metrics["perf2.dcache_writes"] = int(m.group(3))
+            continue
+        m = re.match(r"PERF: userpc dcache read latency=([0-9.]+) cycles", line)
+        if m:
+            metrics["perf2.dcache_read_latency"] = m.group(1)
+            continue
+        m = re.match(r"PERF: userpc memory requests=(\d+) \(reads=(\d+), writes=(\d+)\)", line)
+        if m:
+            metrics["perf2.memory_requests"] = int(m.group(1))
+            metrics["perf2.memory_reads"] = int(m.group(2))
+            metrics["perf2.memory_writes"] = int(m.group(3))
+            continue
+        m = re.match(r"PERF: userpc memory latency=([0-9.]+) cycles", line)
+        if m:
+            metrics["perf2.memory_latency"] = m.group(1)
+            continue
+    return metrics
 
 
 def select_event_cycle(rows, spec):
@@ -531,6 +587,225 @@ def write_summary(
             f.write(f"WID {wid}: {len(per_warp_pcs.get(wid, set()))}\n")
 
 
+def build_perf_metrics(rows, perf_window_rows=None, external_metrics=None):
+    external_metrics = external_metrics or {}
+    issued = [row for row in rows if row_issued(row)]
+    issued_cycles = [row_cycle(row) for row in issued if row_cycle(row) is not None]
+    if perf_window_rows is None:
+        perf_window_rows = rows
+    window_cycles = [row_cycle(row) for row in perf_window_rows if row_cycle(row) is not None]
+    if issued_cycles:
+        first_cycle = min(issued_cycles)
+        last_cycle = max(issued_cycles)
+        span_cycles = last_cycle - first_cycle + 1
+    elif window_cycles:
+        first_cycle = min(window_cycles)
+        last_cycle = max(window_cycles)
+        span_cycles = last_cycle - first_cycle + 1
+    else:
+        first_cycle = None
+        last_cycle = None
+        span_cycles = 0
+
+    slot_rows = len(perf_window_rows)
+    slot_issued = len([row for row in perf_window_rows if row_issued(row)])
+    scheduler_idle = len([
+        row for row in perf_window_rows
+        if not row_issued(row) and row_mask(row, "candidate_mask") == 0
+    ])
+    scoreboard_stalls = len([
+        row for row in perf_window_rows
+        if not row_issued(row)
+        and row_mask(row, "candidate_mask") != 0
+        and row_mask(row, "ready_mask") == 0
+    ])
+    scheduler_other_stalls = max(0, slot_rows - scheduler_idle - scoreboard_stalls - slot_issued)
+
+    loads = len([row for row in issued if row.get("inst_type") in {"LOAD"}])
+    stores = len([row for row in issued if row.get("inst_type") in {"STORE"}])
+    instrs = len(issued)
+    ipc = (instrs / span_cycles) if span_cycles else 0.0
+    issue_density = (instrs / span_cycles) if span_cycles else 0.0
+    issue_active_rate = (instrs / len(set(issued_cycles))) if issued_cycles else 0.0
+
+    metrics = [
+        metric_row("pc_window.first_cycle", first_cycle, "cycles", "trace"),
+        metric_row("pc_window.last_cycle", last_cycle, "cycles", "trace"),
+        metric_row("pc_window.span_cycles", span_cycles, "cycles", "trace"),
+        metric_row("pc_window.issue_cycles", len(set(issued_cycles)), "cycles", "trace"),
+        metric_row("pc_window.slot_rows", slot_rows, "slot-cycles", "trace",
+                   "scheduler rows in first..last selected-PC issue span"),
+        metric_row("pc_window.issue_density", f"{issue_density:.6f}", "issued/span_cycle", "trace"),
+        metric_row("pc_window.issue_active_rate", f"{issue_active_rate:.6f}", "issued/active_issue_cycle", "trace"),
+
+        metric_row("perf1.scheduler_idle", scheduler_idle, "slot-cycles", "trace"),
+        metric_row("perf1.scheduler_idle_percent", f"{percent(scheduler_idle, slot_rows):.2f}", "%", "trace"),
+        metric_row("perf1.scheduler_stalls", scheduler_other_stalls, "slot-cycles", "trace-derived",
+                   "non-idle, non-scoreboard, non-issued scheduler rows; not identical to simx CSR"),
+        metric_row("perf1.scheduler_stalls_percent", f"{percent(scheduler_other_stalls, slot_rows):.2f}", "%", "trace-derived"),
+        metric_row("perf1.ibuffer_stalls", metric_na(), "cycles", "unavailable",
+                   "decode ibuffer-full stalls are not present in issue_trace.csv"),
+        metric_row("perf1.scoreboard_stalls", scoreboard_stalls, "slot-cycles", "trace"),
+        metric_row("perf1.scoreboard_stalls_percent", f"{percent(scoreboard_stalls, slot_rows):.2f}", "%", "trace"),
+        metric_row("perf1.scoreboard_stalls.alu_percent", metric_na(), "%", "unavailable",
+                   "blocked dependency FU type is not present on non-issued trace rows"),
+        metric_row("perf1.scoreboard_stalls.lsu_percent", metric_na(), "%", "unavailable"),
+        metric_row("perf1.scoreboard_stalls.csrs_percent", metric_na(), "%", "unavailable"),
+        metric_row("perf1.scoreboard_stalls.wctl_percent", metric_na(), "%", "unavailable"),
+        metric_row("perf1.scoreboard_stalls.fpu_percent", metric_na(), "%", "unavailable"),
+        metric_row("perf1.operands_stalls", metric_na(), "cycles", "unavailable",
+                   "operand-stage stalls are not present in issue_trace.csv"),
+        metric_row("perf1.ifetches", instrs, "instructions", "estimated",
+                   "one fetch per selected issued instruction"),
+        metric_row("perf1.loads", loads, "instructions", "trace"),
+        metric_row("perf1.stores", stores, "instructions", "trace"),
+        metric_row("perf1.ifetch_latency", metric_na(), "cycles", "unavailable"),
+        metric_row("perf1.load_latency", metric_na(), "cycles", "unavailable"),
+        metric_row("perf.instrs", instrs, "instructions", "trace",
+                   "issue-trace instruction count, not MINSTRET thread-mask count"),
+        metric_row("perf.cycles", span_cycles, "cycles", "trace",
+                   "first selected-PC issue through last selected-PC issue"),
+        metric_row("perf.IPC", f"{ipc:.6f}", "instrs/cycle", "trace-derived"),
+
+        metric_row("perf2.lmem_reads", metric_na(), "requests", "unavailable"),
+        metric_row("perf2.lmem_writes", metric_na(), "requests", "unavailable"),
+        metric_row("perf2.lmem_bank_stalls", metric_na(), "cycles", "unavailable"),
+        metric_row("perf2.icache_reads", instrs, "requests", "estimated",
+                   "approximated as selected-PC ifetches"),
+        metric_row("perf2.icache_read_misses", metric_na(), "requests", "unavailable"),
+        metric_row("perf2.icache_read_hit_ratio", metric_na(), "%", "unavailable"),
+        metric_row("perf2.icache_mshr_stalls", metric_na(), "cycles", "unavailable"),
+        metric_row("perf2.dcache_requests", external_metrics.get("perf2.dcache_requests"), "requests", "simx-run-log",
+                   "userpc-marked dcache transactions from simx run.log"),
+        metric_row("perf2.dcache_reads", external_metrics.get("perf2.dcache_reads", loads), "requests",
+                   "simx-run-log" if "perf2.dcache_reads" in external_metrics else "estimated",
+                   "simx dcache transactions when run.log is provided; otherwise instruction-level load count"),
+        metric_row("perf2.dcache_writes", external_metrics.get("perf2.dcache_writes", stores), "requests",
+                   "simx-run-log" if "perf2.dcache_writes" in external_metrics else "estimated",
+                   "simx dcache transactions when run.log is provided; otherwise instruction-level store count"),
+        metric_row("perf2.dcache_read_misses", metric_na(), "requests", "unavailable"),
+        metric_row("perf2.dcache_read_hit_ratio", metric_na(), "%", "unavailable"),
+        metric_row("perf2.dcache_write_misses", metric_na(), "requests", "unavailable"),
+        metric_row("perf2.dcache_write_hit_ratio", metric_na(), "%", "unavailable"),
+        metric_row("perf2.dcache_bank_stalls", metric_na(), "cycles", "unavailable"),
+        metric_row("perf2.dcache_mshr_stalls", metric_na(), "cycles", "unavailable"),
+        metric_row("perf2.dcache_read_latency", external_metrics.get("perf2.dcache_read_latency"), "cycles", "simx-run-log",
+                   "average userpc dcache read latency from simx run.log"),
+        metric_row("perf2.coalescer_misses", metric_na(), "requests", "unavailable"),
+        metric_row("perf2.coalescer_hit_ratio", metric_na(), "%", "unavailable"),
+        metric_row("perf2.l2cache_reads", metric_na(), "requests", "unavailable"),
+        metric_row("perf2.l2cache_writes", metric_na(), "requests", "unavailable"),
+        metric_row("perf2.l2cache_read_misses", metric_na(), "requests", "unavailable"),
+        metric_row("perf2.l2cache_read_hit_ratio", metric_na(), "%", "unavailable"),
+        metric_row("perf2.l2cache_write_misses", metric_na(), "requests", "unavailable"),
+        metric_row("perf2.l2cache_write_hit_ratio", metric_na(), "%", "unavailable"),
+        metric_row("perf2.l2cache_bank_stalls", metric_na(), "cycles", "unavailable"),
+        metric_row("perf2.l2cache_mshr_stalls", metric_na(), "cycles", "unavailable"),
+        metric_row("perf2.l3cache_reads", metric_na(), "requests", "unavailable"),
+        metric_row("perf2.l3cache_writes", metric_na(), "requests", "unavailable"),
+        metric_row("perf2.l3cache_read_misses", metric_na(), "requests", "unavailable"),
+        metric_row("perf2.l3cache_read_hit_ratio", metric_na(), "%", "unavailable"),
+        metric_row("perf2.l3cache_write_misses", metric_na(), "requests", "unavailable"),
+        metric_row("perf2.l3cache_write_hit_ratio", metric_na(), "%", "unavailable"),
+        metric_row("perf2.l3cache_bank_stalls", metric_na(), "cycles", "unavailable"),
+        metric_row("perf2.l3cache_mshr_stalls", metric_na(), "cycles", "unavailable"),
+        metric_row("perf2.memory_requests", external_metrics.get("perf2.memory_requests"), "requests", "simx-run-log"),
+        metric_row("perf2.memory_reads", external_metrics.get("perf2.memory_reads"), "requests", "simx-run-log"),
+        metric_row("perf2.memory_writes", external_metrics.get("perf2.memory_writes"), "requests", "simx-run-log"),
+        metric_row("perf2.memory_latency", external_metrics.get("perf2.memory_latency"), "cycles", "simx-run-log"),
+        metric_row("perf2.memory_bank_stalls", metric_na(), "cycles", "unavailable"),
+    ]
+    return metrics
+
+
+def write_perf_metrics_csv(path, metrics):
+    fields = ["metric", "value", "unit", "source", "note"]
+    with path.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(metrics)
+
+
+def write_perf_summary(path, metrics):
+    values = {metric["metric"]: metric for metric in metrics}
+
+    def val(name):
+        value = values.get(name, {}).get("value", "")
+        return "n/a" if value == "" else value
+
+    with path.open("w") as f:
+        f.write("# PC-filtered issue-trace perf summary\n")
+        f.write("# Values marked unavailable are not present in issue_trace.csv.\n")
+        f.write("# Instruction counts are issue-trace instruction counts, not MINSTRET thread-mask counts.\n\n")
+
+        f.write(f"PERF: analyzer pc_window first_cycle={val('pc_window.first_cycle')}, "
+                f"last_cycle={val('pc_window.last_cycle')}, "
+                f"span_cycles={val('pc_window.span_cycles')}, "
+                f"issue_cycles={val('pc_window.issue_cycles')}, "
+                f"issue_density={val('pc_window.issue_density')}, "
+                f"issue_active_rate={val('pc_window.issue_active_rate')}\n")
+        f.write(f"PERF: scheduler idle={val('perf1.scheduler_idle')} "
+                f"({val('perf1.scheduler_idle_percent')}%)\n")
+        f.write(f"PERF: scheduler stalls={val('perf1.scheduler_stalls')} "
+                f"({val('perf1.scheduler_stalls_percent')}%)\n")
+        f.write(f"PERF: ibuffer stalls={val('perf1.ibuffer_stalls')}\n")
+        f.write(f"PERF: scoreboard stalls={val('perf1.scoreboard_stalls')} "
+                f"({val('perf1.scoreboard_stalls_percent')}%) "
+                f"(alu={val('perf1.scoreboard_stalls.alu_percent')}%, "
+                f"lsu={val('perf1.scoreboard_stalls.lsu_percent')}%, "
+                f"csrs={val('perf1.scoreboard_stalls.csrs_percent')}%, "
+                f"wctl={val('perf1.scoreboard_stalls.wctl_percent')}%, "
+                f"fpu={val('perf1.scoreboard_stalls.fpu_percent')}%)\n")
+        f.write(f"PERF: operands stalls={val('perf1.operands_stalls')}\n")
+        f.write(f"PERF: ifetches={val('perf1.ifetches')}\n")
+        f.write(f"PERF: loads={val('perf1.loads')}\n")
+        f.write(f"PERF: stores={val('perf1.stores')}\n")
+        f.write(f"PERF: ifetch latency={val('perf1.ifetch_latency')} cycles\n")
+        f.write(f"PERF: load latency={val('perf1.load_latency')} cycles\n")
+
+        f.write(f"PERF: lmem reads={val('perf2.lmem_reads')}\n")
+        f.write(f"PERF: lmem writes={val('perf2.lmem_writes')}\n")
+        f.write(f"PERF: lmem bank stalls={val('perf2.lmem_bank_stalls')}\n")
+        f.write(f"PERF: icache reads={val('perf2.icache_reads')}\n")
+        f.write(f"PERF: icache read misses={val('perf2.icache_read_misses')} "
+                f"(hit ratio={val('perf2.icache_read_hit_ratio')}%)\n")
+        f.write(f"PERF: icache mshr stalls={val('perf2.icache_mshr_stalls')}\n")
+        f.write(f"PERF: dcache reads={val('perf2.dcache_reads')}\n")
+        f.write(f"PERF: dcache writes={val('perf2.dcache_writes')}\n")
+        f.write(f"PERF: dcache requests={val('perf2.dcache_requests')} "
+                f"(reads={val('perf2.dcache_reads')}, writes={val('perf2.dcache_writes')})\n")
+        f.write(f"PERF: dcache read misses={val('perf2.dcache_read_misses')} "
+                f"(hit ratio={val('perf2.dcache_read_hit_ratio')}%)\n")
+        f.write(f"PERF: dcache write misses={val('perf2.dcache_write_misses')} "
+                f"(hit ratio={val('perf2.dcache_write_hit_ratio')}%)\n")
+        f.write(f"PERF: dcache bank stalls={val('perf2.dcache_bank_stalls')}\n")
+        f.write(f"PERF: dcache mshr stalls={val('perf2.dcache_mshr_stalls')}\n")
+        f.write(f"PERF: dcache read latency={val('perf2.dcache_read_latency')} cycles\n")
+        f.write(f"PERF: coalescer misses={val('perf2.coalescer_misses')} "
+                f"(hit ratio={val('perf2.coalescer_hit_ratio')}%)\n")
+        f.write(f"PERF: l2cache reads={val('perf2.l2cache_reads')}\n")
+        f.write(f"PERF: l2cache writes={val('perf2.l2cache_writes')}\n")
+        f.write(f"PERF: l2cache read misses={val('perf2.l2cache_read_misses')} "
+                f"(hit ratio={val('perf2.l2cache_read_hit_ratio')}%)\n")
+        f.write(f"PERF: l2cache write misses={val('perf2.l2cache_write_misses')} "
+                f"(hit ratio={val('perf2.l2cache_write_hit_ratio')}%)\n")
+        f.write(f"PERF: l2cache bank stalls={val('perf2.l2cache_bank_stalls')}\n")
+        f.write(f"PERF: l2cache mshr stalls={val('perf2.l2cache_mshr_stalls')}\n")
+        f.write(f"PERF: l3cache reads={val('perf2.l3cache_reads')}\n")
+        f.write(f"PERF: l3cache writes={val('perf2.l3cache_writes')}\n")
+        f.write(f"PERF: l3cache read misses={val('perf2.l3cache_read_misses')} "
+                f"(hit ratio={val('perf2.l3cache_read_hit_ratio')}%)\n")
+        f.write(f"PERF: l3cache write misses={val('perf2.l3cache_write_misses')} "
+                f"(hit ratio={val('perf2.l3cache_write_hit_ratio')}%)\n")
+        f.write(f"PERF: l3cache bank stalls={val('perf2.l3cache_bank_stalls')}\n")
+        f.write(f"PERF: l3cache mshr stalls={val('perf2.l3cache_mshr_stalls')}\n")
+        f.write(f"PERF: memory requests={val('perf2.memory_requests')} "
+                f"(reads={val('perf2.memory_reads')}, writes={val('perf2.memory_writes')})\n")
+        f.write(f"PERF: memory latency={val('perf2.memory_latency')} cycles\n")
+        f.write(f"PERF: memory bank stalls={val('perf2.memory_bank_stalls')}\n")
+        f.write(f"PERF: instrs={val('perf.instrs')}, cycles={val('perf.cycles')}, IPC={val('perf.IPC')}\n")
+
+
 def write_mismatch_report(path, rows):
     mismatches = [row for row in rows if row_issued(row) and row_mismatch(row)]
     with path.open("w", newline="") as f:
@@ -564,7 +839,8 @@ def import_matplotlib():
     try:
         import matplotlib
 
-        matplotlib.use("Agg")
+        if not INTERACTIVE_BACKEND:
+            matplotlib.use("Agg")
         import matplotlib.pyplot as plt
         from matplotlib.ticker import FuncFormatter
 
@@ -604,7 +880,7 @@ def set_integer_wid_ticks(ax, points):
         ax.set_yticks(wids)
 
 
-def plot_wid_timeline(path, rows):
+def plot_wid_timeline(path, rows, show=False):
     plt, _ = import_matplotlib()
     points = issued_points(rows)
     width = plot_width(points)
@@ -678,7 +954,10 @@ def plot_wid_timeline(path, rows):
     axes[-1].set_xlabel("Cycle")
     fig.suptitle("Warp Issue Timeline")
     fig.tight_layout()
-    fig.savefig(path, dpi=160)
+    if path is not None:
+        fig.savefig(path, dpi=160)
+    if show:
+        plt.show()
     plt.close(fig)
 
 
@@ -820,12 +1099,15 @@ def analyze_rows(
     out_dir,
     rows,
     fieldnames,
+    perf_window_rows=None,
     source_row_count=None,
     cycle_from=None,
     cycle_to=None,
     pc_from=None,
     pc_to=None,
     pc_base=0,
+    external_metrics=None,
+    write_plots=True,
 ):
     out_dir.mkdir(parents=True, exist_ok=True)
     write_event_markers(out_dir / "event_markers.csv", rows)
@@ -845,6 +1127,11 @@ def analyze_rows(
     write_userpc_issue_trace(out_dir / "userpc_issue_trace.csv", rows, pc_base)
     write_userpc_summary(out_dir / "userpc_summary.csv", rows, pc_base)
     write_cycle_issue_trace(out_dir / "cycle_issue_trace.csv", rows, pc_base)
+    perf_metrics = build_perf_metrics(rows, perf_window_rows, external_metrics)
+    write_perf_metrics_csv(out_dir / "perf_metrics.csv", perf_metrics)
+    write_perf_summary(out_dir / "perf_summary.txt", perf_metrics)
+    if not write_plots:
+        return False
     plot_wid_timeline(out_dir / "wid_timeline.png", rows)
     plot_pc_timeline(out_dir / "pc_timeline.png", rows)
     return plot_score_timeline(out_dir / "score_timeline.png", rows, fieldnames)
@@ -907,7 +1194,26 @@ def main():
         action="store_true",
         help="also analyze each interval from one issued WSPAWN to the cycle before the next WSPAWN",
     )
+    parser.add_argument(
+        "--show-wid-timeline",
+        action="store_true",
+        help="open an interactive WID timeline window after writing analysis outputs",
+    )
+    parser.add_argument(
+        "--no-plots",
+        action="store_true",
+        help="skip PNG timeline generation; useful for large traces when only CSV/text metrics are needed",
+    )
+    parser.add_argument(
+        "--run-log",
+        type=Path,
+        default=None,
+        help="optional simx run.log; fills userpc dcache/memory metrics emitted by simx",
+    )
     args = parser.parse_args()
+
+    global INTERACTIVE_BACKEND
+    INTERACTIVE_BACKEND = args.show_wid_timeline
 
     rows, fieldnames = load_rows(args.issue_trace)
     source_row_count = len(rows)
@@ -923,22 +1229,31 @@ def main():
         cycle_to = select_event_cycle(rows, args.to_event)
     if cycle_from is not None or cycle_to is not None:
         rows = filter_rows(rows, cycle_from, cycle_to)
+    cycle_filtered_rows = rows
 
     pc_from = normalize_pc_filter(args.pc_from, args.pc_base)
     pc_to = normalize_pc_filter(args.pc_to, args.pc_base)
     if pc_from is not None or pc_to is not None:
         rows = filter_rows(rows, pc_from=pc_from, pc_to=pc_to)
+    perf_window_rows = cycle_filtered_rows
+    issued_cycles = [row_cycle(row) for row in rows if row_issued(row) and row_cycle(row) is not None]
+    if issued_cycles:
+        perf_window_rows = filter_rows(cycle_filtered_rows, min(issued_cycles), max(issued_cycles))
+    external_metrics = load_userpc_perf_log(args.run_log)
 
     wrote_score = analyze_rows(
         args.out_dir,
         rows,
         fieldnames,
+        perf_window_rows=perf_window_rows,
         source_row_count=source_row_count,
         cycle_from=cycle_from,
         cycle_to=cycle_to,
         pc_from=pc_from,
         pc_to=pc_to,
         pc_base=args.pc_base,
+        external_metrics=external_metrics,
+        write_plots=not args.no_plots,
     )
 
     if args.split_by_wspawn:
@@ -949,18 +1264,22 @@ def main():
             if index + 1 < len(wspawn_cycles):
                 end_cycle = wspawn_cycles[index + 1] - 1
             split_rows = filter_rows(rows, start_cycle, end_cycle)
+            split_window_rows = filter_rows(perf_window_rows, start_cycle, end_cycle)
             split_name = f"wspawn_{index + 1:02d}_{start_cycle}"
             split_dir = args.out_dir / split_name
             analyze_rows(
                 split_dir,
                 split_rows,
                 fieldnames,
+                perf_window_rows=split_window_rows,
                 source_row_count=source_row_count,
                 cycle_from=start_cycle,
                 cycle_to=end_cycle,
                 pc_from=pc_from,
                 pc_to=pc_to,
                 pc_base=args.pc_base,
+                external_metrics=external_metrics,
+                write_plots=not args.no_plots,
             )
             split_index.append({
                 "split": split_name,
@@ -971,6 +1290,9 @@ def main():
             })
         write_split_index(args.out_dir / "wspawn_splits.csv", split_index)
 
+    if args.show_wid_timeline:
+        plot_wid_timeline(None, rows, show=True)
+
     print(f"Wrote {args.out_dir / 'summary.txt'}")
     print(f"Wrote {args.out_dir / 'event_markers.csv'}")
     print(f"Wrote {args.out_dir / 'event_markers_all.csv'}")
@@ -980,14 +1302,21 @@ def main():
     print(f"Wrote {args.out_dir / 'userpc_issue_trace.csv'}")
     print(f"Wrote {args.out_dir / 'userpc_summary.csv'}")
     print(f"Wrote {args.out_dir / 'cycle_issue_trace.csv'}")
-    print(f"Wrote {args.out_dir / 'wid_timeline.png'}")
-    print(f"Wrote {args.out_dir / 'pc_timeline.png'}")
-    if wrote_score:
-        print(f"Wrote {args.out_dir / 'score_timeline.png'}")
+    print(f"Wrote {args.out_dir / 'perf_summary.txt'}")
+    print(f"Wrote {args.out_dir / 'perf_metrics.csv'}")
+    if args.no_plots:
+        print("Skipped timeline PNGs (--no-plots)")
     else:
-        print("Skipped score_timeline.png: no score data found", file=sys.stderr)
+        print(f"Wrote {args.out_dir / 'wid_timeline.png'}")
+        print(f"Wrote {args.out_dir / 'pc_timeline.png'}")
+        if wrote_score:
+            print(f"Wrote {args.out_dir / 'score_timeline.png'}")
+        else:
+            print("Skipped score_timeline.png: no score data found", file=sys.stderr)
     if args.split_by_wspawn:
         print(f"Wrote {args.out_dir / 'wspawn_splits.csv'}")
+    if args.show_wid_timeline:
+        print("Displayed interactive WID timeline")
 
 
 if __name__ == "__main__":
