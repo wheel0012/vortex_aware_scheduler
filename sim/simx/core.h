@@ -186,6 +186,11 @@ public:
   // priority decisions and warp 0 cpi_avg overflow.
   void reset_warp_cpl(uint32_t wid);
 
+  // Clear the running max-committed value at a kernel boundary.  Called
+  // from emulator.cpp's wspawn handler AFTER all warps have been reset, so
+  // the gap signal restarts from zero each kernel launch.
+  void reset_max_committed() { cpl_max_committed_ = 0; }
+
   // Read-only view of per-wid criticality for the schedule-stage policy.
   // Updated in cpl_update_score() whenever the issue stage refreshes the
   // per-slot criticality vector.
@@ -246,11 +251,26 @@ private:
   uint32_t commit_exe_;
   std::vector<std::vector<uint64_t>> ibuffer_spawn_times_;
   std::vector<std::vector<uint64_t>> ibuffer_criticality_;
+  // Per-slot per-warp-in-slot block id (= global_wid / WSPAWN_WARPS_PER_BLOCK).
+  // Constant after construction; consumed by GCAWSArbiter to keep criticality
+  // comparison within the same thread block (paper CAWA intent).
+  std::vector<std::vector<uint64_t>> ibuffer_block_ids_;
   std::vector<Arbiter> ibuffer_arbs_;
   std::vector<uint64_t> cpl_inst_pending_;
   std::vector<uint64_t> cpl_stall_cycles_;
   std::vector<uint64_t> cpl_committed_instrs_;
   std::vector<uint64_t> cpl_last_issue_cycle_;
+  // Per-warp arbitration-loss counter: per cycle, every warp that was in
+  // ready_set but NOT picked by the arbiter gets +1.  This isolates the
+  // *scheduler-actionable* portion of "stall between consecutive issues"
+  // — i.e., the paper §2.2.4 "RR adds 52% additional wait" component —
+  // separately from memory/fetch/HW stalls that the scheduler cannot fix.
+  std::vector<uint64_t> cpl_arbitration_loss_;
+  // Running max of cpl_committed_instrs_, updated in commit() and reset at
+  // kernel-launch (wspawn).  Drives the nInst = max_committed - this warp's
+  // committed signal used by cpl_update_score (gap-from-leader heuristic
+  // replacing the paper-Algorithm-2 branch-delta accumulator).
+  uint64_t cpl_max_committed_;
   // sched_criticality_ is declared earlier in this class (before emulator_)
   // so the schedule-stage policy can reference it during Emulator
   // construction; it's a per-wid mirror of ibuffer_criticality_ updated in

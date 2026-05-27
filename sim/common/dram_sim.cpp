@@ -136,11 +136,21 @@ public:
 		dram_config["Frontend"]["impl"] = "GEM5";
 		dram_config["MemorySystem"]["impl"] = "GenericDRAM";
 		dram_config["MemorySystem"]["clock_ratio"] = 1;
+#ifdef VX_DRAM_DDR3
+		// Fermi-era DRAM (paper Table 1: Min DRAM latency 220 cycle) to test
+		// whether DRAM-variance + higher absolute latency exposes the paper's
+		// gCAWS active-warp-limiting mechanism in our environment.
+		dram_config["MemorySystem"]["DRAM"]["impl"] = "DDR3";
+		dram_config["MemorySystem"]["DRAM"]["org"]["preset"] = "DDR3_8Gb_x8";
+		dram_config["MemorySystem"]["DRAM"]["org"]["channel"] = num_channels;
+		dram_config["MemorySystem"]["DRAM"]["timing"]["preset"] = "DDR3_1066E";
+#else
 		dram_config["MemorySystem"]["DRAM"]["impl"] = "HBM2";
 		dram_config["MemorySystem"]["DRAM"]["org"]["preset"] = "HBM2_8Gb";
 		dram_config["MemorySystem"]["DRAM"]["org"]["density"] = 8192;
 		dram_config["MemorySystem"]["DRAM"]["org"]["channel"] = num_channels;
 		dram_config["MemorySystem"]["DRAM"]["timing"]["preset"] = "HBM2_2Gbps";
+#endif
 		dram_config["MemorySystem"]["Controller"]["impl"] = "Generic";
 		dram_config["MemorySystem"]["Controller"]["Scheduler"]["impl"] = "FRFCFS";
 		dram_config["MemorySystem"]["Controller"]["RefreshManager"]["impl"] = "AllBank";

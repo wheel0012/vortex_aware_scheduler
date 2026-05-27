@@ -144,11 +144,14 @@ Core::Core(const SimContext& ctx,
   , commit_arbs_(ISSUE_WIDTH)
   , ibuffer_spawn_times_(ISSUE_WIDTH, std::vector<uint64_t>(PER_ISSUE_WARPS, 0))
   , ibuffer_criticality_(ISSUE_WIDTH, std::vector<uint64_t>(PER_ISSUE_WARPS, 0))
+  , ibuffer_block_ids_(ISSUE_WIDTH, std::vector<uint64_t>(PER_ISSUE_WARPS, 0))
   , ibuffer_arbs_(ISSUE_WIDTH)
   , cpl_inst_pending_(arch_.num_warps(), 0)
   , cpl_stall_cycles_(arch_.num_warps(), 0)
   , cpl_committed_instrs_(arch_.num_warps(), 0)
   , cpl_last_issue_cycle_(arch_.num_warps(), std::numeric_limits<uint64_t>::max())
+  , cpl_arbitration_loss_(arch_.num_warps(), 0)
+  , cpl_max_committed_(0)
   , dbg_grant_count_(arch_.num_warps(), 0)
   , dbg_last_grant_(ISSUE_WIDTH, uint32_t(-1))
   , dbg_stick_count_(ISSUE_WIDTH, 0)
@@ -165,9 +168,27 @@ Core::Core(const SimContext& ctx,
 {
   char sname[100];
 
+  // Populate per-slot block_id table.  Each global wid is mapped to a
+  // thread-block index via wid / WSPAWN_WARPS_PER_BLOCK.  If the macro is
+  // zero (legacy), every warp ends up in block 0 → gCAWS block-local filter
+  // becomes a no-op, preserving the original cross-core comparison.
+#ifndef WSPAWN_WARPS_PER_BLOCK
+#define WSPAWN_WARPS_PER_BLOCK 0
+#endif
+  for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
+    for (uint32_t w = 0; w < PER_ISSUE_WARPS; ++w) {
+      uint32_t wid = w * ISSUE_WIDTH + iw;
+      ibuffer_block_ids_.at(iw).at(w) =
+          (WSPAWN_WARPS_PER_BLOCK > 0) ? (wid / WSPAWN_WARPS_PER_BLOCK) : 0;
+    }
+  }
   for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
     operands_.at(iw) = Operands::Create(this);
-    ibuffer_arbs_.at(iw) = Arbiter(configured_issue_arbiter(), PER_ISSUE_WARPS, &ibuffer_spawn_times_.at(iw), &ibuffer_criticality_.at(iw));
+    ibuffer_arbs_.at(iw) = Arbiter(configured_issue_arbiter(),
+                                   PER_ISSUE_WARPS,
+                                   &ibuffer_spawn_times_.at(iw),
+                                   &ibuffer_criticality_.at(iw),
+                                   &ibuffer_block_ids_.at(iw));
     dbg_shadow_rr_.emplace_back(ArbiterType::RoundRobin, PER_ISSUE_WARPS);
   }
 
@@ -495,7 +516,9 @@ void Core::reset() {
   std::fill(cpl_stall_cycles_.begin(), cpl_stall_cycles_.end(), 0);
   std::fill(cpl_committed_instrs_.begin(), cpl_committed_instrs_.end(), 0);
   std::fill(cpl_last_issue_cycle_.begin(), cpl_last_issue_cycle_.end(), std::numeric_limits<uint64_t>::max());
+  std::fill(cpl_arbitration_loss_.begin(), cpl_arbitration_loss_.end(), 0);
   std::fill(sched_criticality_.begin(), sched_criticality_.end(), 0);
+  cpl_max_committed_ = 0;
 
   pending_instrs_.clear();
   pending_ifetches_ = 0;
@@ -613,12 +636,20 @@ void Core::reset_warp_cpl(uint32_t wid) {
   cpl_stall_cycles_.at(wid) = 0;
   cpl_committed_instrs_.at(wid) = 0;
   cpl_last_issue_cycle_.at(wid) = std::numeric_limits<uint64_t>::max();
+  cpl_arbitration_loss_.at(wid) = 0;
   sched_criticality_.at(wid) = 0;
   uint32_t iw = wid % ISSUE_WIDTH;
   uint32_t w  = wid / ISSUE_WIDTH;
   ibuffer_criticality_.at(iw).at(w) = 0;
   ibuffer_spawn_times_.at(iw).at(w) = SimPlatform::instance().cycles();
 }
+
+// VX_NSTALL_MODE selects which counter feeds the nStall term of criticality:
+//   0 = gap-since-last-issue (legacy, paper-faithful but includes memory stall)
+//   1 = arbitration-loss only (paper §2.2.4 "scheduler-induced" stall, pure)
+#ifndef VX_NSTALL_MODE
+#define VX_NSTALL_MODE 0
+#endif
 
 void Core::cpl_update_score(uint32_t wid) {
   uint32_t iw = wid % ISSUE_WIDTH;
@@ -627,7 +658,17 @@ void Core::cpl_update_score(uint32_t wid) {
   auto committed = cpl_committed_instrs_.at(wid);
   auto elapsed = SimPlatform::instance().cycles() - emulator_.get_warp(wid).spawn_time + 1;
   auto cpi_avg = committed ? std::max<uint64_t>(1, elapsed / committed) : uint64_t(1);
-  auto crit = cpl_inst_pending_.at(wid) * cpi_avg + cpl_stall_cycles_.at(wid);
+  // New nInst signal: "this warp's lag behind the most-committed warp".
+  // Always non-zero when warps progress at different rates; replaces the
+  // branch-delta accumulator (cpl_inst_pending_) which collapsed to 0 for
+  // most workloads in our Vortex environment.
+  uint64_t nInst = (cpl_max_committed_ > committed) ? (cpl_max_committed_ - committed) : 0;
+#if VX_NSTALL_MODE == 1
+  uint64_t nstall_term = cpl_arbitration_loss_.at(wid);
+#else
+  uint64_t nstall_term = cpl_stall_cycles_.at(wid);
+#endif
+  auto crit = nInst * cpi_avg + nstall_term;
   ibuffer_criticality_.at(iw).at(w) = crit;
   sched_criticality_.at(wid) = crit;
 }
@@ -729,6 +770,15 @@ void Core::issue() {
     if (ready_set.any()) {
       // select one instruction from ready set
       auto w = ibuffer_arbs_.at(iw).grant(ready_set);
+      // Per-warp arbitration loss: every warp that was ready but lost the
+      // arbiter pick this cycle accumulates +1.  This is the pure
+      // scheduler-induced delay (paper §2.2.4) — distinct from memory/HW
+      // stall.  Used by VX_NSTALL_MODE=1 in cpl_update_score.
+      for (uint32_t other_w = 0; other_w < PER_ISSUE_WARPS; ++other_w) {
+        if (other_w == w) continue;
+        if (!ready_set.test(other_w)) continue;
+        ++cpl_arbitration_loss_.at(other_w * ISSUE_WIDTH + iw);
+      }
       // shadow-RR diagnostic: what would a plain RR have picked, given the
       // same ready set?  Cumulative diff% measures the actual policy's
       // behavioural divergence from RR (0% ⇒ policy ≡ RR for this workload).
@@ -880,6 +930,11 @@ void Core::commit() {
       if (pending_instrs_.size() != orig_size) {
         perf_stats_.instrs += trace->tmask.count();
         ++cpl_committed_instrs_.at(trace->wid);
+        // Maintain running max-committed for the gap-from-leader nInst signal
+        // used by cpl_update_score().
+        if (cpl_committed_instrs_.at(trace->wid) > cpl_max_committed_) {
+          cpl_max_committed_ = cpl_committed_instrs_.at(trace->wid);
+        }
         // CAWA pending decrement (paper Algorithm 2: nInst -= 1 per commit).
         // Vortex SIMT extension: while this warp is in a divergent region
         // (ipdom_stack non-empty after a vx_split), freeze the decrement —

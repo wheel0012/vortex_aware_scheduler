@@ -154,6 +154,20 @@ private:
   WarpMask    active_warps_;
   WarpMask    stalled_warps_;
   int         rr_last_warp_;  // fetch-stage RR pointer (last selected wid)
+
+  // Block-by-block wspawn dispatch (paper Fermi thread-block scheduler
+  // emulation).  When WSPAWN_WARPS_PER_BLOCK > 0, a wspawn doesn't activate
+  // every warp in a single cycle — it queues warps into this pending pool
+  // and step() drains WSPAWN_WARPS_PER_BLOCK of them per cycle, giving each
+  // group a distinct spawn_time.  Default macro=0 preserves the original
+  // single-cycle activation.
+  struct WspawnPending {
+    bool      active = false;
+    uint32_t  next_wid = 0;
+    uint32_t  total = 0;
+    Word      nextPC = 0;
+  };
+  WspawnPending wspawn_pending_;
   // Schedule-stage (fetch) policy.  When VORTEX_SCHED_POLICY != RR the
   // cyclic-RR loop in step() is bypassed in favour of this arbiter object,
   // which is fed a per-wid ready mask plus warp spawn_times and the per-wid
@@ -162,6 +176,10 @@ private:
   // NB: sched_spawn_times_ must be declared (and sized) BEFORE sched_policy_,
   // because the Arbiter ctor asserts spawn_times->size() == arch.num_warps().
   std::vector<uint64_t> sched_spawn_times_;
+  // Per-wid block id (= wid / WSPAWN_WARPS_PER_BLOCK).  When non-zero macro,
+  // the schedule-stage GCAWS uses this to restrict criticality comparison
+  // to the same thread block.  Set once in ctor; never changes.
+  std::vector<uint64_t> sched_block_ids_;
   Arbiter sched_policy_;
   std::vector<WarpMask> barriers_;
   std::unordered_map<int, std::stringstream> print_bufs_;

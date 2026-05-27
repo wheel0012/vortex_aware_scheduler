@@ -19,6 +19,10 @@
 #include <assert.h>
 #include <util.h>
 
+#ifndef WSPAWN_WARPS_PER_BLOCK
+#define WSPAWN_WARPS_PER_BLOCK 0  // 0 = legacy (모든 warp 한 cycle에 활성화)
+#endif
+
 #include "emulator.h"
 #include "instr_trace.h"
 #include "instr.h"
@@ -81,10 +85,12 @@ Emulator::Emulator(const Arch &arch, const DCRS &dcrs, Core* core)
     , core_(core)
     , warps_(arch.num_warps(), arch.num_threads())
     , sched_spawn_times_(arch.num_warps(), 0)
+    , sched_block_ids_(arch.num_warps(), 0)
     , sched_policy_(configured_sched_policy(),
                     arch.num_warps(),
                     &sched_spawn_times_,
-                    &core->sched_criticality())
+                    &core->sched_criticality(),
+                    &sched_block_ids_)
     , barriers_(arch.num_barriers(), 0)
     , ipdom_size_(arch.num_threads()-1)
   #ifdef EXT_TCU_ENABLE
@@ -95,6 +101,16 @@ Emulator::Emulator(const Arch &arch, const DCRS &dcrs, Core* core)
   #endif
 {
   std::srand(50);
+  // Populate per-wid block_id table for schedule-stage GCAWS block-local
+  // criticality.  Static mapping wid → wid/WSPAWN_WARPS_PER_BLOCK; with
+  // macro=0 all warps map to block 0 (block restriction becomes a no-op).
+#ifndef WSPAWN_WARPS_PER_BLOCK
+#define WSPAWN_WARPS_PER_BLOCK 0
+#endif
+  for (uint32_t wid = 0, n = arch.num_warps(); wid < n; ++wid) {
+    sched_block_ids_.at(wid) =
+        (WSPAWN_WARPS_PER_BLOCK > 0) ? (wid / WSPAWN_WARPS_PER_BLOCK) : 0;
+  }
   this->reset();
 }
 
@@ -164,6 +180,38 @@ uint32_t Emulator::fetch(uint32_t wid, uint64_t uuid) {
 instr_trace_t* Emulator::step() {
   int scheduled_warp = -1;
 
+  // Block-by-block wspawn drain (paper Fermi thread-block staggered dispatch).
+  // Activates up to WSPAWN_WARPS_PER_BLOCK warps from the pending pool per
+  // cycle, each with the current cycle as spawn_time.  Runs every cycle even
+  // when no fresh wspawn is in flight.
+#if WSPAWN_WARPS_PER_BLOCK > 0
+  if (wspawn_pending_.active) {
+    uint32_t remaining = wspawn_pending_.total - wspawn_pending_.next_wid;
+    uint32_t cnt = remaining < uint32_t(WSPAWN_WARPS_PER_BLOCK) ? remaining
+                                                                : uint32_t(WSPAWN_WARPS_PER_BLOCK);
+    uint64_t now = SimPlatform::instance().cycles();
+    std::cerr << "[WSPAWN_BLOCK cycle=" << now
+              << " core=" << core_->id()
+              << " wids=[" << wspawn_pending_.next_wid
+              << ".." << (wspawn_pending_.next_wid + cnt - 1) << "]"
+              << "]" << std::endl;
+    for (uint32_t k = 0; k < cnt; ++k) {
+      uint32_t wid = wspawn_pending_.next_wid + k;
+      auto& warp = warps_.at(wid);
+      warp.PC = wspawn_pending_.nextPC;
+      warp.tmask.set(0);
+      warp.spawn_time = now;
+      active_warps_.set(wid);
+      core_->reset_warp_cpl(wid);
+    }
+    wspawn_pending_.next_wid += cnt;
+    if (wspawn_pending_.next_wid >= wspawn_pending_.total) {
+      wspawn_pending_.active = false;
+      core_->reset_max_committed();
+    }
+  }
+#endif
+
   // process pending wspawn
   if (wspawn_.valid && active_warps_.count() == 1) {
     DP(3, "*** Activate " << (wspawn_.num_warps-1) << " warps at PC: " << std::hex << wspawn_.nextPC << std::dec);
@@ -176,6 +224,14 @@ instr_trace_t* Emulator::step() {
     // and its CPL accumulators carry stale state across kernel launches.
     warps_.at(0).spawn_time = SimPlatform::instance().cycles();
     core_->reset_warp_cpl(0);
+#if WSPAWN_WARPS_PER_BLOCK > 0
+    // Queue the remaining warps; drain logic above will activate them in
+    // WSPAWN_WARPS_PER_BLOCK-sized batches over multiple cycles.
+    wspawn_pending_.active   = true;
+    wspawn_pending_.next_wid = 1;
+    wspawn_pending_.total    = wspawn_.num_warps;
+    wspawn_pending_.nextPC   = wspawn_.nextPC;
+#else
     for (uint32_t i = 1; i < wspawn_.num_warps; ++i) {
       auto& warp = warps_.at(i);
       warp.PC = wspawn_.nextPC;
@@ -187,6 +243,11 @@ instr_trace_t* Emulator::step() {
       // is not meaningful to this new thread group.
       core_->reset_warp_cpl(i);
     }
+    // After every warp's per-wid state is zeroed, also clear the running
+    // max-committed cache so the gap-based nInst restarts at zero for the
+    // newly-launched kernel.
+    core_->reset_max_committed();
+#endif
     wspawn_.valid = false;
     stalled_warps_.reset(0);
   }
