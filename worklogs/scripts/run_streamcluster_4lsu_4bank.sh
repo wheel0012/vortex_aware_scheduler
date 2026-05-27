@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # streamcluster @ HW(LSU=2, banks=4).
-# 4 policies x perf={1,2}.
+# scheduler=RR, arbiter={RR,GTO,gCAWS} x perf={1,2}.
 #
 # Input parameters:
 #   kmin=2, kmax=4, dim=4, n=16, chunksize=16, clustersize=16
@@ -25,8 +25,9 @@ ARCH_FLAGS="-DNUM_CORES=$CORES -DNUM_WARPS=$WARPS -DNUM_THREADS=$THREADS"
 # Streamcluster parameters: kmin kmax dim n chunksize clustersize infile outfile nproc + extra args
 STREAMCLUSTER_OPTS="${STREAMCLUSTER_OPTS:-2 4 4 16 16 16 none output.txt 1 -t gpu -d 0}"
 
-declare -A SCHED=( [GTO]=1 [RR]=2 [gCAWS]=3 [iPAWS]=4 )
-POLICIES=(RR GTO gCAWS iPAWS)
+SCHED_RR=2
+declare -A ARBITER=( [GTO]=1 [RR]=2 [gCAWS]=4 )
+POLICIES=(RR GTO gCAWS)
 
 active_child=""
 
@@ -88,12 +89,12 @@ cp "$STREAM_SRC/Makefile" "$STREAM_BUILD/Makefile"
 echo "[CHECK] refreshed build-dir streamcluster"
 
 for label in "${POLICIES[@]}"; do
-  sched=${SCHED[$label]}
-  conf="$BASE_FLAGS $ARCH_FLAGS -DVORTEX_SCHED=$sched"
+  arb=${ARBITER[$label]}
+  conf="$BASE_FLAGS $ARCH_FLAGS -DVORTEX_SCHED=$SCHED_RR -DVORTEX_ARBITER=$arb"
   cfg_dir="$EXP_DIR/$label"
   mkdir -p "$cfg_dir"
   : > "$cfg_dir/build.log"
-  echo "===== [$label] build (VORTEX_SCHED=$sched, $HW_TWEAK) ====="
+  echo "===== [$label] build (VORTEX_SCHED=$SCHED_RR, VORTEX_ARBITER=$arb, $HW_TWEAK) ====="
   env -u DEBUG CONFIGS="$conf" make -C "$BUILD_DIR/sim/simx" -j$(nproc) >> "$cfg_dir/build.log" 2>&1 \
     || { echo "  sim FAIL"; continue; }
   env -u DEBUG CONFIGS="$conf" make -C "$BUILD_DIR/runtime/simx" -j$(nproc) >> "$cfg_dir/build.log" 2>&1 \

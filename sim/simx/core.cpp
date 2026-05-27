@@ -17,6 +17,7 @@
 #include <sstream>
 #include <limits>
 #include <cmath>
+#include <cstdlib>
 #include <string.h>
 #include <assert.h>
 #include <util.h>
@@ -32,8 +33,38 @@ using namespace vortex;
 
 namespace {
 
+#ifndef SIMX_ICACHE_REQ_LATENCY
+#define SIMX_ICACHE_REQ_LATENCY 2
+#endif
+
+#ifndef SIMX_OPERANDS_LATENCY
+#define SIMX_OPERANDS_LATENCY 1
+#endif
+
+#ifndef SIMX_DISPATCH_LATENCY
+#define SIMX_DISPATCH_LATENCY 2
+#endif
+
+uint64_t parse_u64_env(const char* name, uint64_t default_value) {
+  auto value = std::getenv(name);
+  if (value == nullptr || value[0] == '\0')
+    return default_value;
+  char* end = nullptr;
+  auto parsed = std::strtoull(value, &end, 0);
+  return (end != value) ? parsed : default_value;
+}
+
 uint64_t wid_bit(uint32_t wid) {
   return wid < 64 ? (1ull << wid) : 0;
+}
+
+uint32_t pct_u64(uint64_t value, uint64_t total) {
+  return total ? static_cast<uint32_t>((100ull * value) / total) : 0;
+}
+
+bool env_enabled(const char* name) {
+  auto value = std::getenv(name);
+  return value && value[0] != '\0' && std::string(value) != "0" && std::string(value) != "false";
 }
 
 std::string to_hex_string(uint64_t value) {
@@ -242,6 +273,24 @@ Core::Core(const SimContext& ctx,
     }
   }
 
+  for (auto& req_port : dcache_req_ports) {
+    req_port.tx_callback([this](const MemReq& req, uint64_t cycle) {
+      __unused(cycle);
+      if (!req.userpc)
+        return;
+      userpc_perf_.dcache_reads += !req.write;
+      userpc_perf_.dcache_writes += req.write;
+      userpc_perf_.dcache_pending_reads += !req.write;
+    });
+  }
+  for (auto& rsp_port : dcache_rsp_ports) {
+    rsp_port.tx_callback([this](const MemRsp& rsp, uint64_t cycle) {
+      __unused(cycle);
+      if (rsp.userpc && userpc_perf_.dcache_pending_reads != 0)
+        --userpc_perf_.dcache_pending_reads;
+    });
+  }
+
   // initialize dispatchers
   dispatchers_.at((int)FUType::ALU) = SimPlatform::instance().create_object<Dispatcher>(this, 2, NUM_ALU_BLOCKS, NUM_ALU_LANES);
   dispatchers_.at((int)FUType::FPU) = SimPlatform::instance().create_object<Dispatcher>(this, 2, NUM_FPU_BLOCKS, NUM_FPU_LANES);
@@ -280,7 +329,148 @@ Core::Core(const SimContext& ctx,
 }
 
 Core::~Core() {
-  this->dump_cpl_stats();
+  if (env_enabled("VX_CPL_DUMP")) {
+    this->dump_cpl_stats();
+  }
+  this->dump_userpc_perf();
+}
+
+Core::UserPCPerfStats::UserPCPerfStats()
+  : configured(false)
+  , enabled(false)
+  , pc_base(0x80000000)
+  , pc_from(0)
+  , pc_to(std::numeric_limits<uint64_t>::max())
+  , first_cycle(std::numeric_limits<uint64_t>::max())
+  , last_cycle(0)
+  , last_counted_issue_cycle(std::numeric_limits<uint64_t>::max())
+  , issued(0)
+  , instrs(0)
+  , ifetches(0)
+  , ifetch_latency(0)
+  , issue_cycles(0)
+  , candidate_checks(0)
+  , ready_checks(0)
+  , candidate_sum(0)
+  , ready_sum(0)
+  , not_ready_fallbacks(0)
+  , preferred_blocked(0)
+  , ibuf_stalls(0)
+  , scrb_stalls(0)
+  , scrb_blocked(0)
+  , scrb_alu(0)
+  , scrb_fpu(0)
+  , scrb_lsu(0)
+  , scrb_sfu(0)
+  , scrb_csrs(0)
+  , scrb_wctl(0)
+#ifdef EXT_V_ENABLE
+  , scrb_vpu(0)
+#endif
+#ifdef EXT_TCU_ENABLE
+  , scrb_tcu(0)
+#endif
+  , loads(0)
+  , stores(0)
+  , load_latency(0)
+  , dcache_reads(0)
+  , dcache_writes(0)
+  , dcache_read_latency(0)
+  , dcache_pending_reads(0)
+  , alu_issues(0)
+  , fpu_issues(0)
+  , lsu_issues(0)
+  , sfu_issues(0)
+#ifdef EXT_V_ENABLE
+  , vpu_issues(0)
+#endif
+#ifdef EXT_TCU_ENABLE
+  , tcu_issues(0)
+#endif
+{}
+
+void Core::userpc_init() {
+  userpc_perf_ = UserPCPerfStats();
+  userpc_perf_.pc_base = parse_u64_env("VX_USER_PC_BASE", userpc_perf_.pc_base);
+  auto from_env = std::getenv("VX_USER_PC_FROM");
+  auto to_env = std::getenv("VX_USER_PC_TO");
+  bool has_from = from_env != nullptr && from_env[0] != '\0';
+  bool has_to = to_env != nullptr && to_env[0] != '\0';
+  if (!has_from && !has_to)
+    return;
+
+  userpc_perf_.configured = true;
+  auto from = parse_u64_env("VX_USER_PC_FROM", 0);
+  auto to = parse_u64_env("VX_USER_PC_TO", std::numeric_limits<uint64_t>::max());
+  if (from < userpc_perf_.pc_base)
+    from += userpc_perf_.pc_base;
+  if (to < userpc_perf_.pc_base)
+    to += userpc_perf_.pc_base;
+  userpc_perf_.pc_from = from;
+  userpc_perf_.pc_to = to;
+  userpc_perf_.enabled = from <= to;
+  userpc_perf_.per_warp_issues.assign(arch_.num_warps(), 0);
+  userpc_perf_.per_warp_first.assign(arch_.num_warps(), std::numeric_limits<uint64_t>::max());
+  userpc_perf_.per_warp_last.assign(arch_.num_warps(), 0);
+}
+
+bool Core::userpc_contains(uint64_t pc) const {
+  return userpc_perf_.enabled && pc >= userpc_perf_.pc_from && pc <= userpc_perf_.pc_to;
+}
+
+void Core::userpc_mark(instr_trace_t* trace) const {
+  trace->userpc_marked = this->userpc_contains(trace->PC);
+}
+
+void Core::userpc_count_scoreboard(const instr_trace_t* trace, const std::vector<Scoreboard::reg_use_t>& uses) {
+  if (!trace->userpc_marked)
+    return;
+  ++userpc_perf_.candidate_checks;
+  ++userpc_perf_.scrb_blocked;
+  for (auto& use : uses) {
+    switch (use.fu_type) {
+    case FUType::ALU: ++userpc_perf_.scrb_alu; break;
+    case FUType::FPU: ++userpc_perf_.scrb_fpu; break;
+    case FUType::LSU: ++userpc_perf_.scrb_lsu; break;
+    case FUType::SFU: {
+      ++userpc_perf_.scrb_sfu;
+      if (std::get_if<WctlType>(&use.op_type)) {
+        ++userpc_perf_.scrb_wctl;
+      } else if (std::get_if<CsrType>(&use.op_type)) {
+        ++userpc_perf_.scrb_csrs;
+      }
+    } break;
+  #ifdef EXT_V_ENABLE
+    case FUType::VPU: ++userpc_perf_.scrb_vpu; break;
+  #endif
+  #ifdef EXT_TCU_ENABLE
+    case FUType::TCU: ++userpc_perf_.scrb_tcu; break;
+  #endif
+    default: break;
+    }
+  }
+}
+
+void Core::userpc_count_lsu(const instr_trace_t* trace, bool is_write, uint32_t count) {
+  if (!trace->userpc_marked)
+    return;
+  if (is_write) {
+    userpc_perf_.stores += count;
+  } else {
+    userpc_perf_.loads += count;
+  }
+}
+
+void Core::userpc_add_load_latency(uint64_t pending_loads) {
+  if (!userpc_perf_.enabled)
+    return;
+  userpc_perf_.load_latency += pending_loads;
+}
+
+void Core::userpc_add_dcache_latency(uint64_t pending_reads) {
+  if (!userpc_perf_.enabled)
+    return;
+  userpc_perf_.dcache_read_latency += pending_reads;
 }
 
 void Core::dump_cpl_stats() const {
@@ -468,6 +658,155 @@ void Core::cpl_snap() const {
             << "]" << std::endl;
 }
 
+void Core::dump_userpc_perf() const {
+  if (!userpc_perf_.configured)
+    return;
+
+  std::cerr << "[USERPC_PERF core=" << core_id_ << "] "
+            << "enabled=" << (userpc_perf_.enabled ? "true" : "false")
+            << " pc_base=0x" << std::hex << userpc_perf_.pc_base
+            << " pc_from=0x" << userpc_perf_.pc_from
+            << " pc_to=0x" << userpc_perf_.pc_to << std::dec << "\n";
+
+  if (!userpc_perf_.enabled)
+    return;
+
+  auto span = (userpc_perf_.issued && userpc_perf_.first_cycle <= userpc_perf_.last_cycle)
+                ? (userpc_perf_.last_cycle - userpc_perf_.first_cycle + 1)
+                : 0;
+  auto avg_ready = userpc_perf_.issued ? double(userpc_perf_.ready_sum) / userpc_perf_.issued : 0.0;
+  auto avg_candidate = userpc_perf_.issued ? double(userpc_perf_.candidate_sum) / userpc_perf_.issued : 0.0;
+  auto issue_density = span ? double(userpc_perf_.issued) / span : 0.0;
+  auto not_ready_rate = userpc_perf_.issued ? 100.0 * userpc_perf_.not_ready_fallbacks / userpc_perf_.issued : 0.0;
+  auto ready_hit_ratio = userpc_perf_.candidate_checks ? 100.0 * userpc_perf_.ready_checks / userpc_perf_.candidate_checks : 0.0;
+  auto scrb_block_ratio = userpc_perf_.candidate_checks ? 100.0 * userpc_perf_.scrb_blocked / userpc_perf_.candidate_checks : 0.0;
+  auto idle_cycles = span > userpc_perf_.issue_cycles ? span - userpc_perf_.issue_cycles : 0;
+  auto scrb_dep_total = userpc_perf_.scrb_alu + userpc_perf_.scrb_fpu + userpc_perf_.scrb_lsu
+                      + userpc_perf_.scrb_sfu + userpc_perf_.scrb_csrs + userpc_perf_.scrb_wctl
+                    #ifdef EXT_V_ENABLE
+                      + userpc_perf_.scrb_vpu
+                    #endif
+                    #ifdef EXT_TCU_ENABLE
+                      + userpc_perf_.scrb_tcu
+                    #endif
+                      ;
+  auto ifetch_avg_lat = userpc_perf_.ifetches ? userpc_perf_.ifetch_latency / userpc_perf_.ifetches : 0;
+  auto load_avg_lat = userpc_perf_.loads ? userpc_perf_.load_latency / userpc_perf_.loads : 0;
+  auto dcache_read_avg_lat = userpc_perf_.dcache_reads ? userpc_perf_.dcache_read_latency / userpc_perf_.dcache_reads : 0;
+  auto ipc = span ? double(userpc_perf_.instrs) / span : 0.0;
+
+  std::cerr << "PERF: userpc pc_from=0x" << std::hex << userpc_perf_.pc_from
+            << " pc_to=0x" << userpc_perf_.pc_to << std::dec << "\n";
+  std::cerr << "PERF: userpc scheduler idle=" << idle_cycles
+            << " (" << pct_u64(idle_cycles, span) << "%)\n";
+  std::cerr << "PERF: userpc scheduler stalls=0 (0%)\n";
+  std::cerr << "PERF: userpc ibuffer stalls=" << userpc_perf_.ibuf_stalls
+            << " (" << pct_u64(userpc_perf_.ibuf_stalls, span) << "%)\n";
+  std::cerr << "PERF: userpc scoreboard stalls=" << userpc_perf_.scrb_stalls
+            << " (" << pct_u64(userpc_perf_.scrb_stalls, span) << "%)"
+            << " (alu=" << pct_u64(userpc_perf_.scrb_alu, scrb_dep_total) << "%"
+            << ", lsu=" << pct_u64(userpc_perf_.scrb_lsu, scrb_dep_total) << "%"
+            << ", csrs=" << pct_u64(userpc_perf_.scrb_csrs, scrb_dep_total) << "%"
+            << ", wctl=" << pct_u64(userpc_perf_.scrb_wctl, scrb_dep_total) << "%"
+            << ", fpu=" << pct_u64(userpc_perf_.scrb_fpu, scrb_dep_total) << "%"
+          #ifdef EXT_V_ENABLE
+            << ", vpu=" << pct_u64(userpc_perf_.scrb_vpu, scrb_dep_total) << "%"
+          #endif
+          #ifdef EXT_TCU_ENABLE
+            << ", tcu=" << pct_u64(userpc_perf_.scrb_tcu, scrb_dep_total) << "%"
+          #endif
+            << ")\n";
+  std::cerr << "PERF: userpc ready checks=" << userpc_perf_.ready_checks
+            << " / candidate checks=" << userpc_perf_.candidate_checks
+            << " (hit ratio=" << pct_u64(userpc_perf_.ready_checks, userpc_perf_.candidate_checks) << "%)\n";
+  std::cerr << "PERF: userpc ifetches=" << userpc_perf_.ifetches << "\n";
+  std::cerr << "PERF: userpc loads=" << userpc_perf_.loads << "\n";
+  std::cerr << "PERF: userpc stores=" << userpc_perf_.stores << "\n";
+  std::cerr << "PERF: userpc ifetch latency=" << ifetch_avg_lat << " cycles\n";
+  std::cerr << "PERF: userpc load latency=" << load_avg_lat << " cycles\n";
+  std::cerr << "PERF: userpc dcache requests=" << (userpc_perf_.dcache_reads + userpc_perf_.dcache_writes)
+            << " (reads=" << userpc_perf_.dcache_reads
+            << ", writes=" << userpc_perf_.dcache_writes << ")\n";
+  std::cerr << "PERF: userpc dcache read latency=" << dcache_read_avg_lat << " cycles\n";
+  std::cerr << "PERF: userpc instrs=" << userpc_perf_.instrs
+            << ", cycles=" << span
+            << ", IPC=" << std::fixed << std::setprecision(6) << ipc << "\n";
+
+  std::cerr << "[USERPC_PERF core=" << core_id_ << "] "
+            << "issued=" << userpc_perf_.issued
+            << " issue_cycles=" << userpc_perf_.issue_cycles
+            << " first_cycle=" << (userpc_perf_.issued ? std::to_string(userpc_perf_.first_cycle) : "n/a")
+            << " last_cycle=" << (userpc_perf_.issued ? std::to_string(userpc_perf_.last_cycle) : "n/a")
+            << " span=" << span
+            << " issue_density=" << std::fixed << std::setprecision(4) << issue_density
+            << " avg_ready=" << std::setprecision(2) << avg_ready
+            << " avg_candidate=" << std::setprecision(2) << avg_candidate
+            << "\n";
+
+  std::cerr << "[USERPC_PERF core=" << core_id_ << "] "
+            << "candidate_checks=" << userpc_perf_.candidate_checks
+            << " ready_checks=" << userpc_perf_.ready_checks
+            << " ready_hit_ratio=" << std::fixed << std::setprecision(2) << ready_hit_ratio << "%"
+            << " scoreboard_block_ratio=" << std::fixed << std::setprecision(2) << scrb_block_ratio << "%"
+            << "\n";
+
+  std::cerr << "[USERPC_PERF core=" << core_id_ << "] "
+            << "not_ready_fallback=" << userpc_perf_.not_ready_fallbacks
+            << " rate=" << std::fixed << std::setprecision(2) << not_ready_rate << "%"
+            << " preferred_blocked=" << userpc_perf_.preferred_blocked
+            << "\n";
+
+  std::cerr << "[USERPC_PERF core=" << core_id_ << "] "
+            << "issues_by_fu"
+            << " alu=" << userpc_perf_.alu_issues
+            << " fpu=" << userpc_perf_.fpu_issues
+            << " lsu=" << userpc_perf_.lsu_issues
+            << " sfu=" << userpc_perf_.sfu_issues
+          #ifdef EXT_V_ENABLE
+            << " vpu=" << userpc_perf_.vpu_issues
+          #endif
+          #ifdef EXT_TCU_ENABLE
+            << " tcu=" << userpc_perf_.tcu_issues
+          #endif
+            << "\n";
+
+  std::cerr << "[USERPC_PERF core=" << core_id_ << "] "
+            << "scoreboard_blocked=" << userpc_perf_.scrb_blocked
+            << " alu=" << userpc_perf_.scrb_alu
+            << " fpu=" << userpc_perf_.scrb_fpu
+            << " lsu=" << userpc_perf_.scrb_lsu
+            << " sfu=" << userpc_perf_.scrb_sfu
+            << " csrs=" << userpc_perf_.scrb_csrs
+            << " wctl=" << userpc_perf_.scrb_wctl
+          #ifdef EXT_V_ENABLE
+            << " vpu=" << userpc_perf_.scrb_vpu
+          #endif
+          #ifdef EXT_TCU_ENABLE
+            << " tcu=" << userpc_perf_.scrb_tcu
+          #endif
+            << "\n";
+
+  std::cerr << "[USERPC_PERF core=" << core_id_ << "] "
+            << "lsu_ops loads=" << userpc_perf_.loads
+            << " stores=" << userpc_perf_.stores << "\n";
+  std::cerr << "[USERPC_PERF core=" << core_id_ << "] "
+            << "dcache reads=" << userpc_perf_.dcache_reads
+            << " writes=" << userpc_perf_.dcache_writes
+            << " read_latency=" << userpc_perf_.dcache_read_latency
+            << " avg_read_latency=" << dcache_read_avg_lat << "\n";
+
+  std::cerr << "[USERPC_PERF WARP core=" << core_id_ << "] wid issues first_cycle last_cycle\n";
+  for (uint32_t wid = 0; wid < userpc_perf_.per_warp_issues.size(); ++wid) {
+    auto issues = userpc_perf_.per_warp_issues.at(wid);
+    if (issues == 0)
+      continue;
+    std::cerr << "[USERPC_PERF WARP " << std::setw(3) << wid << "] "
+              << std::setw(6) << issues << " "
+              << std::setw(10) << userpc_perf_.per_warp_first.at(wid) << " "
+              << std::setw(10) << userpc_perf_.per_warp_last.at(wid) << "\n";
+  }
+}
+
 void Core::reset() {
 
   emulator_.reset();
@@ -499,11 +838,14 @@ void Core::reset() {
 
   pending_instrs_.clear();
   pending_ifetches_ = 0;
+  pending_userpc_ifetches_ = 0;
 
   perf_stats_ = PerfStats();
+  this->userpc_init();
 }
 
 void Core::tick() {
+  this->userpc_add_dcache_latency(userpc_perf_.dcache_pending_reads);
   this->commit();
   this->execute();
   this->issue();
@@ -539,6 +881,7 @@ void Core::schedule() {
 
 void Core::fetch() {
   perf_stats_.ifetch_latency += pending_ifetches_;
+  userpc_perf_.ifetch_latency += pending_userpc_ifetches_;
 
   // handle icache response
   auto& icache_rsp_port = icache_rsp_ports.at(0);
@@ -550,6 +893,9 @@ void Core::fetch() {
     pending_icache_.release(mem_rsp.tag);
     icache_rsp_port.pop();
     --pending_ifetches_;
+    if (this->userpc_contains(trace->PC)) {
+      --pending_userpc_ifetches_;
+    }
   }
 
   // send icache request
@@ -562,11 +908,15 @@ void Core::fetch() {
   mem_req.tag   = pending_icache_.allocate(trace);
   mem_req.cid   = trace->cid;
   mem_req.uuid  = trace->uuid;
-  icache_req_ports.at(0).push(mem_req, 2);
+  icache_req_ports.at(0).push(mem_req, SIMX_ICACHE_REQ_LATENCY);
   DT(3, "icache-req: addr=0x" << std::hex << mem_req.addr << ", tag=0x" << mem_req.tag << std::dec << ", " << *trace);
   fetch_latch_.pop();
   ++perf_stats_.ifetches;
   ++pending_ifetches_;
+  if (this->userpc_contains(trace->PC)) {
+    ++userpc_perf_.ifetches;
+    ++pending_userpc_ifetches_;
+  }
 }
 
 void Core::decode() {
@@ -574,6 +924,7 @@ void Core::decode() {
     return;
 
   auto trace = decode_latch_.front();
+  this->userpc_mark(trace);
 
   // check ibuffer capacity
   auto& ibuffer = ibuffers_.at(trace->wid);
@@ -582,6 +933,9 @@ void Core::decode() {
       DT(4, "*** ibuffer-stall: " << *trace);
     }
     ++perf_stats_.ibuf_stalls;
+    if (trace->userpc_marked) {
+      ++userpc_perf_.ibuf_stalls;
+    }
     return;
   } else {
     trace->log_once(false);
@@ -646,6 +1000,8 @@ void Core::issue() {
   // issue ibuffer instructions
   for (uint32_t iw = 0; iw < ISSUE_WIDTH; ++iw) {
     bool has_instrs = false;
+    bool userpc_has_instrs = false;
+    bool userpc_ready_any = false;
     BitVector<> candidate_set(PER_ISSUE_WARPS);
     BitVector<> ready_set(PER_ISSUE_WARPS);
     uint64_t candidate_mask = 0;
@@ -665,10 +1021,14 @@ void Core::issue() {
       candidate_set.set(w);
       candidate_mask |= wid_bit(wid);
       auto trace = ibuffer.top();
+      if (trace->userpc_marked) {
+        userpc_has_instrs = true;
+      }
       if (scoreboard_.in_use(trace)) {
         // per-wid scrb_block counter: drives the asymmetry diagnostic
         ++dbg_warp_scrb_block_.at(wid);
         auto uses = scoreboard_.get_uses(trace);
+        this->userpc_count_scoreboard(trace, uses);
         if (!trace->log_once(true)) {
           DTH(4, "*** scoreboard-stall: dependents={");
           for (uint32_t j = 0, n = uses.size(); j < n; ++j) {
@@ -703,6 +1063,11 @@ void Core::issue() {
           }
         }
       } else {
+        if (trace->userpc_marked) {
+          ++userpc_perf_.candidate_checks;
+          ++userpc_perf_.ready_checks;
+          userpc_ready_any = true;
+        }
         trace->log_once(false);
         ready_set.set(w); // mark instruction as ready
         ready_mask |= wid_bit(wid);
@@ -772,6 +1137,40 @@ void Core::issue() {
           preferred_block_reason = "preferred_warp_not_ready";
         }
       }
+      if (trace->userpc_marked) {
+        auto curr_cycle = SimPlatform::instance().cycles();
+        ++userpc_perf_.issued;
+        if (userpc_perf_.last_counted_issue_cycle != curr_cycle) {
+          ++userpc_perf_.issue_cycles;
+          userpc_perf_.last_counted_issue_cycle = curr_cycle;
+        }
+        userpc_perf_.first_cycle = std::min(userpc_perf_.first_cycle, curr_cycle);
+        userpc_perf_.last_cycle = std::max(userpc_perf_.last_cycle, curr_cycle);
+        userpc_perf_.candidate_sum += candidate_set.count();
+        userpc_perf_.ready_sum += ready_set.count();
+        if (preferred_blocked) {
+          ++userpc_perf_.not_ready_fallbacks;
+          ++userpc_perf_.preferred_blocked;
+        }
+        if (wid < userpc_perf_.per_warp_issues.size()) {
+          ++userpc_perf_.per_warp_issues.at(wid);
+          userpc_perf_.per_warp_first.at(wid) = std::min(userpc_perf_.per_warp_first.at(wid), curr_cycle);
+          userpc_perf_.per_warp_last.at(wid) = std::max(userpc_perf_.per_warp_last.at(wid), curr_cycle);
+        }
+        switch (trace->fu_type) {
+        case FUType::ALU: ++userpc_perf_.alu_issues; break;
+        case FUType::FPU: ++userpc_perf_.fpu_issues; break;
+        case FUType::LSU: ++userpc_perf_.lsu_issues; break;
+        case FUType::SFU: ++userpc_perf_.sfu_issues; break;
+      #ifdef EXT_V_ENABLE
+        case FUType::VPU: ++userpc_perf_.vpu_issues; break;
+      #endif
+      #ifdef EXT_TCU_ENABLE
+        case FUType::TCU: ++userpc_perf_.tcu_issues; break;
+      #endif
+        default: break;
+        }
+      }
       // update scoreboard
       DT(3, "pipeline-ibuffer: " << *trace);
       if (trace->wb) {
@@ -794,7 +1193,7 @@ void Core::issue() {
                              mismatch_reason == "none" ? "none" : mismatch_reason,
                              mismatch_reason);
       // to operand stage
-      operands_.at(iw)->Input.push(trace, 1);
+      operands_.at(iw)->Input.push(trace, SIMX_OPERANDS_LATENCY);
       ibuffer.pop();
     } else {
       write_warp_sched_trace(core_id_,
@@ -818,6 +1217,9 @@ void Core::issue() {
     // track scoreboard stalls
     if (has_instrs && !ready_set.any()) {
       ++perf_stats_.scrb_stalls;
+    }
+    if (userpc_has_instrs && !userpc_ready_any) {
+      ++userpc_perf_.scrb_stalls;
     }
 
     // dbg: per-slot classification of this cycle
@@ -851,7 +1253,7 @@ void Core::execute() {
       if (dispatch->Outputs.at(iw).empty())
         continue;
       auto trace = dispatch->Outputs.at(iw).front();
-      func_unit->Inputs.at(iw).push(trace, 2);
+      func_unit->Inputs.at(iw).push(trace, SIMX_DISPATCH_LATENCY);
       dispatch->Outputs.at(iw).pop();
     }
   }
@@ -879,6 +1281,9 @@ void Core::commit() {
       pending_instrs_.remove(trace);
       if (pending_instrs_.size() != orig_size) {
         perf_stats_.instrs += trace->tmask.count();
+        if (trace->userpc_marked) {
+          userpc_perf_.instrs += trace->tmask.count();
+        }
         ++cpl_committed_instrs_.at(trace->wid);
         // CAWA pending decrement (paper Algorithm 2: nInst -= 1 per commit).
         // Vortex SIMT extension: while this warp is in a divergent region

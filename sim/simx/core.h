@@ -178,6 +178,10 @@ public:
 
   const PerfStats& perf_stats() const;
 
+  void userpc_count_lsu(const instr_trace_t* trace, bool is_write, uint32_t count);
+  void userpc_add_load_latency(uint64_t pending_loads);
+  void userpc_add_dcache_latency(uint64_t pending_reads);
+
   int get_exitcode() const;
 
   // Reset per-warp CPL state at kernel-launch (wspawn) boundary.
@@ -202,6 +206,70 @@ private:
   void execute();
   void commit();
   void cpl_update_score(uint32_t wid);
+  void userpc_init();
+  void userpc_mark(instr_trace_t* trace) const;
+  bool userpc_contains(uint64_t pc) const;
+  void userpc_count_scoreboard(const instr_trace_t* trace, const std::vector<Scoreboard::reg_use_t>& uses);
+  void dump_userpc_perf() const;
+
+  struct UserPCPerfStats {
+    bool configured;
+    bool enabled;
+    uint64_t pc_base;
+    uint64_t pc_from;
+    uint64_t pc_to;
+    uint64_t first_cycle;
+    uint64_t last_cycle;
+    uint64_t last_counted_issue_cycle;
+    uint64_t issued;
+    uint64_t instrs;
+    uint64_t ifetches;
+    uint64_t ifetch_latency;
+    uint64_t issue_cycles;
+    uint64_t candidate_checks;
+    uint64_t ready_checks;
+    uint64_t candidate_sum;
+    uint64_t ready_sum;
+    uint64_t not_ready_fallbacks;
+    uint64_t preferred_blocked;
+    uint64_t ibuf_stalls;
+    uint64_t scrb_stalls;
+    uint64_t scrb_blocked;
+    uint64_t scrb_alu;
+    uint64_t scrb_fpu;
+    uint64_t scrb_lsu;
+    uint64_t scrb_sfu;
+    uint64_t scrb_csrs;
+    uint64_t scrb_wctl;
+  #ifdef EXT_V_ENABLE
+    uint64_t scrb_vpu;
+  #endif
+  #ifdef EXT_TCU_ENABLE
+    uint64_t scrb_tcu;
+  #endif
+    uint64_t loads;
+    uint64_t stores;
+    uint64_t load_latency;
+    uint64_t dcache_reads;
+    uint64_t dcache_writes;
+    uint64_t dcache_read_latency;
+    uint64_t dcache_pending_reads;
+    uint64_t alu_issues;
+    uint64_t fpu_issues;
+    uint64_t lsu_issues;
+    uint64_t sfu_issues;
+  #ifdef EXT_V_ENABLE
+    uint64_t vpu_issues;
+  #endif
+  #ifdef EXT_TCU_ENABLE
+    uint64_t tcu_issues;
+  #endif
+    std::vector<uint64_t> per_warp_issues;
+    std::vector<uint64_t> per_warp_first;
+    std::vector<uint64_t> per_warp_last;
+
+    UserPCPerfStats();
+  };
 
   uint32_t core_id_;
   Socket* socket_;
@@ -238,8 +306,10 @@ private:
   std::list<instr_trace_t*, PoolAllocator<instr_trace_t*, 64>> pending_instrs_;
 
   uint64_t pending_ifetches_;
+  uint64_t pending_userpc_ifetches_;
 
   mutable PerfStats perf_stats_;
+  UserPCPerfStats userpc_perf_;
 
   std::vector<TraceArbiter::Ptr> commit_arbs_;
 

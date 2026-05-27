@@ -17,12 +17,14 @@
 #   BENCHES=bfs BFS_GRAPH=tests/opencl/bfs/graph32.txt ./worklogs/scripts/trace_small_aware_schedulers.sh
 #   EXTRA_CONFIGS="-D..." TIMEOUT_SEC=1200 ./worklogs/scripts/trace_small_aware_schedulers.sh
 #   MEM_LATENCY=4 CACHE_LATENCY=1 BENCHES=sgemm3 SGEMM_N=4 SGEMM_TILE=2 WARPS=4 THREADS=2 ./worklogs/scripts/trace_small_aware_schedulers.sh
+#   ALL_LATENCY=1 BENCHES=sgemm3 SGEMM_N=4 SGEMM_TILE=2 WARPS=16 THREADS=1 ./worklogs/scripts/trace_small_aware_schedulers.sh
 #   LSU_BLOCKS=2 DCACHE_BANKS=4 BENCHES=sgemm3 ./worklogs/scripts/trace_small_aware_schedulers.sh
 #   ANALYZE_ARGS="--split-by-wspawn" ./worklogs/scripts/trace_small_aware_schedulers.sh
 #   ANALYZE_ARGS="--from-event WSPAWN:3 --to-event TMC:24 --split-by-wspawn" ./worklogs/scripts/trace_small_aware_schedulers.sh
 #   USER_FROM_EVENT=WSPAWN:3 USER_TO_EVENT=WSPAWN:4 USER_PC_FROM=0x1c4 USER_PC_TO=0x248 ./worklogs/scripts/trace_small_aware_schedulers.sh
 #   PERF=1 ./worklogs/scripts/trace_small_aware_schedulers.sh
 #   PERFS="1 2" ./worklogs/scripts/trace_small_aware_schedulers.sh
+#   INTERACTIVE_PLOTS=1 ./worklogs/scripts/trace_small_aware_schedulers.sh
 #
 # Output:
 #   worklogs/trace_runs/run<N>/<policy>/<bench>/issue_trace.csv
@@ -52,6 +54,29 @@ PERFS_STR="${PERFS:-}"
 EXTRA_CONFIGS="${EXTRA_CONFIGS:-}"
 MEM_LATENCY="${MEM_LATENCY:-}"
 CACHE_LATENCY="${CACHE_LATENCY:-}"
+ALL_LATENCY="${ALL_LATENCY:-}"
+PIPELINE_LATENCY="${PIPELINE_LATENCY:-$ALL_LATENCY}"
+EXEC_LATENCY="${EXEC_LATENCY:-$ALL_LATENCY}"
+ICACHE_REQ_LATENCY="${ICACHE_REQ_LATENCY:-$PIPELINE_LATENCY}"
+OPERANDS_LATENCY="${OPERANDS_LATENCY:-$PIPELINE_LATENCY}"
+DISPATCH_LATENCY="${DISPATCH_LATENCY:-$PIPELINE_LATENCY}"
+ALU_LATENCY="${ALU_LATENCY:-$EXEC_LATENCY}"
+BRANCH_LATENCY="${BRANCH_LATENCY:-$EXEC_LATENCY}"
+VOTE_LATENCY="${VOTE_LATENCY:-$EXEC_LATENCY}"
+SHFL_LATENCY="${SHFL_LATENCY:-$EXEC_LATENCY}"
+IMUL_LATENCY="${IMUL_LATENCY:-$EXEC_LATENCY}"
+IDIV_LATENCY="${IDIV_LATENCY:-$EXEC_LATENCY}"
+FPU_BASE_LATENCY="${FPU_BASE_LATENCY:-$EXEC_LATENCY}"
+FPU_SIMPLE_LATENCY="${FPU_SIMPLE_LATENCY:-$EXEC_LATENCY}"
+FMA_LATENCY="${FMA_LATENCY:-$EXEC_LATENCY}"
+FDIV_LATENCY="${FDIV_LATENCY:-$EXEC_LATENCY}"
+FSQRT_LATENCY="${FSQRT_LATENCY:-$EXEC_LATENCY}"
+FCVT_LATENCY="${FCVT_LATENCY:-$EXEC_LATENCY}"
+LSU_LOAD_RSP_LATENCY="${LSU_LOAD_RSP_LATENCY:-$EXEC_LATENCY}"
+LSU_STORE_LATENCY="${LSU_STORE_LATENCY:-$EXEC_LATENCY}"
+LSU_FENCE_LATENCY="${LSU_FENCE_LATENCY:-$EXEC_LATENCY}"
+SFU_BASE_LATENCY="${SFU_BASE_LATENCY:-$EXEC_LATENCY}"
+SFU_OP_LATENCY="${SFU_OP_LATENCY:-$EXEC_LATENCY}"
 LSU_BLOCKS="${LSU_BLOCKS:-}"
 DCACHE_BANKS="${DCACHE_BANKS:-}"
 ANALYZE_ARGS_STR="${ANALYZE_ARGS:-}"
@@ -63,6 +88,12 @@ USER_PC_SYMBOLS="${USER_PC_SYMBOLS:-}"
 USER_FROM_EVENT="${USER_FROM_EVENT:-}"
 USER_TO_EVENT="${USER_TO_EVENT:-}"
 USER_SPLIT_BY_WSPAWN="${USER_SPLIT_BY_WSPAWN:-}"
+INTERACTIVE_PLOTS="${INTERACTIVE_PLOTS:-}"
+
+if [ -n "$ALL_LATENCY" ]; then
+  MEM_LATENCY="${MEM_LATENCY:-$ALL_LATENCY}"
+  CACHE_LATENCY="${CACHE_LATENCY:-$ALL_LATENCY}"
+fi
 
 SGEMM_N="${SGEMM_N:-24}"
 SGEMM_TILE="${SGEMM_TILE:-8}"
@@ -80,9 +111,13 @@ declare -A ARBITER=(
   [gCAWS]=4
 )
 
+declare -A INTERACTIVE_SEEN=()
+INTERACTIVE_CMDS=()
+
 declare -A BENCH_ARGS=(
   [bfs]="$BFS_GRAPH"
   [sgemm3]="-n${SGEMM_N} -t${SGEMM_TILE}"
+  [gto_arith_chain]="-n4 -l1 -i16"
   [vecadd]="-n64"
 )
 
@@ -153,6 +188,10 @@ tool_path() {
 
 user_pc_auto_enabled() {
   [ -n "$USER_PC_AUTO" ] && [ "$USER_PC_AUTO" != "0" ] && [ "$USER_PC_AUTO" != "false" ]
+}
+
+interactive_plots_enabled() {
+  [ -n "$INTERACTIVE_PLOTS" ] && [ "$INTERACTIVE_PLOTS" != "0" ] && [ "$INTERACTIVE_PLOTS" != "false" ]
 }
 
 default_user_pc_symbols() {
@@ -282,10 +321,36 @@ MEM_FLAGS=""
 [ -n "$MEM_LATENCY" ] && MEM_FLAGS="-DSIMX_FIXED_MEM_LATENCY=$MEM_LATENCY"
 CACHE_FLAGS=""
 [ -n "$CACHE_LATENCY" ] && CACHE_FLAGS="-DSIMX_CACHE_LATENCY=$CACHE_LATENCY"
+LATENCY_FLAGS=""
+append_latency_flag() {
+  local value="$1"
+  local macro="$2"
+  [ -n "$value" ] && LATENCY_FLAGS="$LATENCY_FLAGS -D$macro=$value"
+}
+append_latency_flag "$ICACHE_REQ_LATENCY" SIMX_ICACHE_REQ_LATENCY
+append_latency_flag "$OPERANDS_LATENCY" SIMX_OPERANDS_LATENCY
+append_latency_flag "$DISPATCH_LATENCY" SIMX_DISPATCH_LATENCY
+append_latency_flag "$ALU_LATENCY" SIMX_ALU_LATENCY
+append_latency_flag "$BRANCH_LATENCY" SIMX_BRANCH_LATENCY
+append_latency_flag "$VOTE_LATENCY" SIMX_VOTE_LATENCY
+append_latency_flag "$SHFL_LATENCY" SIMX_SHFL_LATENCY
+append_latency_flag "$IMUL_LATENCY" SIMX_IMUL_LATENCY
+append_latency_flag "$IDIV_LATENCY" SIMX_IDIV_LATENCY
+append_latency_flag "$FPU_BASE_LATENCY" SIMX_FPU_BASE_LATENCY
+append_latency_flag "$FPU_SIMPLE_LATENCY" SIMX_FPU_SIMPLE_LATENCY
+append_latency_flag "$FMA_LATENCY" LATENCY_FMA
+append_latency_flag "$FDIV_LATENCY" LATENCY_FDIV
+append_latency_flag "$FSQRT_LATENCY" LATENCY_FSQRT
+append_latency_flag "$FCVT_LATENCY" LATENCY_FCVT
+append_latency_flag "$LSU_LOAD_RSP_LATENCY" SIMX_LSU_LOAD_RSP_LATENCY
+append_latency_flag "$LSU_STORE_LATENCY" SIMX_LSU_STORE_LATENCY
+append_latency_flag "$LSU_FENCE_LATENCY" SIMX_LSU_FENCE_LATENCY
+append_latency_flag "$SFU_BASE_LATENCY" SIMX_SFU_BASE_LATENCY
+append_latency_flag "$SFU_OP_LATENCY" SIMX_SFU_OP_LATENCY
 HW_FLAGS=""
 [ -n "$LSU_BLOCKS" ] && HW_FLAGS="$HW_FLAGS -DNUM_LSU_BLOCKS=$LSU_BLOCKS"
 [ -n "$DCACHE_BANKS" ] && HW_FLAGS="$HW_FLAGS -DDCACHE_NUM_BANKS=$DCACHE_BANKS"
-BASE_FLAGS="$SHAPE_FLAGS $PERF_FLAGS $MEM_FLAGS $CACHE_FLAGS $HW_FLAGS $EXTRA_CONFIGS"
+BASE_FLAGS="$SHAPE_FLAGS $PERF_FLAGS $MEM_FLAGS $CACHE_FLAGS $LATENCY_FLAGS $HW_FLAGS $EXTRA_CONFIGS"
 
 SUMMARY="$LOG_ROOT/SUMMARY.md"
 {
@@ -301,6 +366,10 @@ SUMMARY="$LOG_ROOT/SUMMARY.md"
   echo "- perf classes: \`$PERF_LABEL\`"
   echo "- mem latency: \`${MEM_LATENCY:-ramulator}\`"
   echo "- cache latency: \`${CACHE_LATENCY:-2}\`"
+  echo "- all latency override: \`${ALL_LATENCY:-disabled}\`"
+  echo "- pipeline latency override: \`${PIPELINE_LATENCY:-disabled}\`"
+  echo "- exec latency override: \`${EXEC_LATENCY:-disabled}\`"
+  echo "- latency flags: \`${LATENCY_FLAGS:-none}\`"
   echo "- lsu blocks: \`${LSU_BLOCKS:-default}\`"
   echo "- dcache banks: \`${DCACHE_BANKS:-default}\`"
   echo "- hw tweak flags: \`${HW_FLAGS:-none}\`"
@@ -309,6 +378,7 @@ SUMMARY="$LOG_ROOT/SUMMARY.md"
   echo "- analyzer: \`sim/simx/analyze_warp_sched_trace.py\`"
   echo "- analyzer args: \`${ANALYZE_ARGS_STR:-none}\`"
   echo "- effective analyzer args: \`${ANALYZE_ARGS_ARR[*]:-none}\`"
+  echo "- interactive plots: \`${INTERACTIVE_PLOTS:-disabled}\`"
   echo "- user PC monitor: \`$USER_MONITOR_LABEL\`"
   echo "- user PC auto: \`${USER_PC_AUTO:-disabled}\`"
   echo "- user PC symbols: \`${USER_PC_SYMBOLS:-bench defaults}\`"
@@ -397,6 +467,9 @@ for label in "${POLICIES_ARR[@]}"; do
         CONFIGS="$conf" \
         VX_TRACE_WARP_SCHED=1 \
         VX_TRACE_WARP_SCHED_FILE="$trace_csv" \
+        VX_USER_PC_BASE="$USER_PC_BASE" \
+        VX_USER_PC_FROM="$USER_PC_FROM" \
+        VX_USER_PC_TO="$USER_PC_TO" \
         VXBIN_SAVE_ELF_DIR="$device_elf_dir" \
         VX_WARP_SCHED_POLICY="$label" \
         timeout "$TIMEOUT_SEC" ./ci/blackbox.sh \
@@ -432,9 +505,20 @@ for label in "${POLICIES_ARR[@]}"; do
         fi
       fi
 
-      if ! python3 "$ROOT_DIR/sim/simx/analyze_warp_sched_trace.py" "$trace_csv" -o "$analysis_dir" "${analyze_args[@]}" > "$analyze_log" 2>&1; then
+      if ! python3 "$ROOT_DIR/sim/simx/analyze_warp_sched_trace.py" "$trace_csv" -o "$analysis_dir" --run-log "$run_log" "${analyze_args[@]}" > "$analyze_log" 2>&1; then
         echo "  [$label/perf=$perf_label/$bench] analyzer FAIL; see $analyze_log"
         status="analyze_fail($status)"
+      elif interactive_plots_enabled; then
+        interactive_key="$label/$bench"
+        if [ -z "${INTERACTIVE_SEEN[$interactive_key]+x}" ]; then
+          INTERACTIVE_SEEN[$interactive_key]=1
+          interactive_cmd="python3 $(printf '%q' "$ROOT_DIR/sim/simx/analyze_warp_sched_trace.py") $(printf '%q' "$trace_csv") -o $(printf '%q' "$analysis_dir")"
+          for arg in "${analyze_args[@]}"; do
+            interactive_cmd="$interactive_cmd $(printf '%q' "$arg")"
+          done
+          interactive_cmd="$interactive_cmd --show-wid-timeline"
+          INTERACTIVE_CMDS+=("$interactive_cmd")
+        fi
       fi
 
       summary_txt="$analysis_dir/summary.txt"
@@ -450,6 +534,14 @@ for label in "${POLICIES_ARR[@]}"; do
     done
   done
 done
+
+if interactive_plots_enabled && [ "${#INTERACTIVE_CMDS[@]}" -gt 0 ]; then
+  echo
+  echo "Opening ${#INTERACTIVE_CMDS[@]} interactive WID timeline plot(s). Close each window to continue."
+  for interactive_cmd in "${INTERACTIVE_CMDS[@]}"; do
+    eval "$interactive_cmd"
+  done
+fi
 
 echo
 echo "DONE: $LOG_ROOT"

@@ -9,7 +9,8 @@
 #   kmeans -f100 -p1000 (WG=256, set in tests/opencl/kmeans/main.cc BLOCK_SIZE)
 #   Working set ~400 KB (25x L1=16KB, 40% L2=1MB) — sweet-spot L1-thrash.
 #
-# Outputs per policy: build.log, kmeans.perf1.log (pipeline), kmeans.perf2.log (cache).
+# Outputs per arbiter policy: build.log, kmeans.perf1.log (pipeline), kmeans.perf2.log (cache).
+# Scheduler is fixed to RR; arbiter sweeps RR/GTO/gCAWS.
 # Each ~30s; full run ~5 min.
 #
 # Usage: ./worklogs/scripts/run_kmeans_ver256_4lsu_4bank.sh
@@ -28,8 +29,9 @@ HW_TWEAK="-DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4"
 BASE_FLAGS="-DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0 $HW_TWEAK"
 ARGS="-f100 -p50000"
 
-declare -A SCHED=( [GTO]=1 [RR]=2 [gCAWS]=3 [iPAWS]=4 )
-POLICIES=(RR GTO gCAWS iPAWS)
+SCHED_RR=2
+declare -A ARBITER=( [GTO]=1 [RR]=2 [gCAWS]=4 )
+POLICIES=(RR GTO gCAWS)
 
 mkdir -p "$EXP_DIR"
 
@@ -46,13 +48,13 @@ if [ "$BLK" != "256" ] || [ "$BLK2" != "256" ]; then
 fi
 
 for label in "${POLICIES[@]}"; do
-  sched=${SCHED[$label]}
-  conf="$BASE_FLAGS -DVORTEX_SCHED=$sched"
+  arb=${ARBITER[$label]}
+  conf="$BASE_FLAGS -DVORTEX_SCHED=$SCHED_RR -DVORTEX_ARBITER=$arb"
   cfg_dir="$EXP_DIR/$label"
   mkdir -p "$cfg_dir"
   : > "$cfg_dir/build.log"
 
-  echo "===== [$label] build (VORTEX_SCHED=$sched, HW=$HW_TWEAK) ====="
+  echo "===== [$label] build (VORTEX_SCHED=$SCHED_RR, VORTEX_ARBITER=$arb, HW=$HW_TWEAK) ====="
   CONFIGS="$conf" make -C "$BUILD_DIR/sim/simx" -j$(nproc) >> "$cfg_dir/build.log" 2>&1 \
     || { echo "  [$label] sim build FAIL"; continue; }
   CONFIGS="$conf" make -C "$BUILD_DIR/runtime/simx" -j$(nproc) >> "$cfg_dir/build.log" 2>&1 \

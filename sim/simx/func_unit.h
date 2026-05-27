@@ -95,6 +95,7 @@ private:
 
 	std::array<lsu_state_t, NUM_LSU_BLOCKS> states_;
 	uint64_t pending_loads_;
+	uint64_t pending_userpc_loads_;
 	std::vector<mem_addr_size_t> pending_addrs_;
 	uint32_t remain_addrs_;
 };

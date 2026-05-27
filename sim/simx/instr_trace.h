@@ -75,6 +75,7 @@ public:
   bool eop;
 
   bool fetch_stall;
+  bool userpc_marked;
 
   uint64_t issue_time ;
   uint32_t cpl_inst_delta;
@@ -96,6 +97,7 @@ public:
     , sop(true)
     , eop(true)
     , fetch_stall(false)
+    , userpc_marked(false)
     , issue_time(SimPlatform::instance().cycles())
     , cpl_inst_delta(0)
     , log_once_(false)
@@ -118,6 +120,7 @@ public:
     , sop(rhs.sop)
     , eop(rhs.eop)
     , fetch_stall(rhs.fetch_stall)
+    , userpc_marked(rhs.userpc_marked)
     , issue_time(rhs.issue_time)
     , cpl_inst_delta(rhs.cpl_inst_delta)
     , log_once_(false)

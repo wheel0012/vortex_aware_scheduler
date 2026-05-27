@@ -17,3 +17,10 @@ miscs/apptainer/vortex.sif
 /worklogs/trace_runs/
 /ramulator.stats.log
 /trace/
+
+# OpenCL benchmark build outputs
+/tests/opencl/gto_arith_chain/gto_arith_chain
+/tests/opencl/gto_arith_chain/gto_arith_chain.host
+/tests/opencl/gto_arith_chain/*.o
+/tests/opencl/gto_arith_chain/*.log
+/tests/opencl/gto_arith_chain/.depend

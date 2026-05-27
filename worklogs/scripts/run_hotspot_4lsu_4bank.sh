@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # hotspot @ HW(LSU=2, banks=4) + WG=16x16 (rodinia orig).
-# 4 policies x perf={1,2}.
+# scheduler=RR, arbiter={RR,GTO,gCAWS} x perf={1,2}.
 #
 # WG size: tests/opencl/hotspot/hotspot.h #define BLOCK_SIZE 16 (this repo
 # had been overridden to 4; restored to rodinia 16x16=256 threads/WG).
@@ -23,8 +23,9 @@ HW_TWEAK="-DNUM_LSU_BLOCKS=2 -DDCACHE_NUM_BANKS=4"
 BASE_FLAGS="-DPERF_ENABLE $HW_TWEAK"
 ARGS="128 1 2 temp_128 power_128 output.out"
 
-declare -A SCHED=( [GTO]=1 [RR]=2 [gCAWS]=3 [iPAWS]=4 )
-POLICIES=(RR GTO gCAWS iPAWS)
+SCHED_RR=2
+declare -A ARBITER=( [GTO]=1 [RR]=2 [gCAWS]=4 )
+POLICIES=(RR GTO gCAWS)
 
 mkdir -p "$EXP_DIR"
 
@@ -43,12 +44,12 @@ if [ -f "$BUILD_DIR/tests/opencl/hotspot/hotspot.h" ] && \
 fi
 
 for label in "${POLICIES[@]}"; do
-  sched=${SCHED[$label]}
-  conf="$BASE_FLAGS -DVORTEX_SCHED=$sched"
+  arb=${ARBITER[$label]}
+  conf="$BASE_FLAGS -DVORTEX_SCHED=$SCHED_RR -DVORTEX_ARBITER=$arb"
   cfg_dir="$EXP_DIR/$label"
   mkdir -p "$cfg_dir"
   : > "$cfg_dir/build.log"
-  echo "===== [$label] build (VORTEX_SCHED=$sched, $HW_TWEAK) ====="
+  echo "===== [$label] build (VORTEX_SCHED=$SCHED_RR, VORTEX_ARBITER=$arb, $HW_TWEAK) ====="
   CONFIGS="$conf" make -C "$BUILD_DIR/sim/simx" -j$(nproc) >> "$cfg_dir/build.log" 2>&1 \
     || { echo "  sim FAIL"; continue; }
   CONFIGS="$conf" make -C "$BUILD_DIR/runtime/simx" -j$(nproc) >> "$cfg_dir/build.log" 2>&1 \

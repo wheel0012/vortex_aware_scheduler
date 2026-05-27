@@ -25,6 +25,58 @@
 
 using namespace vortex;
 
+#ifndef SIMX_ALU_LATENCY
+#define SIMX_ALU_LATENCY 2
+#endif
+
+#ifndef SIMX_BRANCH_LATENCY
+#define SIMX_BRANCH_LATENCY SIMX_ALU_LATENCY
+#endif
+
+#ifndef SIMX_VOTE_LATENCY
+#define SIMX_VOTE_LATENCY SIMX_ALU_LATENCY
+#endif
+
+#ifndef SIMX_SHFL_LATENCY
+#define SIMX_SHFL_LATENCY SIMX_ALU_LATENCY
+#endif
+
+#ifndef SIMX_IMUL_LATENCY
+#define SIMX_IMUL_LATENCY 2
+#endif
+
+#ifndef SIMX_IDIV_LATENCY
+#define SIMX_IDIV_LATENCY (XLEN + 2)
+#endif
+
+#ifndef SIMX_FPU_BASE_LATENCY
+#define SIMX_FPU_BASE_LATENCY 2
+#endif
+
+#ifndef SIMX_FPU_SIMPLE_LATENCY
+#define SIMX_FPU_SIMPLE_LATENCY 2
+#endif
+
+#ifndef SIMX_LSU_LOAD_RSP_LATENCY
+#define SIMX_LSU_LOAD_RSP_LATENCY 1
+#endif
+
+#ifndef SIMX_LSU_STORE_LATENCY
+#define SIMX_LSU_STORE_LATENCY 1
+#endif
+
+#ifndef SIMX_LSU_FENCE_LATENCY
+#define SIMX_LSU_FENCE_LATENCY 1
+#endif
+
+#ifndef SIMX_SFU_BASE_LATENCY
+#define SIMX_SFU_BASE_LATENCY 2
+#endif
+
+#ifndef SIMX_SFU_OP_LATENCY
+#define SIMX_SFU_OP_LATENCY 2
+#endif
+
 AluUnit::AluUnit(const SimContext& ctx, Core* core) : FuncUnit(ctx, core, "alu-unit") {}
 
 void AluUnit::tick() {
@@ -51,16 +103,16 @@ void AluUnit::tick() {
 			case AluType::AND:
 			case AluType::OR:
 			case AluType::CZERO:
-				delay = 2;
+				delay = SIMX_ALU_LATENCY;
 				break;
 			default:
 				std::abort();
 			}
 			DT(3, this->name() << ": op=" << alu_type << ", " << *trace);
 		} else if (std::get_if<VoteType>(&trace->op_type)) {
-				delay = 2;
+				delay = SIMX_VOTE_LATENCY;
 		} else if (std::get_if<ShflType>(&trace->op_type)) {
-				delay = 2;
+				delay = SIMX_SHFL_LATENCY;
 		} else if (std::	get_if<BrType>(&trace->op_type)) {
 			auto br_type = std::get<BrType>(trace->op_type);
 			switch (br_type) {
@@ -68,7 +120,7 @@ void AluUnit::tick() {
 			case BrType::JAL:
 			case BrType::JALR:
 			case BrType::SYS:
-				delay = 2;
+				delay = SIMX_BRANCH_LATENCY;
 				break;
 			default:
 				std::abort();
@@ -81,13 +133,13 @@ void AluUnit::tick() {
 			case MdvType::MULHU:
 			case MdvType::MULH:
 			case MdvType::MULHSU:
-				delay = 2;
+				delay = SIMX_IMUL_LATENCY;
 				break;
 			case MdvType::DIV:
 			case MdvType::DIVU:
 			case MdvType::REM:
 			case MdvType::REMU:
-				delay = XLEN+2;
+				delay = SIMX_IDIV_LATENCY;
 				break;
 			default:
 				std::abort();
@@ -116,7 +168,7 @@ void FpuUnit::tick() {
 		auto& output = Outputs.at(iw);
 		auto trace = input.front();
 		auto fpu_type = std::get<FpuType>(trace->op_type);
-		int delay = 2;
+		int delay = SIMX_FPU_BASE_LATENCY;
 		switch (fpu_type) {
 		case FpuType::FCMP:
 		case FpuType::FSGNJ:
@@ -124,7 +176,7 @@ void FpuUnit::tick() {
 		case FpuType::FMVXW:
 		case FpuType::FMVWX:
 		case FpuType::FMINMAX:
-			output.push(trace, 2+delay);
+			output.push(trace, SIMX_FPU_SIMPLE_LATENCY+delay);
 			break;
 		case FpuType::FADD:
 		case FpuType::FSUB:
@@ -159,6 +211,7 @@ void FpuUnit::tick() {
 LsuUnit::LsuUnit(const SimContext& ctx, Core* core)
 	: FuncUnit(ctx, core, "lsu-unit")
 	, pending_loads_(0)
+	, pending_userpc_loads_(0)
 {}
 
 LsuUnit::~LsuUnit()
@@ -169,11 +222,13 @@ void LsuUnit::reset() {
 		state.reset();
 	}
 	pending_loads_ = 0;
+	pending_userpc_loads_ = 0;
 	remain_addrs_ = 0;
 }
 
 void LsuUnit::tick() {
 	core_->perf_stats_.load_latency += pending_loads_;
+	core_->userpc_add_load_latency(pending_userpc_loads_);
 
 	// handle memory responses
 	for (uint32_t b = 0; b < NUM_LSU_BLOCKS; ++b) {
@@ -193,10 +248,13 @@ void LsuUnit::tick() {
 			// is last batch?
 			if (entry.eop) {
 				int iw = trace->wid % ISSUE_WIDTH;
-				Outputs.at(iw).push(trace, 1);
+				Outputs.at(iw).push(trace, SIMX_LSU_LOAD_RSP_LATENCY);
 			}
 		}
 		pending_loads_ -= lsu_rsp.mask.count();
+		if (trace->userpc_marked) {
+			pending_userpc_loads_ -= lsu_rsp.mask.count();
+		}
 		lsu_rsp_port.pop();
 	}
 
@@ -208,7 +266,7 @@ void LsuUnit::tick() {
 			// wait for all pending memory operations to complete
 			if (!state.pending_rd_reqs.empty())
 				continue;
-			Outputs.at(iw).push(state.fence_trace, 1);
+			Outputs.at(iw).push(state.fence_trace, SIMX_LSU_FENCE_LATENCY);
 			state.fence_lock = false;
 			DT(3, this->name() << "-fence-unlock: " << state.fence_trace);
 		}
@@ -312,6 +370,7 @@ void LsuUnit::tick() {
 			lsu_req.tag  = tag;
 			lsu_req.cid  = trace->cid;
 			lsu_req.uuid = trace->uuid;
+			lsu_req.userpc = trace->userpc_marked;
 
 			// send memory request
 			core_->lmem_switch_.at(block_idx)->ReqIn.push(lsu_req);
@@ -323,13 +382,17 @@ void LsuUnit::tick() {
 			} else {
 				core_->perf_stats_.loads += count;
 				pending_loads_ += count;
+				if (trace->userpc_marked) {
+					pending_userpc_loads_ += count;
+				}
 			}
+			core_->userpc_count_lsu(trace, is_write, count);
 		}
 
 		if (remain_addrs_ == 0) {
 			// do not wait on writes
 			if (is_write || 0 == pending_addrs_.size()) {
-				Outputs.at(iw).push(trace, 1);
+				Outputs.at(iw).push(trace, SIMX_LSU_STORE_LATENCY);
 			}
 			// remove input
 			input.pop();
@@ -352,13 +415,13 @@ void SfuUnit::tick() {
 		auto& output = Outputs.at(iw);
 		auto trace = input.front();
 		bool release_warp = trace->fetch_stall;
-		int delay = 2;
+		int delay = SIMX_SFU_BASE_LATENCY;
 
 		if (std::get_if<WctlType>(&trace->op_type)) {
 			auto wctl_type = std::get<WctlType>(trace->op_type);
 			switch (wctl_type) {
 			case WctlType::WSPAWN:
-				output.push(trace, 2+delay);
+				output.push(trace, SIMX_SFU_OP_LATENCY+delay);
 				if (trace->eop) {
 					auto trace_data = std::dynamic_pointer_cast<SfuTraceData>(trace->data);
 					release_warp = core_->wspawn(trace_data->arg1, trace_data->arg2);
@@ -368,10 +431,10 @@ void SfuUnit::tick() {
 			case WctlType::SPLIT:
 			case WctlType::JOIN:
 			case WctlType::PRED:
-				output.push(trace, 2+delay);
+				output.push(trace, SIMX_SFU_OP_LATENCY+delay);
 				break;
 			case WctlType::BAR: {
-				output.push(trace, 2+delay);
+				output.push(trace, SIMX_SFU_OP_LATENCY+delay);
 				if (trace->eop) {
 					auto trace_data = std::dynamic_pointer_cast<SfuTraceData>(trace->data);
 					release_warp = core_->barrier(trace_data->arg1, trace_data->arg2, trace->wid);
@@ -387,7 +450,7 @@ void SfuUnit::tick() {
 			case CsrType::CSRRW:
 			case CsrType::CSRRS:
 			case CsrType::CSRRC:
-				output.push(trace, 2+delay);
+				output.push(trace, SIMX_SFU_OP_LATENCY+delay);
 				break;
 			default:
 				std::abort();

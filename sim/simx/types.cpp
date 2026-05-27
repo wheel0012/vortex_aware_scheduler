@@ -55,6 +55,7 @@ void LocalMemSwitch::tick() {
     out_dc_req.tag   = in_req.tag;
     out_dc_req.cid   = in_req.cid;
     out_dc_req.uuid  = in_req.uuid;
+    out_dc_req.userpc = in_req.userpc;
 
     LsuReq out_lmem_req(out_dc_req);
 
@@ -151,6 +152,7 @@ void LsuMemAdapter::tick() {
         out_req.tag   = in_req.tag;
         out_req.cid   = in_req.cid;
         out_req.uuid  = in_req.uuid;
+        out_req.userpc = in_req.userpc;
         // send memory request
         ReqOut.at(i).push(out_req, delay_);
         DT(4, this->name() << "-req" << i << ": " << out_req);

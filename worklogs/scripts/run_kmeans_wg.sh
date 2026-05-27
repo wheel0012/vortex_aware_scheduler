@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # kmeans WG-size sweep: parameterised by BLOCK_SIZE.
-# Patches tests/opencl/kmeans/main.cc, force-rebuilds the test, runs 4 policies.
+# Patches tests/opencl/kmeans/main.cc, force-rebuilds the test, fixes
+# scheduler=RR, and sweeps arbiter={RR,GTO,gCAWS}.
 # Output: worklogs/experiments/kmeans_ver<WG>/<policy>/kmeans.perf2.log
 #
 # Usage: ./run_kmeans_wg.sh <BLOCK_SIZE>  (e.g. 64, 256, 512)
@@ -19,8 +20,9 @@ WARPS=32
 THREADS=32
 BASE_FLAGS="-DPERF_ENABLE -DVORTEX_CACP_ENABLE=0 -DVORTEX_IPAWS_USE_CACP=0"
 
-declare -A SCHED=( [GTO]=1 [RR]=2 [gCAWS]=3 [iPAWS]=4 )
-POLICIES=(GTO RR gCAWS iPAWS)
+SCHED_RR=2
+declare -A ARBITER=( [GTO]=1 [RR]=2 [gCAWS]=4 )
+POLICIES=(RR GTO gCAWS)
 ARGS="-f100 -p1000"
 PERF=2
 
@@ -34,13 +36,13 @@ echo "BLOCK_SIZE patched in $KMEANS_MAIN:"
 grep -E "^#define BLOCK_SIZE2? " "$KMEANS_MAIN" | head -4
 
 for label in "${POLICIES[@]}"; do
-  sched=${SCHED[$label]}
-  conf="$BASE_FLAGS -DVORTEX_SCHED=$sched"
+  arb=${ARBITER[$label]}
+  conf="$BASE_FLAGS -DVORTEX_SCHED=$SCHED_RR -DVORTEX_ARBITER=$arb"
   cfg_dir="$EXP_DIR/$label"
   mkdir -p "$cfg_dir"
   build_log="$cfg_dir/build.log"
 
-  echo "===== [$label] build (VORTEX_SCHED=$sched, WG=$WG) =====" | tee "$build_log"
+  echo "===== [$label] build (VORTEX_SCHED=$SCHED_RR, VORTEX_ARBITER=$arb, WG=$WG) =====" | tee "$build_log"
   CONFIGS="$conf" make -C "$BUILD_DIR/sim/simx" -j$(nproc) >> "$build_log" 2>&1 \
     || { echo "  sim build FAIL"; continue; }
   CONFIGS="$conf" make -C "$BUILD_DIR/runtime/simx" -j$(nproc) >> "$build_log" 2>&1 \
