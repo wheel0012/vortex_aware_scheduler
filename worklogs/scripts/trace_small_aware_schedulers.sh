@@ -26,6 +26,7 @@
 #   TRACE_USERPC_ONLY=1 USER_PC_FROM=0x94 USER_PC_TO=0x230 BENCHES=kmeans ./worklogs/scripts/trace_small_aware_schedulers.sh
 #   BENCHES=kmeans KMEANS_POINTS=128 KMEANS_FEATURES=32 KMEANS_CLUSTERS=8 ./worklogs/scripts/trace_small_aware_schedulers.sh
 #   BENCHES=hotspot HOTSPOT_SIZE=128 HOTSPOT_ITERS=1 HOTSPOT_SIM_TIME=2 ./worklogs/scripts/trace_small_aware_schedulers.sh
+#   BENCHES=sssp SSSP_GRAPH=tests/opencl/sssp/tiny.coo ./worklogs/scripts/trace_small_aware_schedulers.sh
 #   SCHED_POLICY_MATCH_ARBITER=1 BENCHES=kmeans POLICIES="RR GTO" ./worklogs/scripts/trace_small_aware_schedulers.sh
 #   PERF=1 ./worklogs/scripts/trace_small_aware_schedulers.sh
 #   PERFS="1 2" ./worklogs/scripts/trace_small_aware_schedulers.sh
@@ -115,7 +116,16 @@ HOTSPOT_SIZE="${HOTSPOT_SIZE:-64}"
 HOTSPOT_ITERS="${HOTSPOT_ITERS:-1}"
 HOTSPOT_SIM_TIME="${HOTSPOT_SIM_TIME:-2}"
 HOTSPOT_OUTPUT="${HOTSPOT_OUTPUT:-output.out}"
+SSSP_GRAPH="${SSSP_GRAPH:-$ROOT_DIR/tests/opencl/sssp/tiny.coo}"
+SSSP_KERNEL="${SSSP_KERNEL:-$ROOT_DIR/tests/opencl/sssp/kernel.cl}"
+SSSP_SOURCE="${SSSP_SOURCE:-0}"
 BFS_GRAPH="${BFS_GRAPH:-$ROOT_DIR/tests/opencl/bfs/graph4k.txt}"
+if [ -n "$SSSP_GRAPH" ] && [ "${SSSP_GRAPH#/}" = "$SSSP_GRAPH" ]; then
+  SSSP_GRAPH="$ROOT_DIR/$SSSP_GRAPH"
+fi
+if [ -n "$SSSP_KERNEL" ] && [ "${SSSP_KERNEL#/}" = "$SSSP_KERNEL" ]; then
+  SSSP_KERNEL="$ROOT_DIR/$SSSP_KERNEL"
+fi
 if [ -n "$BFS_GRAPH" ] && [ "${BFS_GRAPH#/}" = "$BFS_GRAPH" ]; then
   BFS_GRAPH="$ROOT_DIR/$BFS_GRAPH"
 fi
@@ -137,6 +147,7 @@ declare -A BENCH_ARGS=(
   [sgemm3]="-n${SGEMM_N} -t${SGEMM_TILE}"
   [kmeans]="-p${KMEANS_POINTS} -f${KMEANS_FEATURES} -n${KMEANS_CLUSTERS} -m${KMEANS_CLUSTERS} -l${KMEANS_LOOPS}"
   [hotspot]="${HOTSPOT_SIZE} ${HOTSPOT_ITERS} ${HOTSPOT_SIM_TIME} $ROOT_DIR/tests/opencl/hotspot/temp_${HOTSPOT_SIZE} $ROOT_DIR/tests/opencl/hotspot/power_${HOTSPOT_SIZE} ${HOTSPOT_OUTPUT}"
+  [sssp]="${SSSP_GRAPH} ${SSSP_KERNEL} ${SSSP_SOURCE}"
   [gto_arith_chain]="-n4 -l1 -i16"
   [vecadd]="-n64"
 )
@@ -241,6 +252,7 @@ default_user_pc_symbols() {
     sgemm3) echo "sgemm3" ;;
     kmeans) echo "kmeans_kernel_c" ;;
     hotspot) echo "hotspot" ;;
+    sssp) echo "spmv_min_dot_plus_kernel vector_init vector_assign vector_diff" ;;
     *) echo "$bench" ;;
   esac
 }
@@ -341,6 +353,16 @@ for bench in "${BENCHES_ARR[@]}"; do
     if [ ! -f "$ROOT_DIR/tests/opencl/hotspot/temp_${HOTSPOT_SIZE}" ] || [ ! -f "$ROOT_DIR/tests/opencl/hotspot/power_${HOTSPOT_SIZE}" ]; then
       echo "Missing hotspot input files for HOTSPOT_SIZE=$HOTSPOT_SIZE." >&2
       echo "Expected temp_${HOTSPOT_SIZE} and power_${HOTSPOT_SIZE} under tests/opencl/hotspot." >&2
+      exit 1
+    fi
+  fi
+  if [ "$bench" = "sssp" ]; then
+    if [ ! -f "$SSSP_GRAPH" ]; then
+      echo "Missing SSSP graph file: $SSSP_GRAPH" >&2
+      exit 1
+    fi
+    if [ ! -f "$SSSP_KERNEL" ]; then
+      echo "Missing SSSP kernel source: $SSSP_KERNEL" >&2
       exit 1
     fi
   fi
@@ -458,6 +480,7 @@ SUMMARY="$LOG_ROOT/SUMMARY.md"
   echo "- user PC symbols: \`${USER_PC_SYMBOLS:-bench defaults}\`"
   echo "- kmeans points/features/clusters/loops/wg: \`${KMEANS_POINTS}/${KMEANS_FEATURES}/${KMEANS_CLUSTERS}/${KMEANS_LOOPS}/${KMEANS_WG}\`"
   echo "- hotspot size/iters/sim_time: \`${HOTSPOT_SIZE}/${HOTSPOT_ITERS}/${HOTSPOT_SIM_TIME}\`"
+  echo "- sssp graph/kernel/source: \`${SSSP_GRAPH}/${SSSP_KERNEL}/${SSSP_SOURCE}\`"
   echo "- bfs graph: \`$BFS_GRAPH\`"
   echo "- bfs work-group size: \`$BFS_WORK_GROUP_SIZE\`"
   echo "- VORTEX_ARBITER: Priority=0, GTO=1, RR=2, Matrix=3, gCAWS=4"
