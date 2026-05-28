@@ -77,6 +77,11 @@ public:
     return path_;
   }
 
+  static bool userpc_only() {
+    init_from_env();
+    return userpc_only_;
+  }
+
   static void write_issue(const Row& row) {
     if (!enabled())
       return;
@@ -129,6 +134,11 @@ private:
     if (policy && policy[0] != '\0') {
       policy_ = policy;
     }
+
+    const char* userpc_only = std::getenv("VX_TRACE_WARP_SCHED_USERPC_ONLY");
+    userpc_only_ = userpc_only
+                && std::string(userpc_only) != "0"
+                && std::string(userpc_only) != "false";
   }
 
   static void open() {
@@ -181,6 +191,7 @@ private:
   inline static bool configured_ = false;
   inline static bool initialized_ = false;
   inline static bool enabled_ = false;
+  inline static bool userpc_only_ = false;
   inline static bool header_written_ = false;
   inline static std::string path_ = "issue_trace.csv";
   inline static std::string policy_ = "RoundRobin";

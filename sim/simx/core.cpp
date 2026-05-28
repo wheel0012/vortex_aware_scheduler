@@ -107,8 +107,11 @@ void write_warp_sched_trace(uint32_t core_id,
                             bool preferred_blocked,
                             const std::string& preferred_block_reason,
                             const std::string& stall_reason,
-                            const std::string& mismatch_reason) {
+                            const std::string& mismatch_reason,
+                            bool userpc_relevant) {
   if (!WarpSchedTrace::enabled())
+    return;
+  if (WarpSchedTrace::userpc_only() && !userpc_relevant)
     return;
 
   WarpSchedTrace::Row row;
@@ -1241,7 +1244,8 @@ void Core::issue() {
                              preferred_blocked,
                              preferred_block_reason,
                              mismatch_reason == "none" ? "none" : mismatch_reason,
-                             mismatch_reason);
+                             mismatch_reason,
+                             trace->userpc_marked);
       // to operand stage
       operands_.at(iw)->Input.push(trace, SIMX_OPERANDS_LATENCY);
       ibuffer.pop();
@@ -1261,7 +1265,8 @@ void Core::issue() {
                              false,
                              "none",
                              has_instrs ? "operand_not_ready" : "ibuffer_empty",
-                             "none");
+                             "none",
+                             userpc_has_instrs);
     }
 
     // track scoreboard stalls

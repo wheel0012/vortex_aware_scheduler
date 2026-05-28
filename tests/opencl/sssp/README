@@ -1,0 +1,11 @@
+Pannotia-style single-source shortest path benchmark.
+
+The input graph uses DIMACS shortest-path COO format:
+
+  c comments are ignored
+  p sp <num_nodes> <num_edges>
+  a <from> <to> <weight>
+
+The benchmark stores the graph in transpose CSR form and runs the Pannotia
+min-plus relaxation kernel. The optional third command-line argument is the
+zero-based source vertex. The default source is 0.

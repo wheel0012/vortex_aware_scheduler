@@ -19,9 +19,14 @@
 #   MEM_LATENCY=4 CACHE_LATENCY=1 BENCHES=sgemm3 SGEMM_N=4 SGEMM_TILE=2 WARPS=4 THREADS=2 ./worklogs/scripts/trace_small_aware_schedulers.sh
 #   ALL_LATENCY=1 BENCHES=sgemm3 SGEMM_N=4 SGEMM_TILE=2 WARPS=16 THREADS=1 ./worklogs/scripts/trace_small_aware_schedulers.sh
 #   LSU_BLOCKS=2 DCACHE_BANKS=4 BENCHES=sgemm3 ./worklogs/scripts/trace_small_aware_schedulers.sh
+#   DCACHE_SIZE=8192 L2_CACHE_SIZE=65536 BENCHES=kmeans ./worklogs/scripts/trace_small_aware_schedulers.sh
 #   ANALYZE_ARGS="--split-by-wspawn" ./worklogs/scripts/trace_small_aware_schedulers.sh
 #   ANALYZE_ARGS="--from-event WSPAWN:3 --to-event TMC:24 --split-by-wspawn" ./worklogs/scripts/trace_small_aware_schedulers.sh
 #   USER_FROM_EVENT=WSPAWN:3 USER_TO_EVENT=WSPAWN:4 USER_PC_FROM=0x1c4 USER_PC_TO=0x248 ./worklogs/scripts/trace_small_aware_schedulers.sh
+#   TRACE_USERPC_ONLY=1 USER_PC_FROM=0x94 USER_PC_TO=0x230 BENCHES=kmeans ./worklogs/scripts/trace_small_aware_schedulers.sh
+#   BENCHES=kmeans KMEANS_POINTS=128 KMEANS_FEATURES=32 KMEANS_CLUSTERS=8 ./worklogs/scripts/trace_small_aware_schedulers.sh
+#   BENCHES=hotspot HOTSPOT_SIZE=128 HOTSPOT_ITERS=1 HOTSPOT_SIM_TIME=2 ./worklogs/scripts/trace_small_aware_schedulers.sh
+#   SCHED_POLICY_MATCH_ARBITER=1 BENCHES=kmeans POLICIES="RR GTO" ./worklogs/scripts/trace_small_aware_schedulers.sh
 #   PERF=1 ./worklogs/scripts/trace_small_aware_schedulers.sh
 #   PERFS="1 2" ./worklogs/scripts/trace_small_aware_schedulers.sh
 #   INTERACTIVE_PLOTS=1 ./worklogs/scripts/trace_small_aware_schedulers.sh
@@ -79,6 +84,8 @@ SFU_BASE_LATENCY="${SFU_BASE_LATENCY:-$EXEC_LATENCY}"
 SFU_OP_LATENCY="${SFU_OP_LATENCY:-$EXEC_LATENCY}"
 LSU_BLOCKS="${LSU_BLOCKS:-}"
 DCACHE_BANKS="${DCACHE_BANKS:-}"
+DCACHE_SIZE="${DCACHE_SIZE:-}"
+L2_CACHE_SIZE="${L2_CACHE_SIZE:-}"
 ANALYZE_ARGS_STR="${ANALYZE_ARGS:-}"
 USER_PC_BASE="${USER_PC_BASE:-0x80000000}"
 USER_PC_FROM="${USER_PC_FROM:-}"
@@ -89,6 +96,8 @@ USER_FROM_EVENT="${USER_FROM_EVENT:-}"
 USER_TO_EVENT="${USER_TO_EVENT:-}"
 USER_SPLIT_BY_WSPAWN="${USER_SPLIT_BY_WSPAWN:-}"
 INTERACTIVE_PLOTS="${INTERACTIVE_PLOTS:-}"
+SCHED_POLICY_MATCH_ARBITER="${SCHED_POLICY_MATCH_ARBITER:-}"
+TRACE_USERPC_ONLY="${TRACE_USERPC_ONLY:-}"
 
 if [ -n "$ALL_LATENCY" ]; then
   MEM_LATENCY="${MEM_LATENCY:-$ALL_LATENCY}"
@@ -97,6 +106,15 @@ fi
 
 SGEMM_N="${SGEMM_N:-24}"
 SGEMM_TILE="${SGEMM_TILE:-8}"
+KMEANS_POINTS="${KMEANS_POINTS:-128}"
+KMEANS_FEATURES="${KMEANS_FEATURES:-32}"
+KMEANS_CLUSTERS="${KMEANS_CLUSTERS:-8}"
+KMEANS_LOOPS="${KMEANS_LOOPS:-1}"
+KMEANS_WG="${KMEANS_WG:-$((WARPS * THREADS))}"
+HOTSPOT_SIZE="${HOTSPOT_SIZE:-64}"
+HOTSPOT_ITERS="${HOTSPOT_ITERS:-1}"
+HOTSPOT_SIM_TIME="${HOTSPOT_SIM_TIME:-2}"
+HOTSPOT_OUTPUT="${HOTSPOT_OUTPUT:-output.out}"
 BFS_GRAPH="${BFS_GRAPH:-$ROOT_DIR/tests/opencl/bfs/graph4k.txt}"
 if [ -n "$BFS_GRAPH" ] && [ "${BFS_GRAPH#/}" = "$BFS_GRAPH" ]; then
   BFS_GRAPH="$ROOT_DIR/$BFS_GRAPH"
@@ -117,6 +135,8 @@ INTERACTIVE_CMDS=()
 declare -A BENCH_ARGS=(
   [bfs]="$BFS_GRAPH"
   [sgemm3]="-n${SGEMM_N} -t${SGEMM_TILE}"
+  [kmeans]="-p${KMEANS_POINTS} -f${KMEANS_FEATURES} -n${KMEANS_CLUSTERS} -m${KMEANS_CLUSTERS} -l${KMEANS_LOOPS}"
+  [hotspot]="${HOTSPOT_SIZE} ${HOTSPOT_ITERS} ${HOTSPOT_SIM_TIME} $ROOT_DIR/tests/opencl/hotspot/temp_${HOTSPOT_SIZE} $ROOT_DIR/tests/opencl/hotspot/power_${HOTSPOT_SIZE} ${HOTSPOT_OUTPUT}"
   [gto_arith_chain]="-n4 -l1 -i16"
   [vecadd]="-n64"
 )
@@ -150,6 +170,8 @@ if [ -n "$USER_SPLIT_BY_WSPAWN" ] && [ "$USER_SPLIT_BY_WSPAWN" != "0" ] && [ "$U
   ANALYZE_ARGS_ARR+=(--split-by-wspawn)
 fi
 
+TRACE_USERPC_ONLY_EFFECTIVE="$TRACE_USERPC_ONLY"
+
 USER_MONITOR_LABEL="disabled"
 if [ -n "$USER_FROM_EVENT" ] || [ -n "$USER_TO_EVENT" ] || [ -n "$USER_PC_FROM" ] || [ -n "$USER_PC_TO" ]; then
   USER_MONITOR_LABEL="pc_base=${USER_PC_BASE}"
@@ -174,6 +196,12 @@ if [ ! -x "$ROOT_DIR/sim/simx/analyze_warp_sched_trace.py" ]; then
   exit 1
 fi
 
+if [ -n "$TRACE_USERPC_ONLY" ] && [ "$TRACE_USERPC_ONLY" != "0" ] && [ "$TRACE_USERPC_ONLY" != "false" ] && [ -z "$USER_PC_FROM" ] && [ -z "$USER_PC_TO" ]; then
+  echo "TRACE_USERPC_ONLY requires USER_PC_FROM/USER_PC_TO during simulation; disabling trace-time filter." >&2
+  echo "USER_PC_AUTO is applied after the run and cannot shrink the trace file while it is being written." >&2
+  TRACE_USERPC_ONLY_EFFECTIVE=""
+fi
+
 config_value() {
   local key="$1"
   awk -F'[[:space:]]*[?]?=[[:space:]]*' -v key="$key" '$1 == key {print $2; exit}' "$BUILD_DIR/config.mk"
@@ -194,6 +222,14 @@ interactive_plots_enabled() {
   [ -n "$INTERACTIVE_PLOTS" ] && [ "$INTERACTIVE_PLOTS" != "0" ] && [ "$INTERACTIVE_PLOTS" != "false" ]
 }
 
+trace_userpc_only_enabled() {
+  [ -n "$TRACE_USERPC_ONLY" ] && [ "$TRACE_USERPC_ONLY" != "0" ] && [ "$TRACE_USERPC_ONLY" != "false" ]
+}
+
+sched_policy_match_arbiter_enabled() {
+  [ -n "$SCHED_POLICY_MATCH_ARBITER" ] && [ "$SCHED_POLICY_MATCH_ARBITER" != "0" ] && [ "$SCHED_POLICY_MATCH_ARBITER" != "false" ]
+}
+
 default_user_pc_symbols() {
   local bench="$1"
   if [ -n "$USER_PC_SYMBOLS" ]; then
@@ -203,6 +239,8 @@ default_user_pc_symbols() {
   case "$bench" in
     bfs) echo "BFS_1 BFS_2" ;;
     sgemm3) echo "sgemm3" ;;
+    kmeans) echo "kmeans_kernel_c" ;;
+    hotspot) echo "hotspot" ;;
     *) echo "$bench" ;;
   esac
 }
@@ -287,12 +325,37 @@ for bench in "${BENCHES_ARR[@]}"; do
       exit 1
     fi
   fi
+  if [ "$bench" = "kmeans" ]; then
+    if [ "$KMEANS_POINTS" -lt "$KMEANS_CLUSTERS" ]; then
+      echo "kmeans needs KMEANS_POINTS >= KMEANS_CLUSTERS." >&2
+      echo "Current KMEANS_POINTS=$KMEANS_POINTS, KMEANS_CLUSTERS=$KMEANS_CLUSTERS." >&2
+      exit 1
+    fi
+    if [ "$KMEANS_WG" -gt $((WARPS * THREADS)) ]; then
+      echo "kmeans work-group size KMEANS_WG=$KMEANS_WG exceeds WARPS*THREADS=$((WARPS * THREADS))." >&2
+      echo "Lower KMEANS_WG or increase WARPS/THREADS." >&2
+      exit 1
+    fi
+  fi
+  if [ "$bench" = "hotspot" ]; then
+    if [ ! -f "$ROOT_DIR/tests/opencl/hotspot/temp_${HOTSPOT_SIZE}" ] || [ ! -f "$ROOT_DIR/tests/opencl/hotspot/power_${HOTSPOT_SIZE}" ]; then
+      echo "Missing hotspot input files for HOTSPOT_SIZE=$HOTSPOT_SIZE." >&2
+      echo "Expected temp_${HOTSPOT_SIZE} and power_${HOTSPOT_SIZE} under tests/opencl/hotspot." >&2
+      exit 1
+    fi
+  fi
 done
 
 summary_value() {
   local file="$1"
   local key="$2"
   awk -F': ' -v key="$key" '$1 == key {print $2; exit}' "$file" 2>/dev/null
+}
+
+metric_value() {
+  local file="$1"
+  local key="$2"
+  awk -F',' -v key="$key" 'NR > 1 && $1 == key {print $2; exit}' "$file" 2>/dev/null
 }
 
 trace_rows() {
@@ -350,7 +413,13 @@ append_latency_flag "$SFU_OP_LATENCY" SIMX_SFU_OP_LATENCY
 HW_FLAGS=""
 [ -n "$LSU_BLOCKS" ] && HW_FLAGS="$HW_FLAGS -DNUM_LSU_BLOCKS=$LSU_BLOCKS"
 [ -n "$DCACHE_BANKS" ] && HW_FLAGS="$HW_FLAGS -DDCACHE_NUM_BANKS=$DCACHE_BANKS"
-BASE_FLAGS="$SHAPE_FLAGS $PERF_FLAGS $MEM_FLAGS $CACHE_FLAGS $LATENCY_FLAGS $HW_FLAGS $EXTRA_CONFIGS"
+[ -n "$DCACHE_SIZE" ] && HW_FLAGS="$HW_FLAGS -DDCACHE_SIZE=$DCACHE_SIZE"
+[ -n "$L2_CACHE_SIZE" ] && HW_FLAGS="$HW_FLAGS -DL2_CACHE_SIZE=$L2_CACHE_SIZE"
+KMEANS_FLAGS=""
+if [ -n "$KMEANS_WG" ]; then
+  KMEANS_FLAGS="-DRD_WG_SIZE_0=$KMEANS_WG -DRD_WG_SIZE_1=$KMEANS_WG"
+fi
+BASE_FLAGS="$SHAPE_FLAGS $PERF_FLAGS $MEM_FLAGS $CACHE_FLAGS $LATENCY_FLAGS $HW_FLAGS $KMEANS_FLAGS $EXTRA_CONFIGS"
 
 SUMMARY="$LOG_ROOT/SUMMARY.md"
 {
@@ -372,9 +441,14 @@ SUMMARY="$LOG_ROOT/SUMMARY.md"
   echo "- latency flags: \`${LATENCY_FLAGS:-none}\`"
   echo "- lsu blocks: \`${LSU_BLOCKS:-default}\`"
   echo "- dcache banks: \`${DCACHE_BANKS:-default}\`"
+  echo "- dcache size: \`${DCACHE_SIZE:-default}\`"
+  echo "- l2 cache size: \`${L2_CACHE_SIZE:-default}\`"
   echo "- hw tweak flags: \`${HW_FLAGS:-none}\`"
+  echo "- kmeans wg flags: \`${KMEANS_FLAGS:-none}\`"
   echo "- base flags: \`$BASE_FLAGS\`"
   echo "- trace env: \`VX_TRACE_WARP_SCHED=1\`"
+  echo "- trace userpc only: \`${TRACE_USERPC_ONLY_EFFECTIVE:-disabled}\`"
+  echo "- schedule policy matches arbiter: \`${SCHED_POLICY_MATCH_ARBITER:-disabled}\`"
   echo "- analyzer: \`sim/simx/analyze_warp_sched_trace.py\`"
   echo "- analyzer args: \`${ANALYZE_ARGS_STR:-none}\`"
   echo "- effective analyzer args: \`${ANALYZE_ARGS_ARR[*]:-none}\`"
@@ -382,6 +456,8 @@ SUMMARY="$LOG_ROOT/SUMMARY.md"
   echo "- user PC monitor: \`$USER_MONITOR_LABEL\`"
   echo "- user PC auto: \`${USER_PC_AUTO:-disabled}\`"
   echo "- user PC symbols: \`${USER_PC_SYMBOLS:-bench defaults}\`"
+  echo "- kmeans points/features/clusters/loops/wg: \`${KMEANS_POINTS}/${KMEANS_FEATURES}/${KMEANS_CLUSTERS}/${KMEANS_LOOPS}/${KMEANS_WG}\`"
+  echo "- hotspot size/iters/sim_time: \`${HOTSPOT_SIZE}/${HOTSPOT_ITERS}/${HOTSPOT_SIM_TIME}\`"
   echo "- bfs graph: \`$BFS_GRAPH\`"
   echo "- bfs work-group size: \`$BFS_WORK_GROUP_SIZE\`"
   echo "- VORTEX_ARBITER: Priority=0, GTO=1, RR=2, Matrix=3, gCAWS=4"
@@ -398,8 +474,8 @@ SUMMARY="$LOG_ROOT/SUMMARY.md"
   echo
   echo "## Results"
   echo
-  echo "| Policy | Perf | Workload | Status | Trace rows | Issued | Mismatch count | Mismatch rate | Fallback count | Fallback rate | Artifacts |"
-  echo "|---|---|---|---|---:|---:|---:|---:|---:|---:|---|"
+  echo "| Policy | Perf | Workload | Status | Trace rows | Issued | Span cycles | UserPC IPC | Mismatch count | Mismatch rate | Fallback count | Fallback rate | Artifacts |"
+  echo "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|"
 } > "$SUMMARY"
 
 echo "Trace output dir: $LOG_ROOT"
@@ -407,6 +483,9 @@ echo "Trace output dir: $LOG_ROOT"
 for label in "${POLICIES_ARR[@]}"; do
   arb="${ARBITER[$label]}"
   conf="$BASE_FLAGS -DVORTEX_ARBITER=$arb"
+  if sched_policy_match_arbiter_enabled; then
+    conf="$BASE_FLAGS -DVORTEX_SCHED_POLICY=$arb -DVORTEX_ARBITER=$arb"
+  fi
   policy_dir="$LOG_ROOT/$label"
   mkdir -p "$policy_dir"
   build_log="$policy_dir/build.log"
@@ -417,7 +496,7 @@ for label in "${POLICIES_ARR[@]}"; do
     for bench in "${BENCHES_ARR[@]}"; do
       for perf in "${PERFS_ARR[@]}"; do
         perf_label="${perf:-disabled}"
-        echo "| $label | $perf_label | $bench | build_fail | 0 | ? | ? | ? | ? | ? | \`$policy_dir\` |" >> "$SUMMARY"
+        echo "| $label | $perf_label | $bench | build_fail | 0 | ? | ? | ? | ? | ? | ? | ? | \`$policy_dir\` |" >> "$SUMMARY"
       done
     done
     continue
@@ -427,7 +506,7 @@ for label in "${POLICIES_ARR[@]}"; do
     for bench in "${BENCHES_ARR[@]}"; do
       for perf in "${PERFS_ARR[@]}"; do
         perf_label="${perf:-disabled}"
-        echo "| $label | $perf_label | $bench | build_fail | 0 | ? | ? | ? | ? | ? | \`$policy_dir\` |" >> "$SUMMARY"
+        echo "| $label | $perf_label | $bench | build_fail | 0 | ? | ? | ? | ? | ? | ? | ? | \`$policy_dir\` |" >> "$SUMMARY"
       done
     done
     continue
@@ -470,6 +549,7 @@ for label in "${POLICIES_ARR[@]}"; do
         VX_USER_PC_BASE="$USER_PC_BASE" \
         VX_USER_PC_FROM="$USER_PC_FROM" \
         VX_USER_PC_TO="$USER_PC_TO" \
+        VX_TRACE_WARP_SCHED_USERPC_ONLY="$TRACE_USERPC_ONLY_EFFECTIVE" \
         VXBIN_SAVE_ELF_DIR="$device_elf_dir" \
         VX_WARP_SCHED_POLICY="$label" \
         timeout "$TIMEOUT_SEC" ./ci/blackbox.sh \
@@ -488,7 +568,7 @@ for label in "${POLICIES_ARR[@]}"; do
 
       if [ ! -s "$trace_csv" ]; then
         echo "  [$label/perf=$perf_label/$bench] $status, but trace CSV is missing or empty"
-        echo "| $label | $perf_label | $bench | missing_trace($status) | 0 | ? | ? | ? | ? | ? | \`$bench_dir\` |" >> "$SUMMARY"
+        echo "| $label | $perf_label | $bench | missing_trace($status) | 0 | ? | ? | ? | ? | ? | ? | ? | \`$bench_dir\` |" >> "$SUMMARY"
         continue
       fi
 
@@ -528,9 +608,12 @@ for label in "${POLICIES_ARR[@]}"; do
       mismatch_rate=$(summary_value "$summary_txt" "Mismatch rate")
       fallback_count=$(summary_value "$summary_txt" "Fallback count")
       fallback_rate=$(summary_value "$summary_txt" "Fallback rate")
+      perf_metrics="$analysis_dir/perf_metrics.csv"
+      span_cycles=$(metric_value "$perf_metrics" "pc_window.span_cycles")
+      userpc_ipc=$(metric_value "$perf_metrics" "perf.IPC")
 
-      echo "  [$label/perf=$perf_label/$bench] $status rows=$rows issued=${issued:-?} mismatch=${mismatch_rate:-?} fallback=${fallback_rate:-?}"
-      echo "| $label | $perf_label | $bench | $status | $rows | ${issued:-?} | ${mismatch_count:-?} | ${mismatch_rate:-?} | ${fallback_count:-?} | ${fallback_rate:-?} | \`$bench_dir\` |" >> "$SUMMARY"
+      echo "  [$label/perf=$perf_label/$bench] $status rows=$rows issued=${issued:-?} span=${span_cycles:-?} userpc_ipc=${userpc_ipc:-?} mismatch=${mismatch_rate:-?} fallback=${fallback_rate:-?}"
+      echo "| $label | $perf_label | $bench | $status | $rows | ${issued:-?} | ${span_cycles:-?} | ${userpc_ipc:-?} | ${mismatch_count:-?} | ${mismatch_rate:-?} | ${fallback_count:-?} | ${fallback_rate:-?} | \`$bench_dir\` |" >> "$SUMMARY"
     done
   done
 done

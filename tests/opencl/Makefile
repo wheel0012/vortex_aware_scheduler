@@ -23,6 +23,7 @@ all:
 	$(MAKE) -C kmeans
 	$(MAKE) -C blackscholes
 	$(MAKE) -C bfs
+	$(MAKE) -C sssp
 	$(MAKE) -C hotspot
 	$(MAKE) -C streamcluster
 
@@ -47,6 +48,7 @@ run-simx:
 	$(MAKE) -C kmeans run-simx
 	$(MAKE) -C blackscholes run-simx
 	$(MAKE) -C bfs run-simx
+	$(MAKE) -C sssp run-simx
 	$(MAKE) -C hotspot run-simx
 	$(MAKE) -C streamcluster run-simx
 
@@ -71,6 +73,7 @@ run-rtlsim:
 	$(MAKE) -C kmeans run-rtlsim
 	$(MAKE) -C blackscholes run-rtlsim
 	$(MAKE) -C bfs run-rtlsim
+	$(MAKE) -C sssp run-rtlsim
 	$(MAKE) -C hotspot run-rtlsim
 	$(MAKE) -C streamcluster run-rtlsim
 
@@ -96,5 +99,6 @@ clean:
 	$(MAKE) -C kmeans clean
 	$(MAKE) -C blackscholes clean
 	$(MAKE) -C bfs clean
+	$(MAKE) -C sssp clean
 	$(MAKE) -C hotspot clean
 	$(MAKE) -C streamcluster clean

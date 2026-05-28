@@ -1,6 +1,7 @@
 /build*
 /.vscode
 *.cache
+__pycache__/
 *.code-workspace
 miscs/apptainer/vortex.sif
 
@@ -15,6 +16,7 @@ miscs/apptainer/vortex.sif
 /worklogs/runs/
 /worklogs/experiments/
 /worklogs/experiment_record/
+/worklogs/generated_inputs/
 /worklogs/trace_runs/
 /ramulator.stats.log
 /trace/
@@ -25,3 +27,8 @@ miscs/apptainer/vortex.sif
 /tests/opencl/gto_arith_chain/*.o
 /tests/opencl/gto_arith_chain/*.log
 /tests/opencl/gto_arith_chain/.depend
+/tests/opencl/sssp/sssp
+/tests/opencl/sssp/sssp.host
+/tests/opencl/sssp/*.o
+/tests/opencl/sssp/*.log
+/tests/opencl/sssp/.depend

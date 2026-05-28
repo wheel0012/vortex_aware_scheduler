@@ -154,6 +154,42 @@ def load_userpc_perf_log(path):
     if path is None or not path.exists():
         return metrics
     for line in path.read_text(errors="replace").splitlines():
+        m = re.match(r"PERF: userpc scheduler idle=(\d+) \(([0-9.]+)%\)", line)
+        if m:
+            metrics["perf1.scheduler_idle"] = int(m.group(1))
+            metrics["perf1.scheduler_idle_percent"] = m.group(2)
+            continue
+        m = re.match(r"PERF: userpc scheduler stalls=(\d+) \(([0-9.]+)%\)", line)
+        if m:
+            metrics["perf1.scheduler_stalls"] = int(m.group(1))
+            metrics["perf1.scheduler_stalls_percent"] = m.group(2)
+            continue
+        m = re.match(r"PERF: userpc ibuffer stalls=(\d+) \(([0-9.]+)%\)", line)
+        if m:
+            metrics["perf1.ibuffer_stalls"] = int(m.group(1))
+            metrics["perf1.ibuffer_stalls_percent"] = m.group(2)
+            continue
+        m = re.match(
+            r"PERF: userpc scoreboard stalls=(\d+) \(([0-9.]+)%\) "
+            r"\(alu=([0-9.]+)%, lsu=([0-9.]+)%, csrs=([0-9.]+)%, "
+            r"wctl=([0-9.]+)%, fpu=([0-9.]+)%\)",
+            line,
+        )
+        if m:
+            metrics["perf1.scoreboard_stalls"] = int(m.group(1))
+            metrics["perf1.scoreboard_stalls_percent"] = m.group(2)
+            metrics["perf1.scoreboard_stalls.alu_percent"] = m.group(3)
+            metrics["perf1.scoreboard_stalls.lsu_percent"] = m.group(4)
+            metrics["perf1.scoreboard_stalls.csrs_percent"] = m.group(5)
+            metrics["perf1.scoreboard_stalls.wctl_percent"] = m.group(6)
+            metrics["perf1.scoreboard_stalls.fpu_percent"] = m.group(7)
+            continue
+        m = re.match(r"PERF: userpc ready checks=(\d+) / candidate checks=(\d+) \(hit ratio=([0-9.]+)%\)", line)
+        if m:
+            metrics["perf1.ready_checks"] = int(m.group(1))
+            metrics["perf1.candidate_checks"] = int(m.group(2))
+            metrics["perf1.ready_hit_ratio"] = m.group(3)
+            continue
         m = re.match(r"PERF: userpc dcache requests=(\d+) \(reads=(\d+), writes=(\d+)\)", line)
         if m:
             metrics["perf2.dcache_requests"] = int(m.group(1))
@@ -638,21 +674,41 @@ def build_perf_metrics(rows, perf_window_rows=None, external_metrics=None):
         metric_row("pc_window.issue_density", f"{issue_density:.6f}", "issued/span_cycle", "trace"),
         metric_row("pc_window.issue_active_rate", f"{issue_active_rate:.6f}", "issued/active_issue_cycle", "trace"),
 
-        metric_row("perf1.scheduler_idle", scheduler_idle, "slot-cycles", "trace"),
-        metric_row("perf1.scheduler_idle_percent", f"{percent(scheduler_idle, slot_rows):.2f}", "%", "trace"),
-        metric_row("perf1.scheduler_stalls", scheduler_other_stalls, "slot-cycles", "trace-derived",
+        metric_row("perf1.scheduler_idle", external_metrics.get("perf1.scheduler_idle", scheduler_idle), "cycles",
+                   "simx-run-log" if "perf1.scheduler_idle" in external_metrics else "trace"),
+        metric_row("perf1.scheduler_idle_percent", external_metrics.get("perf1.scheduler_idle_percent", f"{percent(scheduler_idle, slot_rows):.2f}"), "%",
+                   "simx-run-log" if "perf1.scheduler_idle_percent" in external_metrics else "trace"),
+        metric_row("perf1.scheduler_stalls", external_metrics.get("perf1.scheduler_stalls", scheduler_other_stalls), "cycles",
+                   "simx-run-log" if "perf1.scheduler_stalls" in external_metrics else "trace-derived",
                    "non-idle, non-scoreboard, non-issued scheduler rows; not identical to simx CSR"),
-        metric_row("perf1.scheduler_stalls_percent", f"{percent(scheduler_other_stalls, slot_rows):.2f}", "%", "trace-derived"),
-        metric_row("perf1.ibuffer_stalls", metric_na(), "cycles", "unavailable",
-                   "decode ibuffer-full stalls are not present in issue_trace.csv"),
-        metric_row("perf1.scoreboard_stalls", scoreboard_stalls, "slot-cycles", "trace"),
-        metric_row("perf1.scoreboard_stalls_percent", f"{percent(scoreboard_stalls, slot_rows):.2f}", "%", "trace"),
-        metric_row("perf1.scoreboard_stalls.alu_percent", metric_na(), "%", "unavailable",
-                   "blocked dependency FU type is not present on non-issued trace rows"),
-        metric_row("perf1.scoreboard_stalls.lsu_percent", metric_na(), "%", "unavailable"),
-        metric_row("perf1.scoreboard_stalls.csrs_percent", metric_na(), "%", "unavailable"),
-        metric_row("perf1.scoreboard_stalls.wctl_percent", metric_na(), "%", "unavailable"),
-        metric_row("perf1.scoreboard_stalls.fpu_percent", metric_na(), "%", "unavailable"),
+        metric_row("perf1.scheduler_stalls_percent", external_metrics.get("perf1.scheduler_stalls_percent", f"{percent(scheduler_other_stalls, slot_rows):.2f}"), "%",
+                   "simx-run-log" if "perf1.scheduler_stalls_percent" in external_metrics else "trace-derived"),
+        metric_row("perf1.ibuffer_stalls", external_metrics.get("perf1.ibuffer_stalls"), "cycles",
+                   "simx-run-log" if "perf1.ibuffer_stalls" in external_metrics else "unavailable",
+                   "decode ibuffer-full stalls are only available from simx run.log"),
+        metric_row("perf1.ibuffer_stalls_percent", external_metrics.get("perf1.ibuffer_stalls_percent"), "%",
+                   "simx-run-log" if "perf1.ibuffer_stalls_percent" in external_metrics else "unavailable"),
+        metric_row("perf1.scoreboard_stalls", external_metrics.get("perf1.scoreboard_stalls", scoreboard_stalls), "cycles",
+                   "simx-run-log" if "perf1.scoreboard_stalls" in external_metrics else "trace"),
+        metric_row("perf1.scoreboard_stalls_percent", external_metrics.get("perf1.scoreboard_stalls_percent", f"{percent(scoreboard_stalls, slot_rows):.2f}"), "%",
+                   "simx-run-log" if "perf1.scoreboard_stalls_percent" in external_metrics else "trace"),
+        metric_row("perf1.scoreboard_stalls.alu_percent", external_metrics.get("perf1.scoreboard_stalls.alu_percent"), "%",
+                   "simx-run-log" if "perf1.scoreboard_stalls.alu_percent" in external_metrics else "unavailable",
+                   "blocked dependency FU type is only available from simx run.log"),
+        metric_row("perf1.scoreboard_stalls.lsu_percent", external_metrics.get("perf1.scoreboard_stalls.lsu_percent"), "%",
+                   "simx-run-log" if "perf1.scoreboard_stalls.lsu_percent" in external_metrics else "unavailable"),
+        metric_row("perf1.scoreboard_stalls.csrs_percent", external_metrics.get("perf1.scoreboard_stalls.csrs_percent"), "%",
+                   "simx-run-log" if "perf1.scoreboard_stalls.csrs_percent" in external_metrics else "unavailable"),
+        metric_row("perf1.scoreboard_stalls.wctl_percent", external_metrics.get("perf1.scoreboard_stalls.wctl_percent"), "%",
+                   "simx-run-log" if "perf1.scoreboard_stalls.wctl_percent" in external_metrics else "unavailable"),
+        metric_row("perf1.scoreboard_stalls.fpu_percent", external_metrics.get("perf1.scoreboard_stalls.fpu_percent"), "%",
+                   "simx-run-log" if "perf1.scoreboard_stalls.fpu_percent" in external_metrics else "unavailable"),
+        metric_row("perf1.ready_checks", external_metrics.get("perf1.ready_checks"), "checks",
+                   "simx-run-log" if "perf1.ready_checks" in external_metrics else "unavailable"),
+        metric_row("perf1.candidate_checks", external_metrics.get("perf1.candidate_checks"), "checks",
+                   "simx-run-log" if "perf1.candidate_checks" in external_metrics else "unavailable"),
+        metric_row("perf1.ready_hit_ratio", external_metrics.get("perf1.ready_hit_ratio"), "%",
+                   "simx-run-log" if "perf1.ready_hit_ratio" in external_metrics else "unavailable"),
         metric_row("perf1.operands_stalls", metric_na(), "cycles", "unavailable",
                    "operand-stage stalls are not present in issue_trace.csv"),
         metric_row("perf1.ifetches", instrs, "instructions", "estimated",
@@ -1108,6 +1164,7 @@ def analyze_rows(
     pc_base=0,
     external_metrics=None,
     write_plots=True,
+    write_heavy_csv=True,
 ):
     out_dir.mkdir(parents=True, exist_ok=True)
     write_event_markers(out_dir / "event_markers.csv", rows)
@@ -1121,12 +1178,14 @@ def analyze_rows(
         pc_to=pc_to,
         pc_base=pc_base,
     )
-    write_mismatch_report(out_dir / "mismatch_report.csv", rows)
-    write_preferred_blocked_report(out_dir / "preferred_blocked_report.csv", rows)
-    write_preferred_blocked_report(out_dir / "not_ready_fallback_report.csv", rows)
-    write_userpc_issue_trace(out_dir / "userpc_issue_trace.csv", rows, pc_base)
+    if write_heavy_csv:
+        write_mismatch_report(out_dir / "mismatch_report.csv", rows)
+        write_preferred_blocked_report(out_dir / "preferred_blocked_report.csv", rows)
+        write_preferred_blocked_report(out_dir / "not_ready_fallback_report.csv", rows)
+        write_userpc_issue_trace(out_dir / "userpc_issue_trace.csv", rows, pc_base)
     write_userpc_summary(out_dir / "userpc_summary.csv", rows, pc_base)
-    write_cycle_issue_trace(out_dir / "cycle_issue_trace.csv", rows, pc_base)
+    if write_heavy_csv:
+        write_cycle_issue_trace(out_dir / "cycle_issue_trace.csv", rows, pc_base)
     perf_metrics = build_perf_metrics(rows, perf_window_rows, external_metrics)
     write_perf_metrics_csv(out_dir / "perf_metrics.csv", perf_metrics)
     write_perf_summary(out_dir / "perf_summary.txt", perf_metrics)
@@ -1205,6 +1264,11 @@ def main():
         help="skip PNG timeline generation; useful for large traces when only CSV/text metrics are needed",
     )
     parser.add_argument(
+        "--lite",
+        action="store_true",
+        help="skip large derived CSV reports; keep summary, userpc_summary, and perf metrics",
+    )
+    parser.add_argument(
         "--run-log",
         type=Path,
         default=None,
@@ -1254,6 +1318,7 @@ def main():
         pc_base=args.pc_base,
         external_metrics=external_metrics,
         write_plots=not args.no_plots,
+        write_heavy_csv=not args.lite,
     )
 
     if args.split_by_wspawn:
@@ -1280,6 +1345,7 @@ def main():
                 pc_base=args.pc_base,
                 external_metrics=external_metrics,
                 write_plots=not args.no_plots,
+                write_heavy_csv=not args.lite,
             )
             split_index.append({
                 "split": split_name,
@@ -1296,12 +1362,16 @@ def main():
     print(f"Wrote {args.out_dir / 'summary.txt'}")
     print(f"Wrote {args.out_dir / 'event_markers.csv'}")
     print(f"Wrote {args.out_dir / 'event_markers_all.csv'}")
-    print(f"Wrote {args.out_dir / 'mismatch_report.csv'}")
-    print(f"Wrote {args.out_dir / 'preferred_blocked_report.csv'}")
-    print(f"Wrote {args.out_dir / 'not_ready_fallback_report.csv'}")
-    print(f"Wrote {args.out_dir / 'userpc_issue_trace.csv'}")
+    if args.lite:
+        print("Skipped large derived CSV reports (--lite)")
+    else:
+        print(f"Wrote {args.out_dir / 'mismatch_report.csv'}")
+        print(f"Wrote {args.out_dir / 'preferred_blocked_report.csv'}")
+        print(f"Wrote {args.out_dir / 'not_ready_fallback_report.csv'}")
+        print(f"Wrote {args.out_dir / 'userpc_issue_trace.csv'}")
     print(f"Wrote {args.out_dir / 'userpc_summary.csv'}")
-    print(f"Wrote {args.out_dir / 'cycle_issue_trace.csv'}")
+    if not args.lite:
+        print(f"Wrote {args.out_dir / 'cycle_issue_trace.csv'}")
     print(f"Wrote {args.out_dir / 'perf_summary.txt'}")
     print(f"Wrote {args.out_dir / 'perf_metrics.csv'}")
     if args.no_plots:
