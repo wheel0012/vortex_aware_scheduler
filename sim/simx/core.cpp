@@ -54,6 +54,10 @@ uint64_t parse_u64_env(const char* name, uint64_t default_value) {
   return (end != value) ? parsed : default_value;
 }
 
+uint64_t abs_diff_u64(uint64_t lhs, uint64_t rhs) {
+  return lhs >= rhs ? lhs - rhs : rhs - lhs;
+}
+
 uint64_t wid_bit(uint32_t wid) {
   return wid < 64 ? (1ull << wid) : 0;
 }
@@ -300,18 +304,128 @@ Core::Core(const SimContext& ctx,
   for (auto& req_port : dcache_req_ports) {
     req_port.tx_callback([this](const MemReq& req, uint64_t cycle) {
       __unused(cycle);
-      if (!req.userpc)
+      if (!req.userpc && !userpc_lsu_uuids_.count(req.uuid))
         return;
       userpc_perf_.dcache_reads += !req.write;
       userpc_perf_.dcache_writes += req.write;
       userpc_perf_.dcache_pending_reads += !req.write;
+      if (!req.write) {
+        constexpr uint64_t line_size = L1_LINE_SIZE;
+        constexpr uint64_t raw_num_sets = DCACHE_SIZE / (L1_LINE_SIZE * DCACHE_NUM_WAYS);
+        constexpr uint64_t num_sets = raw_num_sets ? raw_num_sets : 1;
+        auto line = req.addr / line_size;
+        auto set = line % num_sets;
+        auto tag = line / num_sets;
+        ++userpc_perf_.dcache_read_access_index;
+        auto seen_line = !userpc_dcache_read_lines_.insert(line).second;
+        userpc_dcache_pending_read_cold_[req.uuid].push_back(!seen_line);
+        if (seen_line) {
+          ++userpc_perf_.dcache_read_reuse_accesses;
+          auto last_it = userpc_dcache_last_read_access_.find(line);
+          if (last_it != userpc_dcache_last_read_access_.end()) {
+            auto gap = userpc_perf_.dcache_read_access_index - last_it->second;
+            if (gap <= 4) {
+              ++userpc_perf_.dcache_read_reuse_gap_le4;
+            } else if (gap <= 16) {
+              ++userpc_perf_.dcache_read_reuse_gap_le16;
+            } else if (gap <= 64) {
+              ++userpc_perf_.dcache_read_reuse_gap_le64;
+            } else if (gap <= 256) {
+              ++userpc_perf_.dcache_read_reuse_gap_le256;
+            } else {
+              ++userpc_perf_.dcache_read_reuse_gap_gt256;
+            }
+          }
+        } else {
+          ++userpc_perf_.dcache_read_cold_accesses;
+        }
+        userpc_dcache_last_read_access_[line] = userpc_perf_.dcache_read_access_index;
+        userpc_dcache_tags_by_set_[set].insert(tag);
+        if (userpc_perf_.dcache_set_valid
+            && userpc_perf_.dcache_last_read_set == set
+            && userpc_perf_.dcache_last_read_tag != tag) {
+          ++userpc_perf_.dcache_read_same_set_tag_changes;
+        }
+        userpc_perf_.dcache_last_read_set = set;
+        userpc_perf_.dcache_last_read_tag = tag;
+        userpc_perf_.dcache_set_valid = true;
+        if (userpc_perf_.dcache_line_stride_valid) {
+          auto line_stride = abs_diff_u64(line, userpc_perf_.dcache_last_read_line);
+          userpc_perf_.dcache_read_line_stride_sum += line_stride;
+          ++userpc_perf_.dcache_read_line_stride_count;
+          if (line_stride == 0) {
+            ++userpc_perf_.dcache_read_line_stride_0;
+          } else if (line_stride == 1) {
+            ++userpc_perf_.dcache_read_line_stride_1;
+          } else if (line_stride < 4) {
+            ++userpc_perf_.dcache_read_line_stride_2_3;
+          } else if (line_stride < 16) {
+            ++userpc_perf_.dcache_read_line_stride_4_15;
+          } else if (line_stride < 64) {
+            ++userpc_perf_.dcache_read_line_stride_16_63;
+          } else {
+            ++userpc_perf_.dcache_read_line_stride_64_plus;
+          }
+        }
+        userpc_perf_.dcache_last_read_line = line;
+        userpc_perf_.dcache_line_stride_valid = true;
+        if (userpc_perf_.dcache_stride_valid) {
+          auto stride = abs_diff_u64(req.addr, userpc_perf_.dcache_last_read_addr);
+          userpc_perf_.dcache_read_stride_sum += stride;
+          userpc_perf_.dcache_read_stride_capped_4k_sum += std::min<uint64_t>(stride, 4096);
+          ++userpc_perf_.dcache_read_stride_count;
+          if (stride == 0) {
+            ++userpc_perf_.dcache_read_stride_0;
+          } else if (stride < 64) {
+            ++userpc_perf_.dcache_read_stride_1_63;
+          } else if (stride < 256) {
+            ++userpc_perf_.dcache_read_stride_64_255;
+          } else if (stride < 1024) {
+            ++userpc_perf_.dcache_read_stride_256_1023;
+          } else if (stride < 4096) {
+            ++userpc_perf_.dcache_read_stride_1k_4k;
+          } else {
+            ++userpc_perf_.dcache_read_stride_4k_plus;
+          }
+        }
+        userpc_perf_.dcache_last_read_addr = req.addr;
+        userpc_perf_.dcache_stride_valid = true;
+      }
     });
   }
   for (auto& rsp_port : dcache_rsp_ports) {
     rsp_port.tx_callback([this](const MemRsp& rsp, uint64_t cycle) {
       __unused(cycle);
-      if (rsp.userpc && userpc_perf_.dcache_pending_reads != 0)
+      if (!rsp.userpc && !userpc_lsu_uuids_.count(rsp.uuid))
+        return;
+      if (userpc_perf_.dcache_pending_reads != 0)
         --userpc_perf_.dcache_pending_reads;
+      bool read_cold = false;
+      bool have_read_cold = false;
+      if (!rsp.write) {
+        auto it = userpc_dcache_pending_read_cold_.find(rsp.uuid);
+        if (it != userpc_dcache_pending_read_cold_.end() && !it->second.empty()) {
+          read_cold = it->second.front();
+          have_read_cold = true;
+          it->second.pop_front();
+          if (it->second.empty())
+            userpc_dcache_pending_read_cold_.erase(it);
+        }
+      }
+      if (rsp.miss) {
+        if (rsp.write) {
+          ++userpc_perf_.dcache_write_misses;
+        } else {
+          ++userpc_perf_.dcache_read_misses;
+          if (have_read_cold) {
+            if (read_cold) {
+              ++userpc_perf_.dcache_read_cold_misses;
+            } else {
+              ++userpc_perf_.dcache_read_non_cold_misses;
+            }
+          }
+        }
+      }
     });
   }
 
@@ -399,8 +513,45 @@ Core::UserPCPerfStats::UserPCPerfStats()
   , load_latency(0)
   , dcache_reads(0)
   , dcache_writes(0)
+  , dcache_read_misses(0)
+  , dcache_write_misses(0)
   , dcache_read_latency(0)
   , dcache_pending_reads(0)
+  , dcache_stride_valid(false)
+  , dcache_last_read_addr(0)
+  , dcache_read_stride_sum(0)
+  , dcache_read_stride_capped_4k_sum(0)
+  , dcache_read_stride_count(0)
+  , dcache_read_stride_0(0)
+  , dcache_read_stride_1_63(0)
+  , dcache_read_stride_64_255(0)
+  , dcache_read_stride_256_1023(0)
+  , dcache_read_stride_1k_4k(0)
+  , dcache_read_stride_4k_plus(0)
+  , dcache_read_cold_accesses(0)
+  , dcache_read_reuse_accesses(0)
+  , dcache_read_cold_misses(0)
+  , dcache_read_non_cold_misses(0)
+  , dcache_read_access_index(0)
+  , dcache_read_reuse_gap_le4(0)
+  , dcache_read_reuse_gap_le16(0)
+  , dcache_read_reuse_gap_le64(0)
+  , dcache_read_reuse_gap_le256(0)
+  , dcache_read_reuse_gap_gt256(0)
+  , dcache_line_stride_valid(false)
+  , dcache_last_read_line(0)
+  , dcache_read_line_stride_sum(0)
+  , dcache_read_line_stride_count(0)
+  , dcache_read_line_stride_0(0)
+  , dcache_read_line_stride_1(0)
+  , dcache_read_line_stride_2_3(0)
+  , dcache_read_line_stride_4_15(0)
+  , dcache_read_line_stride_16_63(0)
+  , dcache_read_line_stride_64_plus(0)
+  , dcache_set_valid(false)
+  , dcache_last_read_set(0)
+  , dcache_last_read_tag(0)
+  , dcache_read_same_set_tag_changes(0)
   , alu_issues(0)
   , fpu_issues(0)
   , lsu_issues(0)
@@ -415,6 +566,11 @@ Core::UserPCPerfStats::UserPCPerfStats()
 
 void Core::userpc_init() {
   userpc_perf_ = UserPCPerfStats();
+  userpc_lsu_uuids_.clear();
+  userpc_dcache_read_lines_.clear();
+  userpc_dcache_last_read_access_.clear();
+  userpc_dcache_pending_read_cold_.clear();
+  userpc_dcache_tags_by_set_.clear();
   userpc_perf_.pc_base = parse_u64_env("VX_USER_PC_BASE", userpc_perf_.pc_base);
   auto from_env = std::getenv("VX_USER_PC_FROM");
   auto to_env = std::getenv("VX_USER_PC_TO");
@@ -478,6 +634,7 @@ void Core::userpc_count_scoreboard(const instr_trace_t* trace, const std::vector
 void Core::userpc_count_lsu(const instr_trace_t* trace, bool is_write, uint32_t count) {
   if (!trace->userpc_marked)
     return;
+  userpc_lsu_uuids_.insert(trace->uuid);
   if (is_write) {
     userpc_perf_.stores += count;
   } else {
@@ -717,6 +874,33 @@ void Core::dump_userpc_perf() const {
   auto ifetch_avg_lat = userpc_perf_.ifetches ? userpc_perf_.ifetch_latency / userpc_perf_.ifetches : 0;
   auto load_avg_lat = userpc_perf_.loads ? userpc_perf_.load_latency / userpc_perf_.loads : 0;
   auto dcache_read_avg_lat = userpc_perf_.dcache_reads ? userpc_perf_.dcache_read_latency / userpc_perf_.dcache_reads : 0;
+  auto dcache_read_avg_stride = userpc_perf_.dcache_read_stride_count
+                                  ? userpc_perf_.dcache_read_stride_sum / userpc_perf_.dcache_read_stride_count
+                                  : 0;
+  auto dcache_read_avg_stride_capped_4k = userpc_perf_.dcache_read_stride_count
+                                            ? userpc_perf_.dcache_read_stride_capped_4k_sum / userpc_perf_.dcache_read_stride_count
+                                            : 0;
+  auto dcache_read_avg_line_stride = userpc_perf_.dcache_read_line_stride_count
+                                      ? userpc_perf_.dcache_read_line_stride_sum / userpc_perf_.dcache_read_line_stride_count
+                                      : 0;
+  uint64_t dcache_read_unique_tag_sets = userpc_dcache_tags_by_set_.size();
+  uint64_t dcache_read_total_unique_tags = 0;
+  uint64_t dcache_read_max_unique_tags_per_set = 0;
+  uint64_t dcache_read_set_overflow_sets = 0;
+  for (auto& entry : userpc_dcache_tags_by_set_) {
+    auto tags = entry.second.size();
+    dcache_read_total_unique_tags += tags;
+    dcache_read_max_unique_tags_per_set = std::max<uint64_t>(dcache_read_max_unique_tags_per_set, tags);
+    if (tags > DCACHE_NUM_WAYS)
+      ++dcache_read_set_overflow_sets;
+  }
+  auto dcache_read_avg_unique_tags_per_set = dcache_read_unique_tag_sets
+                                               ? dcache_read_total_unique_tags / dcache_read_unique_tag_sets
+                                               : 0;
+  auto dcache_read_reuse_hits =
+      userpc_perf_.dcache_read_reuse_accesses > userpc_perf_.dcache_read_non_cold_misses
+        ? userpc_perf_.dcache_read_reuse_accesses - userpc_perf_.dcache_read_non_cold_misses
+        : 0;
   auto ipc = span ? double(userpc_perf_.instrs) / span : 0.0;
 
   std::cerr << "PERF: userpc pc_from=0x" << std::hex << userpc_perf_.pc_from
@@ -751,6 +935,48 @@ void Core::dump_userpc_perf() const {
   std::cerr << "PERF: userpc dcache requests=" << (userpc_perf_.dcache_reads + userpc_perf_.dcache_writes)
             << " (reads=" << userpc_perf_.dcache_reads
             << ", writes=" << userpc_perf_.dcache_writes << ")\n";
+  std::cerr << "PERF: userpc dcache read misses=" << userpc_perf_.dcache_read_misses
+            << " (hit ratio=" << pct_u64(userpc_perf_.dcache_reads - userpc_perf_.dcache_read_misses, userpc_perf_.dcache_reads) << "%)\n";
+  std::cerr << "PERF: userpc dcache write misses=" << userpc_perf_.dcache_write_misses
+            << " (hit ratio=" << pct_u64(userpc_perf_.dcache_writes - userpc_perf_.dcache_write_misses, userpc_perf_.dcache_writes) << "%)\n";
+  std::cerr << "PERF: userpc dcache read stride avg=" << dcache_read_avg_stride
+            << " capped_4k_avg=" << dcache_read_avg_stride_capped_4k
+            << " count=" << userpc_perf_.dcache_read_stride_count
+            << " buckets(0=" << userpc_perf_.dcache_read_stride_0
+            << ", 1_63=" << userpc_perf_.dcache_read_stride_1_63
+            << ", 64_255=" << userpc_perf_.dcache_read_stride_64_255
+            << ", 256_1023=" << userpc_perf_.dcache_read_stride_256_1023
+            << ", 1k_4k=" << userpc_perf_.dcache_read_stride_1k_4k
+            << ", 4k_plus=" << userpc_perf_.dcache_read_stride_4k_plus
+            << ")\n";
+  std::cerr << "PERF: userpc dcache read line stride avg=" << dcache_read_avg_line_stride
+            << " count=" << userpc_perf_.dcache_read_line_stride_count
+            << " buckets(same=" << userpc_perf_.dcache_read_line_stride_0
+            << ", adjacent=" << userpc_perf_.dcache_read_line_stride_1
+            << ", 2_3=" << userpc_perf_.dcache_read_line_stride_2_3
+            << ", 4_15=" << userpc_perf_.dcache_read_line_stride_4_15
+            << ", 16_63=" << userpc_perf_.dcache_read_line_stride_16_63
+            << ", 64_plus=" << userpc_perf_.dcache_read_line_stride_64_plus
+            << ")\n";
+  std::cerr << "PERF: userpc dcache read temporal unique_lines=" << userpc_dcache_read_lines_.size()
+            << " cold_accesses=" << userpc_perf_.dcache_read_cold_accesses
+            << " reuse_accesses=" << userpc_perf_.dcache_read_reuse_accesses
+            << " cold_misses=" << userpc_perf_.dcache_read_cold_misses
+            << " non_cold_misses=" << userpc_perf_.dcache_read_non_cold_misses
+            << " reuse_hit_ratio=" << pct_u64(dcache_read_reuse_hits, userpc_perf_.dcache_read_reuse_accesses)
+            << "%\n";
+  std::cerr << "PERF: userpc dcache read reuse gap buckets(le4=" << userpc_perf_.dcache_read_reuse_gap_le4
+            << ", le16=" << userpc_perf_.dcache_read_reuse_gap_le16
+            << ", le64=" << userpc_perf_.dcache_read_reuse_gap_le64
+            << ", le256=" << userpc_perf_.dcache_read_reuse_gap_le256
+            << ", gt256=" << userpc_perf_.dcache_read_reuse_gap_gt256
+            << ")\n";
+  std::cerr << "PERF: userpc dcache read set pressure sets_touched=" << dcache_read_unique_tag_sets
+            << " avg_unique_tags_per_set=" << dcache_read_avg_unique_tags_per_set
+            << " max_unique_tags_per_set=" << dcache_read_max_unique_tags_per_set
+            << " overflow_sets=" << dcache_read_set_overflow_sets
+            << " same_set_tag_changes=" << userpc_perf_.dcache_read_same_set_tag_changes
+            << "\n";
   std::cerr << "PERF: userpc dcache read latency=" << dcache_read_avg_lat << " cycles\n";
   std::cerr << "PERF: userpc instrs=" << userpc_perf_.instrs
             << ", cycles=" << span
@@ -816,8 +1042,18 @@ void Core::dump_userpc_perf() const {
   std::cerr << "[USERPC_PERF core=" << core_id_ << "] "
             << "dcache reads=" << userpc_perf_.dcache_reads
             << " writes=" << userpc_perf_.dcache_writes
+            << " read_misses=" << userpc_perf_.dcache_read_misses
+            << " write_misses=" << userpc_perf_.dcache_write_misses
             << " read_latency=" << userpc_perf_.dcache_read_latency
-            << " avg_read_latency=" << dcache_read_avg_lat << "\n";
+            << " avg_read_latency=" << dcache_read_avg_lat
+            << " avg_read_stride=" << dcache_read_avg_stride
+            << " avg_read_stride_capped_4k=" << dcache_read_avg_stride_capped_4k
+            << " stride_count=" << userpc_perf_.dcache_read_stride_count
+            << " avg_read_line_stride=" << dcache_read_avg_line_stride
+            << " unique_lines=" << userpc_dcache_read_lines_.size()
+            << " cold_misses=" << userpc_perf_.dcache_read_cold_misses
+            << " non_cold_misses=" << userpc_perf_.dcache_read_non_cold_misses
+            << " reuse_accesses=" << userpc_perf_.dcache_read_reuse_accesses << "\n";
 
   std::cerr << "[USERPC_PERF WARP core=" << core_id_ << "] wid issues first_cycle last_cycle\n";
   for (uint32_t wid = 0; wid < userpc_perf_.per_warp_issues.size(); ++wid) {

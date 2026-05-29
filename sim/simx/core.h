@@ -15,6 +15,9 @@
 
 #include <vector>
 #include <array>
+#include <deque>
+#include <unordered_map>
+#include <unordered_set>
 #include <simobject.h>
 #include "types.h"
 #include "emulator.h"
@@ -257,8 +260,45 @@ private:
     uint64_t load_latency;
     uint64_t dcache_reads;
     uint64_t dcache_writes;
+    uint64_t dcache_read_misses;
+    uint64_t dcache_write_misses;
     uint64_t dcache_read_latency;
     uint64_t dcache_pending_reads;
+    bool dcache_stride_valid;
+    uint64_t dcache_last_read_addr;
+    uint64_t dcache_read_stride_sum;
+    uint64_t dcache_read_stride_capped_4k_sum;
+    uint64_t dcache_read_stride_count;
+    uint64_t dcache_read_stride_0;
+    uint64_t dcache_read_stride_1_63;
+    uint64_t dcache_read_stride_64_255;
+    uint64_t dcache_read_stride_256_1023;
+    uint64_t dcache_read_stride_1k_4k;
+    uint64_t dcache_read_stride_4k_plus;
+    uint64_t dcache_read_cold_accesses;
+    uint64_t dcache_read_reuse_accesses;
+    uint64_t dcache_read_cold_misses;
+    uint64_t dcache_read_non_cold_misses;
+    uint64_t dcache_read_access_index;
+    uint64_t dcache_read_reuse_gap_le4;
+    uint64_t dcache_read_reuse_gap_le16;
+    uint64_t dcache_read_reuse_gap_le64;
+    uint64_t dcache_read_reuse_gap_le256;
+    uint64_t dcache_read_reuse_gap_gt256;
+    bool dcache_line_stride_valid;
+    uint64_t dcache_last_read_line;
+    uint64_t dcache_read_line_stride_sum;
+    uint64_t dcache_read_line_stride_count;
+    uint64_t dcache_read_line_stride_0;
+    uint64_t dcache_read_line_stride_1;
+    uint64_t dcache_read_line_stride_2_3;
+    uint64_t dcache_read_line_stride_4_15;
+    uint64_t dcache_read_line_stride_16_63;
+    uint64_t dcache_read_line_stride_64_plus;
+    bool dcache_set_valid;
+    uint64_t dcache_last_read_set;
+    uint64_t dcache_last_read_tag;
+    uint64_t dcache_read_same_set_tag_changes;
     uint64_t alu_issues;
     uint64_t fpu_issues;
     uint64_t lsu_issues;
@@ -315,6 +355,11 @@ private:
 
   mutable PerfStats perf_stats_;
   UserPCPerfStats userpc_perf_;
+  std::unordered_set<uint64_t> userpc_lsu_uuids_;
+  std::unordered_set<uint64_t> userpc_dcache_read_lines_;
+  std::unordered_map<uint64_t, uint64_t> userpc_dcache_last_read_access_;
+  std::unordered_map<uint64_t, std::deque<bool>> userpc_dcache_pending_read_cold_;
+  std::unordered_map<uint64_t, std::unordered_set<uint64_t>> userpc_dcache_tags_by_set_;
 
   std::vector<TraceArbiter::Ptr> commit_arbs_;
 

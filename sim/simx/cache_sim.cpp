@@ -424,7 +424,7 @@ private:
 		case bank_req_t::Replay: {
 			// send core response
 			if (!bank_req.write || config_.write_reponse) {
-				MemRsp core_rsp{bank_req.req_tag, bank_req.cid, bank_req.uuid, bank_req.userpc};
+				MemRsp core_rsp{bank_req.req_tag, bank_req.cid, bank_req.uuid, bank_req.userpc, true, bank_req.write};
 				this->core_rsp_port.push(core_rsp);
 				DT(3, this->name() << "-replay: " << core_rsp);
 			}
@@ -433,6 +433,12 @@ private:
 			int32_t free_line_id = -1;
 			int32_t repl_line_id = 0;
 			auto& set = sets_.at(bank_req.set_id);
+			if (bank_req.userpc) {
+				if (bank_req.write)
+					++perf_stats_.userpc_writes;
+				else
+					++perf_stats_.userpc_reads;
+			}
 			// tag lookup
 			int hit_line_id = set.tag_lookup(bank_req.addr_tag, &free_line_id, &repl_line_id);
 			if (hit_line_id != -1) {
@@ -468,6 +474,12 @@ private:
 					++perf_stats_.write_misses;
 				else
 					++perf_stats_.read_misses;
+				if (bank_req.userpc) {
+					if (bank_req.write)
+						++perf_stats_.userpc_write_misses;
+					else
+						++perf_stats_.userpc_read_misses;
+				}
 
 				if (free_line_id == -1 && config_.write_back) {
 					// write back dirty line
@@ -498,7 +510,7 @@ private:
 					}
 					// send core response
 					if (config_.write_reponse) {
-						MemRsp core_rsp{bank_req.req_tag, bank_req.cid, bank_req.uuid, bank_req.userpc};
+						MemRsp core_rsp{bank_req.req_tag, bank_req.cid, bank_req.uuid, bank_req.userpc, true, bank_req.write};
 						this->core_rsp_port.push(core_rsp);
 						DT(3, this->name() << "-core-rsp: " << core_rsp);
 					}
@@ -681,7 +693,9 @@ public:
 
 	PerfStats perf_stats() const {
 		PerfStats perf_stats;
-		if (!config_.bypass) {
+		if (config_.bypass) {
+			perf_stats = perf_stats_;
+		} else {
 			for (const auto& bank : banks_) {
 				perf_stats += bank->perf_stats();
 			}
@@ -695,12 +709,28 @@ private:
 	void processBypassResponse(const MemRsp& mem_rsp) {
 		uint32_t req_id = mem_rsp.tag & ((1 << params_.log2_num_inputs)-1);
 		uint64_t tag = mem_rsp.tag >> params_.log2_num_inputs;
-		MemRsp core_rsp{tag, mem_rsp.cid, mem_rsp.uuid, mem_rsp.userpc};
+		MemRsp core_rsp{tag, mem_rsp.cid, mem_rsp.uuid, mem_rsp.userpc, true, false};
 		simobject_->CoreRspPorts.at(req_id).push(core_rsp, 0);
 		DT(3, simobject_->name() << "-bypass-core-rsp: " << core_rsp);
 	}
 
 	void processBypassRequest(const MemReq& core_req, uint32_t req_id) {
+		if (core_req.write) {
+			++perf_stats_.writes;
+			++perf_stats_.write_misses;
+		} else {
+			++perf_stats_.reads;
+			++perf_stats_.read_misses;
+		}
+		if (core_req.userpc) {
+			if (core_req.write) {
+				++perf_stats_.userpc_writes;
+				++perf_stats_.userpc_write_misses;
+			} else {
+				++perf_stats_.userpc_reads;
+				++perf_stats_.userpc_read_misses;
+			}
+		}
 		{
 			// Push core request to non-cacheable arbiter's input 1
 			MemReq mem_req(core_req);
@@ -711,7 +741,7 @@ private:
 		}
 
 		if (core_req.write && config_.write_reponse) {
-			MemRsp core_rsp{core_req.tag, core_req.cid, core_req.uuid, core_req.userpc};
+			MemRsp core_rsp{core_req.tag, core_req.cid, core_req.uuid, core_req.userpc, true, true};
 			simobject_->CoreRspPorts.at(req_id).push(core_rsp, 0);
 			DT(3, simobject_->name() << "-bypass-core-rsp: " << core_rsp);
 		}
@@ -724,6 +754,7 @@ private:
 	MemArbiter::Ptr bank_arb_;
 	std::vector<MemArbiter::Ptr> nc_mem_arbs_;
 	MemCrossBar::Ptr bank_core_xbar_;
+	PerfStats perf_stats_;
 	uint32_t init_cycles_;
 };
 

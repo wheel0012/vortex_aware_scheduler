@@ -41,6 +41,10 @@ public:
 		uint64_t writes;
 		uint64_t read_misses;
 		uint64_t write_misses;
+		uint64_t userpc_reads;
+		uint64_t userpc_writes;
+		uint64_t userpc_read_misses;
+		uint64_t userpc_write_misses;
 		uint64_t evictions;
 		uint64_t bank_stalls;
 		uint64_t mshr_stalls;
@@ -51,6 +55,10 @@ public:
 			, writes(0)
 			, read_misses(0)
 			, write_misses(0)
+			, userpc_reads(0)
+			, userpc_writes(0)
+			, userpc_read_misses(0)
+			, userpc_write_misses(0)
 			, evictions(0)
 			, bank_stalls(0)
 			, mshr_stalls(0)
@@ -62,6 +70,10 @@ public:
 			this->writes += rhs.writes;
 			this->read_misses += rhs.read_misses;
 			this->write_misses += rhs.write_misses;
+			this->userpc_reads += rhs.userpc_reads;
+			this->userpc_writes += rhs.userpc_writes;
+			this->userpc_read_misses += rhs.userpc_read_misses;
+			this->userpc_write_misses += rhs.userpc_write_misses;
 			this->evictions += rhs.evictions;
 			this->bank_stalls += rhs.bank_stalls;
 			this->mshr_stalls += rhs.mshr_stalls;

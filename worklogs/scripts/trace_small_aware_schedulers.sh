@@ -497,8 +497,8 @@ SUMMARY="$LOG_ROOT/SUMMARY.md"
   echo
   echo "## Results"
   echo
-  echo "| Policy | Perf | Workload | Status | Trace rows | Issued | Span cycles | UserPC IPC | Mismatch count | Mismatch rate | Fallback count | Fallback rate | Artifacts |"
-  echo "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|"
+  echo "| Policy | Perf | Workload | Status | Trace rows | Issued | Span cycles | UserPC IPC | D$ read miss | D$ non-cold miss | D$ reuse hit % | Unique lines | Line local % | Set overflow | D$ write miss | Avg stride | Avg stride cap4K | Small stride % | 4K+ stride % | Mismatch count | Mismatch rate | Fallback count | Fallback rate | Artifacts |"
+  echo "|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|"
 } > "$SUMMARY"
 
 echo "Trace output dir: $LOG_ROOT"
@@ -519,7 +519,7 @@ for label in "${POLICIES_ARR[@]}"; do
     for bench in "${BENCHES_ARR[@]}"; do
       for perf in "${PERFS_ARR[@]}"; do
         perf_label="${perf:-disabled}"
-        echo "| $label | $perf_label | $bench | build_fail | 0 | ? | ? | ? | ? | ? | ? | ? | \`$policy_dir\` |" >> "$SUMMARY"
+        echo "| $label | $perf_label | $bench | build_fail | 0 | ? | ? | ? | ? | ? | ? | ? | ? | ? | ? | ? | ? | ? | \`$policy_dir\` |" >> "$SUMMARY"
       done
     done
     continue
@@ -529,7 +529,7 @@ for label in "${POLICIES_ARR[@]}"; do
     for bench in "${BENCHES_ARR[@]}"; do
       for perf in "${PERFS_ARR[@]}"; do
         perf_label="${perf:-disabled}"
-        echo "| $label | $perf_label | $bench | build_fail | 0 | ? | ? | ? | ? | ? | ? | ? | \`$policy_dir\` |" >> "$SUMMARY"
+        echo "| $label | $perf_label | $bench | build_fail | 0 | ? | ? | ? | ? | ? | ? | ? | ? | ? | ? | ? | ? | ? | \`$policy_dir\` |" >> "$SUMMARY"
       done
     done
     continue
@@ -591,7 +591,7 @@ for label in "${POLICIES_ARR[@]}"; do
 
       if [ ! -s "$trace_csv" ]; then
         echo "  [$label/perf=$perf_label/$bench] $status, but trace CSV is missing or empty"
-        echo "| $label | $perf_label | $bench | missing_trace($status) | 0 | ? | ? | ? | ? | ? | ? | ? | \`$bench_dir\` |" >> "$SUMMARY"
+        echo "| $label | $perf_label | $bench | missing_trace($status) | 0 | ? | ? | ? | ? | ? | ? | ? | ? | ? | ? | ? | ? | ? | \`$bench_dir\` |" >> "$SUMMARY"
         continue
       fi
 
@@ -634,9 +634,20 @@ for label in "${POLICIES_ARR[@]}"; do
       perf_metrics="$analysis_dir/perf_metrics.csv"
       span_cycles=$(metric_value "$perf_metrics" "pc_window.span_cycles")
       userpc_ipc=$(metric_value "$perf_metrics" "perf.IPC")
+      dcache_read_misses=$(metric_value "$perf_metrics" "perf2.dcache_read_misses")
+      dcache_non_cold_misses=$(metric_value "$perf_metrics" "perf2.dcache_read_non_cold_misses")
+      dcache_reuse_hit=$(metric_value "$perf_metrics" "perf2.dcache_read_reuse_hit_ratio")
+      dcache_unique_lines=$(metric_value "$perf_metrics" "perf2.dcache_read_unique_lines")
+      dcache_line_local=$(metric_value "$perf_metrics" "perf2.dcache_read_line_stride_local_ratio")
+      dcache_overflow_sets=$(metric_value "$perf_metrics" "perf2.dcache_read_overflow_sets")
+      dcache_write_misses=$(metric_value "$perf_metrics" "perf2.dcache_write_misses")
+      dcache_avg_stride=$(metric_value "$perf_metrics" "perf2.dcache_read_stride_avg")
+      dcache_avg_stride_capped=$(metric_value "$perf_metrics" "perf2.dcache_read_stride_capped_4k_avg")
+      dcache_small_stride=$(metric_value "$perf_metrics" "perf2.dcache_read_stride_small_ratio")
+      dcache_large_stride=$(metric_value "$perf_metrics" "perf2.dcache_read_stride_4k_plus_ratio")
 
-      echo "  [$label/perf=$perf_label/$bench] $status rows=$rows issued=${issued:-?} span=${span_cycles:-?} userpc_ipc=${userpc_ipc:-?} mismatch=${mismatch_rate:-?} fallback=${fallback_rate:-?}"
-      echo "| $label | $perf_label | $bench | $status | $rows | ${issued:-?} | ${span_cycles:-?} | ${userpc_ipc:-?} | ${mismatch_count:-?} | ${mismatch_rate:-?} | ${fallback_count:-?} | ${fallback_rate:-?} | \`$bench_dir\` |" >> "$SUMMARY"
+      echo "  [$label/perf=$perf_label/$bench] $status rows=$rows issued=${issued:-?} span=${span_cycles:-?} userpc_ipc=${userpc_ipc:-?} dcache_miss=${dcache_read_misses:-?}/${dcache_write_misses:-?} non_cold=${dcache_non_cold_misses:-?} reuse_hit=${dcache_reuse_hit:-?}% line_local=${dcache_line_local:-?}% overflow_sets=${dcache_overflow_sets:-?} mismatch=${mismatch_rate:-?} fallback=${fallback_rate:-?}"
+      echo "| $label | $perf_label | $bench | $status | $rows | ${issued:-?} | ${span_cycles:-?} | ${userpc_ipc:-?} | ${dcache_read_misses:-?} | ${dcache_non_cold_misses:-?} | ${dcache_reuse_hit:-?} | ${dcache_unique_lines:-?} | ${dcache_line_local:-?} | ${dcache_overflow_sets:-?} | ${dcache_write_misses:-?} | ${dcache_avg_stride:-?} | ${dcache_avg_stride_capped:-?} | ${dcache_small_stride:-?} | ${dcache_large_stride:-?} | ${mismatch_count:-?} | ${mismatch_rate:-?} | ${fallback_count:-?} | ${fallback_rate:-?} | \`$bench_dir\` |" >> "$SUMMARY"
     done
   done
 done

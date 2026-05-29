@@ -196,6 +196,100 @@ def load_userpc_perf_log(path):
             metrics["perf2.dcache_reads"] = int(m.group(2))
             metrics["perf2.dcache_writes"] = int(m.group(3))
             continue
+        m = re.match(r"PERF: userpc dcache read misses=(\d+) \(hit ratio=([0-9.]+)%\)", line)
+        if m:
+            metrics["perf2.dcache_read_misses"] = int(m.group(1))
+            metrics["perf2.dcache_read_hit_ratio"] = m.group(2)
+            continue
+        m = re.match(r"PERF: userpc dcache write misses=(\d+) \(hit ratio=([0-9.]+)%\)", line)
+        if m:
+            metrics["perf2.dcache_write_misses"] = int(m.group(1))
+            metrics["perf2.dcache_write_hit_ratio"] = m.group(2)
+            continue
+        m = re.match(
+            r"PERF: userpc dcache read stride avg=(\d+) (?:capped_4k_avg=(\d+) )?count=(\d+) "
+            r"buckets\(0=(\d+), 1_63=(\d+), 64_255=(\d+), "
+            r"256_1023=(\d+), 1k_4k=(\d+), 4k_plus=(\d+)\)",
+            line,
+        )
+        if m:
+            metrics["perf2.dcache_read_stride_avg"] = int(m.group(1))
+            metrics["perf2.dcache_read_stride_capped_4k_avg"] = int(m.group(2) or 0)
+            metrics["perf2.dcache_read_stride_count"] = int(m.group(3))
+            metrics["perf2.dcache_read_stride_0"] = int(m.group(4))
+            metrics["perf2.dcache_read_stride_1_63"] = int(m.group(5))
+            metrics["perf2.dcache_read_stride_64_255"] = int(m.group(6))
+            metrics["perf2.dcache_read_stride_256_1023"] = int(m.group(7))
+            metrics["perf2.dcache_read_stride_1k_4k"] = int(m.group(8))
+            metrics["perf2.dcache_read_stride_4k_plus"] = int(m.group(9))
+            small = int(m.group(4)) + int(m.group(5))
+            large = int(m.group(9))
+            count = int(m.group(3))
+            metrics["perf2.dcache_read_stride_small_ratio"] = f"{(100.0 * small / count):.2f}" if count else "0.00"
+            metrics["perf2.dcache_read_stride_4k_plus_ratio"] = f"{(100.0 * large / count):.2f}" if count else "0.00"
+            continue
+        m = re.match(
+            r"PERF: userpc dcache read line stride avg=(\d+) count=(\d+) "
+            r"buckets\(same=(\d+), adjacent=(\d+), 2_3=(\d+), "
+            r"4_15=(\d+), 16_63=(\d+), 64_plus=(\d+)\)",
+            line,
+        )
+        if m:
+            metrics["perf2.dcache_read_line_stride_avg"] = int(m.group(1))
+            metrics["perf2.dcache_read_line_stride_count"] = int(m.group(2))
+            metrics["perf2.dcache_read_line_stride_same"] = int(m.group(3))
+            metrics["perf2.dcache_read_line_stride_adjacent"] = int(m.group(4))
+            metrics["perf2.dcache_read_line_stride_2_3"] = int(m.group(5))
+            metrics["perf2.dcache_read_line_stride_4_15"] = int(m.group(6))
+            metrics["perf2.dcache_read_line_stride_16_63"] = int(m.group(7))
+            metrics["perf2.dcache_read_line_stride_64_plus"] = int(m.group(8))
+            local = int(m.group(3)) + int(m.group(4)) + int(m.group(5))
+            large = int(m.group(8))
+            count = int(m.group(2))
+            metrics["perf2.dcache_read_line_stride_local_ratio"] = f"{(100.0 * local / count):.2f}" if count else "0.00"
+            metrics["perf2.dcache_read_line_stride_64_plus_ratio"] = f"{(100.0 * large / count):.2f}" if count else "0.00"
+            continue
+        m = re.match(
+            r"PERF: userpc dcache read temporal unique_lines=(\d+) cold_accesses=(\d+) "
+            r"reuse_accesses=(\d+) cold_misses=(\d+) non_cold_misses=(\d+) "
+            r"reuse_hit_ratio=(\d+)%",
+            line,
+        )
+        if m:
+            metrics["perf2.dcache_read_unique_lines"] = int(m.group(1))
+            metrics["perf2.dcache_read_cold_accesses"] = int(m.group(2))
+            metrics["perf2.dcache_read_reuse_accesses"] = int(m.group(3))
+            metrics["perf2.dcache_read_cold_misses"] = int(m.group(4))
+            metrics["perf2.dcache_read_non_cold_misses"] = int(m.group(5))
+            metrics["perf2.dcache_read_reuse_hit_ratio"] = m.group(6)
+            reads = int(m.group(2)) + int(m.group(3))
+            metrics["perf2.dcache_read_reuse_access_ratio"] = f"{(100.0 * int(m.group(3)) / reads):.2f}" if reads else "0.00"
+            continue
+        m = re.match(
+            r"PERF: userpc dcache read reuse gap buckets\(le4=(\d+), le16=(\d+), "
+            r"le64=(\d+), le256=(\d+), gt256=(\d+)\)",
+            line,
+        )
+        if m:
+            metrics["perf2.dcache_read_reuse_gap_le4"] = int(m.group(1))
+            metrics["perf2.dcache_read_reuse_gap_le16"] = int(m.group(2))
+            metrics["perf2.dcache_read_reuse_gap_le64"] = int(m.group(3))
+            metrics["perf2.dcache_read_reuse_gap_le256"] = int(m.group(4))
+            metrics["perf2.dcache_read_reuse_gap_gt256"] = int(m.group(5))
+            continue
+        m = re.match(
+            r"PERF: userpc dcache read set pressure sets_touched=(\d+) "
+            r"avg_unique_tags_per_set=(\d+) max_unique_tags_per_set=(\d+) "
+            r"overflow_sets=(\d+) same_set_tag_changes=(\d+)",
+            line,
+        )
+        if m:
+            metrics["perf2.dcache_read_sets_touched"] = int(m.group(1))
+            metrics["perf2.dcache_read_avg_unique_tags_per_set"] = int(m.group(2))
+            metrics["perf2.dcache_read_max_unique_tags_per_set"] = int(m.group(3))
+            metrics["perf2.dcache_read_overflow_sets"] = int(m.group(4))
+            metrics["perf2.dcache_read_same_set_tag_changes"] = int(m.group(5))
+            continue
         m = re.match(r"PERF: userpc dcache read latency=([0-9.]+) cycles", line)
         if m:
             metrics["perf2.dcache_read_latency"] = m.group(1)
@@ -739,10 +833,84 @@ def build_perf_metrics(rows, perf_window_rows=None, external_metrics=None):
         metric_row("perf2.dcache_writes", external_metrics.get("perf2.dcache_writes", stores), "requests",
                    "simx-run-log" if "perf2.dcache_writes" in external_metrics else "estimated",
                    "simx dcache transactions when run.log is provided; otherwise instruction-level store count"),
-        metric_row("perf2.dcache_read_misses", metric_na(), "requests", "unavailable"),
-        metric_row("perf2.dcache_read_hit_ratio", metric_na(), "%", "unavailable"),
-        metric_row("perf2.dcache_write_misses", metric_na(), "requests", "unavailable"),
-        metric_row("perf2.dcache_write_hit_ratio", metric_na(), "%", "unavailable"),
+        metric_row("perf2.dcache_read_misses", external_metrics.get("perf2.dcache_read_misses"), "requests",
+                   "simx-run-log" if "perf2.dcache_read_misses" in external_metrics else "unavailable",
+                   "userpc-tagged dcache read misses counted inside simx CacheSim"),
+        metric_row("perf2.dcache_read_hit_ratio", external_metrics.get("perf2.dcache_read_hit_ratio"), "%",
+                   "simx-run-log" if "perf2.dcache_read_hit_ratio" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_write_misses", external_metrics.get("perf2.dcache_write_misses"), "requests",
+                   "simx-run-log" if "perf2.dcache_write_misses" in external_metrics else "unavailable",
+                   "userpc-tagged dcache write misses counted inside simx CacheSim"),
+        metric_row("perf2.dcache_write_hit_ratio", external_metrics.get("perf2.dcache_write_hit_ratio"), "%",
+                   "simx-run-log" if "perf2.dcache_write_hit_ratio" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_stride_avg", external_metrics.get("perf2.dcache_read_stride_avg"), "bytes",
+                   "simx-run-log" if "perf2.dcache_read_stride_avg" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_stride_capped_4k_avg", external_metrics.get("perf2.dcache_read_stride_capped_4k_avg"), "bytes",
+                   "simx-run-log" if "perf2.dcache_read_stride_capped_4k_avg" in external_metrics else "unavailable",
+                   "absolute stride averaged after capping each stride at 4096 bytes"),
+        metric_row("perf2.dcache_read_stride_count", external_metrics.get("perf2.dcache_read_stride_count"), "requests",
+                   "simx-run-log" if "perf2.dcache_read_stride_count" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_stride_0", external_metrics.get("perf2.dcache_read_stride_0"), "requests",
+                   "simx-run-log" if "perf2.dcache_read_stride_0" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_stride_1_63", external_metrics.get("perf2.dcache_read_stride_1_63"), "requests",
+                   "simx-run-log" if "perf2.dcache_read_stride_1_63" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_stride_64_255", external_metrics.get("perf2.dcache_read_stride_64_255"), "requests",
+                   "simx-run-log" if "perf2.dcache_read_stride_64_255" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_stride_256_1023", external_metrics.get("perf2.dcache_read_stride_256_1023"), "requests",
+                   "simx-run-log" if "perf2.dcache_read_stride_256_1023" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_stride_1k_4k", external_metrics.get("perf2.dcache_read_stride_1k_4k"), "requests",
+                   "simx-run-log" if "perf2.dcache_read_stride_1k_4k" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_stride_4k_plus", external_metrics.get("perf2.dcache_read_stride_4k_plus"), "requests",
+                   "simx-run-log" if "perf2.dcache_read_stride_4k_plus" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_stride_small_ratio", external_metrics.get("perf2.dcache_read_stride_small_ratio"), "%",
+                   "simx-run-log" if "perf2.dcache_read_stride_small_ratio" in external_metrics else "unavailable",
+                   "stride 0 plus stride 1-63 byte buckets over all measured read strides"),
+        metric_row("perf2.dcache_read_stride_4k_plus_ratio", external_metrics.get("perf2.dcache_read_stride_4k_plus_ratio"), "%",
+                   "simx-run-log" if "perf2.dcache_read_stride_4k_plus_ratio" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_line_stride_avg", external_metrics.get("perf2.dcache_read_line_stride_avg"), "lines",
+                   "simx-run-log" if "perf2.dcache_read_line_stride_avg" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_line_stride_local_ratio", external_metrics.get("perf2.dcache_read_line_stride_local_ratio"), "%",
+                   "simx-run-log" if "perf2.dcache_read_line_stride_local_ratio" in external_metrics else "unavailable",
+                   "same-line plus adjacent-line plus 2-3-line stride buckets"),
+        metric_row("perf2.dcache_read_line_stride_64_plus_ratio", external_metrics.get("perf2.dcache_read_line_stride_64_plus_ratio"), "%",
+                   "simx-run-log" if "perf2.dcache_read_line_stride_64_plus_ratio" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_unique_lines", external_metrics.get("perf2.dcache_read_unique_lines"), "lines",
+                   "simx-run-log" if "perf2.dcache_read_unique_lines" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_cold_accesses", external_metrics.get("perf2.dcache_read_cold_accesses"), "requests",
+                   "simx-run-log" if "perf2.dcache_read_cold_accesses" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_reuse_accesses", external_metrics.get("perf2.dcache_read_reuse_accesses"), "requests",
+                   "simx-run-log" if "perf2.dcache_read_reuse_accesses" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_reuse_access_ratio", external_metrics.get("perf2.dcache_read_reuse_access_ratio"), "%",
+                   "simx-run-log" if "perf2.dcache_read_reuse_access_ratio" in external_metrics else "unavailable",
+                   "non-cold read accesses over all read accesses"),
+        metric_row("perf2.dcache_read_cold_misses", external_metrics.get("perf2.dcache_read_cold_misses"), "requests",
+                   "simx-run-log" if "perf2.dcache_read_cold_misses" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_non_cold_misses", external_metrics.get("perf2.dcache_read_non_cold_misses"), "requests",
+                   "simx-run-log" if "perf2.dcache_read_non_cold_misses" in external_metrics else "unavailable",
+                   "read misses after the cache line was already seen once in the userpc window"),
+        metric_row("perf2.dcache_read_reuse_hit_ratio", external_metrics.get("perf2.dcache_read_reuse_hit_ratio"), "%",
+                   "simx-run-log" if "perf2.dcache_read_reuse_hit_ratio" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_reuse_gap_le4", external_metrics.get("perf2.dcache_read_reuse_gap_le4"), "requests",
+                   "simx-run-log" if "perf2.dcache_read_reuse_gap_le4" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_reuse_gap_le16", external_metrics.get("perf2.dcache_read_reuse_gap_le16"), "requests",
+                   "simx-run-log" if "perf2.dcache_read_reuse_gap_le16" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_reuse_gap_le64", external_metrics.get("perf2.dcache_read_reuse_gap_le64"), "requests",
+                   "simx-run-log" if "perf2.dcache_read_reuse_gap_le64" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_reuse_gap_le256", external_metrics.get("perf2.dcache_read_reuse_gap_le256"), "requests",
+                   "simx-run-log" if "perf2.dcache_read_reuse_gap_le256" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_reuse_gap_gt256", external_metrics.get("perf2.dcache_read_reuse_gap_gt256"), "requests",
+                   "simx-run-log" if "perf2.dcache_read_reuse_gap_gt256" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_sets_touched", external_metrics.get("perf2.dcache_read_sets_touched"), "sets",
+                   "simx-run-log" if "perf2.dcache_read_sets_touched" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_avg_unique_tags_per_set", external_metrics.get("perf2.dcache_read_avg_unique_tags_per_set"), "tags/set",
+                   "simx-run-log" if "perf2.dcache_read_avg_unique_tags_per_set" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_max_unique_tags_per_set", external_metrics.get("perf2.dcache_read_max_unique_tags_per_set"), "tags/set",
+                   "simx-run-log" if "perf2.dcache_read_max_unique_tags_per_set" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_overflow_sets", external_metrics.get("perf2.dcache_read_overflow_sets"), "sets",
+                   "simx-run-log" if "perf2.dcache_read_overflow_sets" in external_metrics else "unavailable",
+                   "sets whose unique tags exceeded DCACHE_NUM_WAYS during the userpc window"),
+        metric_row("perf2.dcache_read_same_set_tag_changes", external_metrics.get("perf2.dcache_read_same_set_tag_changes"), "requests",
+                   "simx-run-log" if "perf2.dcache_read_same_set_tag_changes" in external_metrics else "unavailable"),
         metric_row("perf2.dcache_bank_stalls", metric_na(), "cycles", "unavailable"),
         metric_row("perf2.dcache_mshr_stalls", metric_na(), "cycles", "unavailable"),
         metric_row("perf2.dcache_read_latency", external_metrics.get("perf2.dcache_read_latency"), "cycles", "simx-run-log",

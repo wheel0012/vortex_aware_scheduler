@@ -1212,12 +1212,16 @@ struct MemRsp {
   uint32_t cid;
   uint64_t uuid;
   bool userpc;
+  bool miss;
+  bool write;
 
-  MemRsp(uint64_t _tag = 0, uint32_t _cid = 0, uint64_t _uuid = 0, bool _userpc = false)
+  MemRsp(uint64_t _tag = 0, uint32_t _cid = 0, uint64_t _uuid = 0, bool _userpc = false, bool _miss = false, bool _write = false)
     : tag (_tag)
     , cid(_cid)
     , uuid(_uuid)
     , userpc(_userpc)
+    , miss(_miss)
+    , write(_write)
   {}
 
   friend std::ostream &operator<<(std::ostream &os, const MemRsp& rsp) {
