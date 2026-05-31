@@ -143,8 +143,8 @@ extern "C" void BlackScholes(
     shrCheckError(ciErrNum, CL_SUCCESS);
 
     //Run the kernel
-    size_t globalWorkSize = 1024;  // 8 WG x 128 thr = full 32-warp pool
-    size_t localWorkSize = 128;
+    size_t globalWorkSize = 2048;
+    size_t localWorkSize = 512;
     ciErrNum = clEnqueueNDRangeKernel(cqCommandQueue, ckBlackScholes, 1, NULL, &globalWorkSize, &localWorkSize, 0, NULL, NULL);
     shrCheckError(ciErrNum, CL_SUCCESS);
 }

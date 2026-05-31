@@ -947,41 +947,30 @@ private:
 
 class GTOArbiter : public IArbiterImpl {
 public:
-  GTOArbiter(uint32_t size, const std::vector<uint64_t>* spawn_times)
-    : size_(size)
-    , spawn_times_(spawn_times) {
-    assert(spawn_times_ != nullptr);
-    assert(spawn_times_->size() == size_);
+  // Greedy + lowest-id-fallback.
+  // Sticks to the current warp while it remains ready (greedy).  When it
+  // stalls (no longer in the request mask) we fall through to the lowest
+  // ready wid.
+  GTOArbiter(uint32_t size) : size_(size) {
     this->reset();
   }
 
   uint32_t peek(const BitVector<>& requests) const override {
     assert(requests.size() == size_);
-    assert(spawn_times_->size() == size_);
-
     if (current_grant_ != uint32_t(-1) && requests.test(current_grant_)) {
       return current_grant_;
     }
-
-    uint32_t grant = uint32_t(-1);
-    uint64_t oldest_time = 0;
     for (uint32_t i = 0; i < size_; ++i) {
-      if (!requests.test(i))
-        continue;
-      auto spawn_time = spawn_times_->at(i);
-      if (grant == uint32_t(-1) || spawn_time < oldest_time) {
-        grant = i;
-        oldest_time = spawn_time;
-      }
+      if (requests.test(i))
+        return i;
     }
-
-    return grant;
+    return uint32_t(-1);
   }
 
   uint32_t grant(const BitVector<>& requests) override {
-    auto grant = this->peek(requests);
-    current_grant_ = grant;
-    return grant;
+    auto g = this->peek(requests);
+    current_grant_ = g;
+    return g;
   }
 
   void reset() override {
@@ -990,23 +979,19 @@ public:
 
 private:
   uint32_t size_;
-  const std::vector<uint64_t>* spawn_times_;
   uint32_t current_grant_;
 };
 
 class GCAWSArbiter : public IArbiterImpl {
 public:
   GCAWSArbiter(uint32_t size,
-               const std::vector<uint64_t>* spawn_times,
+               const std::vector<uint64_t>* /*spawn_times*/,
                const std::vector<uint64_t>* criticality,
                const std::vector<uint64_t>* block_ids = nullptr)
     : size_(size)
-    , spawn_times_(spawn_times)
     , criticality_(criticality)
     , block_ids_(block_ids) {
-    assert(spawn_times_ != nullptr);
     assert(criticality_ != nullptr);
-    assert(spawn_times_->size() == size_);
     assert(criticality_->size() == size_);
     if (block_ids_) assert(block_ids_->size() == size_);
     this->reset();
@@ -1014,7 +999,6 @@ public:
 
   uint32_t peek(const BitVector<>& requests) const override {
     assert(requests.size() == size_);
-    assert(spawn_times_->size() == size_);
     assert(criticality_->size() == size_);
 
     // Greedy stick first.
@@ -1022,50 +1006,36 @@ public:
       return current_grant_;
     }
 
-    // Block-local criticality (paper CAWA intent: critical warp lives inside
-    // a thread block — cross-block comparison is not what makes the block
-    // commit faster).  When block_ids_ is provided AND current_block_ is
-    // known, restrict the criticality comparison to warps in that block.
-    // If no ready warp in the current block, fall through to the global
-    // pass and pick a new (oldest spawn) block.
+    // Block-local criticality: pick highest criticality inside current
+    // block, ties broken by lowest wid.  (Strict `>` together with
+    // ascending-i iteration gives the lowest-id tie-break for free.)
     if (block_ids_ && current_block_ != uint32_t(-1)) {
       uint32_t grant = uint32_t(-1);
       uint64_t best_crit = 0;
-      uint64_t oldest_time = 0;
       for (uint32_t i = 0; i < size_; ++i) {
         if (!requests.test(i)) continue;
         if (block_ids_->at(i) != current_block_) continue;
         auto crit = criticality_->at(i);
-        auto spawn_time = spawn_times_->at(i);
-        if (grant == uint32_t(-1)
-         || crit > best_crit
-         || (crit == best_crit && spawn_time < oldest_time)) {
+        if (grant == uint32_t(-1) || crit > best_crit) {
           grant = i;
           best_crit = crit;
-          oldest_time = spawn_time;
         }
       }
       if (grant != uint32_t(-1)) return grant;
-      // current block exhausted: fall through to global pick (will switch block).
+      // current block exhausted: fall through to global pick.
     }
 
+    // Global: highest criticality, ties broken by lowest wid.
     uint32_t grant = uint32_t(-1);
-    uint64_t best_criticality = 0;
-    uint64_t oldest_time = 0;
+    uint64_t best_crit = 0;
     for (uint32_t i = 0; i < size_; ++i) {
-      if (!requests.test(i))
-        continue;
-      auto criticality = criticality_->at(i);
-      auto spawn_time = spawn_times_->at(i);
-      if (grant == uint32_t(-1)
-       || criticality > best_criticality
-       || (criticality == best_criticality && spawn_time < oldest_time)) {
+      if (!requests.test(i)) continue;
+      auto crit = criticality_->at(i);
+      if (grant == uint32_t(-1) || crit > best_crit) {
         grant = i;
-        best_criticality = criticality;
-        oldest_time = spawn_time;
+        best_crit = crit;
       }
     }
-
     return grant;
   }
 
@@ -1085,7 +1055,6 @@ public:
 
 private:
   uint32_t size_;
-  const std::vector<uint64_t>* spawn_times_;
   const std::vector<uint64_t>* criticality_;
   const std::vector<uint64_t>* block_ids_;     // nullable; null = no block restriction
   uint32_t current_grant_;
@@ -1110,7 +1079,8 @@ public:
       impl_ = std::make_shared<MatrixArbiter>(size);
       break;
     case ArbiterType::GTO:
-      impl_ = std::make_shared<GTOArbiter>(size, spawn_times);
+      (void)spawn_times;  // true-GTO uses internal grant ordering
+      impl_ = std::make_shared<GTOArbiter>(size);
       break;
     case ArbiterType::GCAWS:
       impl_ = std::make_shared<GCAWSArbiter>(size, spawn_times, criticality, block_ids);

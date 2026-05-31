@@ -33,25 +33,27 @@ __kernel void pgain_kernel(
 	/* block ID and global thread ID */
 	const int thread_id = get_global_id(0);
 	const int local_id = get_local_id(0);
-	
+
+	// All work-items in the WG must reach the barrier (OpenCL spec),
+	// so do the shared-mem prep and barrier OUTSIDE the thread_id<num guard.
+	// Otherwise padded threads skip the barrier and the WG deadlocks.
+	if(local_id == 0)
+		for(int i=0; i<dim; i++){
+			coord_s[i] = coord_d[i*num + x];
+		}
+	barrier(CLK_LOCAL_MEM_FENCE);
+
 	if(thread_id<num){
-	  // coordinate mapping of point[x] to shared mem
-	  if(local_id == 0)
-	   	for(int i=0; i<dim; i++){ 
-	   		coord_s[i] = coord_d[i*num + x];
-	   	}
-	  barrier(CLK_LOCAL_MEM_FENCE);
-	
 	  // cost between this point and point[x]: euclidean distance multiplied by weight
 	  float x_cost = 0.0f;
 	  for(int i=0; i<dim; i++)
 		  x_cost += (coord_d[(i*num)+thread_id]-coord_s[i]) * (coord_d[(i*num)+thread_id]-coord_s[i]);
 	  x_cost = x_cost * p[thread_id].weight;
-	
+
 	  float current_cost = p[thread_id].cost;
 
-	  int base = thread_id*(K+1);	 
-	  // if computed cost is less then original (it saves), mark it as to reassign	  
+	  int base = thread_id*(K+1);
+	  // if computed cost is less then original (it saves), mark it as to reassign
 	  if ( x_cost < current_cost ){
 		  switch_membership_d[thread_id] = '1';
 	      int addr_1 = base + K;

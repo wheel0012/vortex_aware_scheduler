@@ -16,7 +16,7 @@ OPTS ?= 64 1 2 $(SRC_DIR)/temp_64 $(SRC_DIR)/power_64 output.out
 
 include ../common.mk
 
-HOTSPOT_INPUTS := temp_64 power_64 temp_128 power_128 temp_512 power_512 temp_1024 power_1024
+HOTSPOT_INPUTS := temp_64 power_64 temp_128 power_128 temp_256 power_256 temp_512 power_512 temp_1024 power_1024
 
 $(HOTSPOT_INPUTS): %: $(SRC_DIR)/%
 	cp $< $@

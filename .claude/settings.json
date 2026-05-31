@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./ci/blackbox.sh *)",
+      "Bash(chmod +x *)",
+      "Bash(mkdir -p *)",
+      "Bash(disown)",
+      "Bash(./worklogs/scripts/*.sh)",
+      "Bash(./worklogs/scripts/*.sh *)"
+    ]
+  }
+}

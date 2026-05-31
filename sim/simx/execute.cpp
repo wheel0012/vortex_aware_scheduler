@@ -1557,6 +1557,13 @@ instr_trace_t* Emulator::execute(const Instr &instr, uint32_t wid) {
     warp.tmask = next_tmask;
     if (!next_tmask.any()) {
       active_warps_.reset(wid);
+      // Kernel-end marker: last worker warp died — only master (warp 0) remains.
+      if (active_warps_.count() == 1 && active_warps_.test(0)) {
+        std::cerr << "[KERNEL_END cycle=" << SimPlatform::instance().cycles()
+                  << " core=" << core_->id()
+                  << " last_warp=" << wid
+                  << "]" << std::endl;
+      }
     }
   }
 
