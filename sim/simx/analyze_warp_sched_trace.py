@@ -304,6 +304,39 @@ def load_userpc_perf_log(path):
         if m:
             metrics["perf2.memory_latency"] = m.group(1)
             continue
+        m = re.match(r"PERF: coalescer average request read=([0-9.]+) write=([0-9.]+)", line)
+        if m:
+            metrics["perf2.coalescer_avg_read_request"] = m.group(1)
+            metrics["perf2.coalescer_avg_write_request"] = m.group(2)
+            continue
+        m = re.match(r"PERF: memory bank activity (.+)", line)
+        if m:
+            metrics["perf2.memory_bank_activity"] = m.group(1)
+            for bank, value in re.findall(r"(bank\d+)=([0-9.]+)%", m.group(1)):
+                metrics[f"perf2.memory_bank_activity.{bank}"] = value
+            continue
+        m = re.match(r"PERF: memory bank conflicts (.+)", line)
+        if m:
+            metrics["perf2.memory_bank_conflicts"] = m.group(1)
+            for bank, value, pressure in re.findall(r"(bank\d+)=(\d+)\(([0-9.]+)%\)", m.group(1)):
+                metrics[f"perf2.memory_bank_conflicts.{bank}"] = int(value)
+                metrics[f"perf2.memory_bank_conflict_pressure.{bank}"] = pressure
+            continue
+        m = re.match(r"PERF: core(\d+): (i|d)cache bank (activity|conflicts) (.+)", line)
+        if m:
+            core = m.group(1)
+            cache = "icache" if m.group(2) == "i" else "dcache"
+            kind = m.group(3)
+            key = f"perf2.core{core}.{cache}_bank_{kind}"
+            metrics[key] = m.group(4)
+            if kind == "activity":
+                for bank, value in re.findall(r"(bank\d+)=([0-9.]+)%", m.group(4)):
+                    metrics[f"{key}.{bank}"] = value
+            else:
+                for bank, value, pressure in re.findall(r"(bank\d+)=(\d+)\(([0-9.]+)%\)", m.group(4)):
+                    metrics[f"{key}.{bank}"] = int(value)
+                    metrics[f"perf2.core{core}.{cache}_bank_conflict_pressure.{bank}"] = pressure
+            continue
     return metrics
 
 
@@ -629,6 +662,27 @@ def write_split_index(path, splits):
             writer.writerow(split)
 
 
+def issued_cycle_segments_by_gap(rows, gap_cycles):
+    issued_cycles = sorted({
+        cycle
+        for cycle in (row_cycle(row) for row in rows if row_issued(row))
+        if cycle is not None
+    })
+    if not issued_cycles:
+        return []
+
+    segments = []
+    start_cycle = issued_cycles[0]
+    previous_cycle = issued_cycles[0]
+    for cycle in issued_cycles[1:]:
+        if cycle - previous_cycle > gap_cycles:
+            segments.append((start_cycle, previous_cycle))
+            start_cycle = cycle
+        previous_cycle = cycle
+    segments.append((start_cycle, previous_cycle))
+    return segments
+
+
 def write_summary(
     path,
     rows,
@@ -917,6 +971,10 @@ def build_perf_metrics(rows, perf_window_rows=None, external_metrics=None):
                    "average userpc dcache read latency from simx run.log"),
         metric_row("perf2.coalescer_misses", metric_na(), "requests", "unavailable"),
         metric_row("perf2.coalescer_hit_ratio", metric_na(), "%", "unavailable"),
+        metric_row("perf2.coalescer_avg_read_request", external_metrics.get("perf2.coalescer_avg_read_request"), "requests/coalesced-request",
+                   "simx-run-log" if "perf2.coalescer_avg_read_request" in external_metrics else "unavailable"),
+        metric_row("perf2.coalescer_avg_write_request", external_metrics.get("perf2.coalescer_avg_write_request"), "requests/coalesced-request",
+                   "simx-run-log" if "perf2.coalescer_avg_write_request" in external_metrics else "unavailable"),
         metric_row("perf2.l2cache_reads", metric_na(), "requests", "unavailable"),
         metric_row("perf2.l2cache_writes", metric_na(), "requests", "unavailable"),
         metric_row("perf2.l2cache_read_misses", metric_na(), "requests", "unavailable"),
@@ -938,7 +996,26 @@ def build_perf_metrics(rows, perf_window_rows=None, external_metrics=None):
         metric_row("perf2.memory_writes", external_metrics.get("perf2.memory_writes"), "requests", "simx-run-log"),
         metric_row("perf2.memory_latency", external_metrics.get("perf2.memory_latency"), "cycles", "simx-run-log"),
         metric_row("perf2.memory_bank_stalls", metric_na(), "cycles", "unavailable"),
+        metric_row("perf2.memory_bank_activity", external_metrics.get("perf2.memory_bank_activity"), "% per bank",
+                   "simx-run-log" if "perf2.memory_bank_activity" in external_metrics else "unavailable"),
+        metric_row("perf2.memory_bank_conflicts", external_metrics.get("perf2.memory_bank_conflicts"), "conflicts(pressure %) per bank",
+                   "simx-run-log" if "perf2.memory_bank_conflicts" in external_metrics else "unavailable"),
     ]
+    for key in sorted(k for k in external_metrics if k.startswith("perf2.memory_bank_activity.bank")):
+        metrics.append(metric_row(key, external_metrics.get(key), "%", "simx-run-log"))
+    for key in sorted(k for k in external_metrics if k.startswith("perf2.memory_bank_conflicts.bank")):
+        metrics.append(metric_row(key, external_metrics.get(key), "conflicts", "simx-run-log"))
+    for key in sorted(k for k in external_metrics if k.startswith("perf2.memory_bank_conflict_pressure.bank")):
+        metrics.append(metric_row(key, external_metrics.get(key), "%", "simx-run-log"))
+    for key in sorted(
+        k for k in external_metrics
+        if re.match(r"perf2\.core\d+\.(i|d)cache_bank_(activity|conflicts|conflict_pressure)(\.bank\d+)?$", k)
+    ):
+        if "conflicts" in key:
+            unit = "conflicts(pressure %) per bank" if not re.search(r"\.bank\d+$", key) else "conflicts"
+        else:
+            unit = "% per bank" if not re.search(r"\.bank\d+$", key) else "%"
+        metrics.append(metric_row(key, external_metrics.get(key), unit, "simx-run-log"))
     return metrics
 
 
@@ -1007,6 +1084,8 @@ def write_perf_summary(path, metrics):
         f.write(f"PERF: dcache read latency={val('perf2.dcache_read_latency')} cycles\n")
         f.write(f"PERF: coalescer misses={val('perf2.coalescer_misses')} "
                 f"(hit ratio={val('perf2.coalescer_hit_ratio')}%)\n")
+        f.write(f"PERF: coalescer average request read={val('perf2.coalescer_avg_read_request')} "
+                f"write={val('perf2.coalescer_avg_write_request')}\n")
         f.write(f"PERF: l2cache reads={val('perf2.l2cache_reads')}\n")
         f.write(f"PERF: l2cache writes={val('perf2.l2cache_writes')}\n")
         f.write(f"PERF: l2cache read misses={val('perf2.l2cache_read_misses')} "
@@ -1027,6 +1106,8 @@ def write_perf_summary(path, metrics):
                 f"(reads={val('perf2.memory_reads')}, writes={val('perf2.memory_writes')})\n")
         f.write(f"PERF: memory latency={val('perf2.memory_latency')} cycles\n")
         f.write(f"PERF: memory bank stalls={val('perf2.memory_bank_stalls')}\n")
+        f.write(f"PERF: memory bank activity {val('perf2.memory_bank_activity')}\n")
+        f.write(f"PERF: memory bank conflicts {val('perf2.memory_bank_conflicts')}\n")
         f.write(f"PERF: instrs={val('perf.instrs')}, cycles={val('perf.cycles')}, IPC={val('perf.IPC')}\n")
 
 
@@ -1422,6 +1503,17 @@ def main():
         help="also analyze each interval from one issued WSPAWN to the cycle before the next WSPAWN",
     )
     parser.add_argument(
+        "--split-by-kernel",
+        action="store_true",
+        help="also analyze each contiguous user window separated by large cycle gaps",
+    )
+    parser.add_argument(
+        "--kernel-gap-cycles",
+        type=parse_arg_int,
+        default=100,
+        help="cycle gap threshold used by --split-by-kernel",
+    )
+    parser.add_argument(
         "--show-wid-timeline",
         action="store_true",
         help="open an interactive WID timeline window after writing analysis outputs",
@@ -1489,6 +1581,38 @@ def main():
         write_heavy_csv=not args.lite,
     )
 
+    if args.split_by_kernel:
+        kernel_segments = issued_cycle_segments_by_gap(rows, args.kernel_gap_cycles)
+        split_index = []
+        for index, (start_cycle, end_cycle) in enumerate(kernel_segments, start=1):
+            split_rows = filter_rows(rows, start_cycle, end_cycle)
+            split_window_rows = filter_rows(perf_window_rows, start_cycle, end_cycle)
+            split_name = f"kernel_{index:02d}_{start_cycle}_{end_cycle}"
+            split_dir = args.out_dir / split_name
+            analyze_rows(
+                split_dir,
+                split_rows,
+                fieldnames,
+                perf_window_rows=split_window_rows,
+                source_row_count=source_row_count,
+                cycle_from=start_cycle,
+                cycle_to=end_cycle,
+                pc_from=pc_from,
+                pc_to=pc_to,
+                pc_base=args.pc_base,
+                external_metrics=external_metrics,
+                write_plots=not args.no_plots,
+                write_heavy_csv=not args.lite,
+            )
+            split_index.append({
+                "split": split_name,
+                "cycle_from": start_cycle,
+                "cycle_to": end_cycle,
+                "rows": len(split_rows),
+                "issued": len([row for row in split_rows if row_issued(row)]),
+            })
+        write_split_index(args.out_dir / "kernel_splits.csv", split_index)
+
     if args.split_by_wspawn:
         wspawn_cycles = event_cycles(rows, "WSPAWN")
         split_index = []
@@ -1553,6 +1677,8 @@ def main():
             print("Skipped score_timeline.png: no score data found", file=sys.stderr)
     if args.split_by_wspawn:
         print(f"Wrote {args.out_dir / 'wspawn_splits.csv'}")
+    if args.split_by_kernel:
+        print(f"Wrote {args.out_dir / 'kernel_splits.csv'}")
     if args.show_wid_timeline:
         print("Displayed interactive WID timeline")
 

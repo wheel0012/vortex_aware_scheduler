@@ -25,13 +25,25 @@ public:
 
   struct PerfStats {
     uint64_t misses;
+    uint64_t read_inputs;
+    uint64_t read_outputs;
+    uint64_t write_inputs;
+    uint64_t write_outputs;
 
     PerfStats()
       : misses(0)
+      , read_inputs(0)
+      , read_outputs(0)
+      , write_inputs(0)
+      , write_outputs(0)
     {}
 
     PerfStats& operator+=(const PerfStats& rhs) {
       this->misses += rhs.misses;
+      this->read_inputs += rhs.read_inputs;
+      this->read_outputs += rhs.read_outputs;
+      this->write_inputs += rhs.write_inputs;
+      this->write_outputs += rhs.write_outputs;
       return *this;
     }
   };

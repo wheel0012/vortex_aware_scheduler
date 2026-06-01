@@ -13,8 +13,41 @@
 
 #include "socket.h"
 #include "cluster.h"
+#include <iomanip>
 
 using namespace vortex;
+
+namespace {
+
+void dump_bank_activity(std::ostream& os, const CacheSim::PerfStats& perf) {
+  auto flags = os.flags();
+  auto precision = os.precision();
+  os << std::fixed << std::setprecision(2);
+  for (uint32_t i = 0; i < perf.bank_requests.size(); ++i) {
+    auto activity = perf.cycles ? 100.0 * double(perf.bank_requests.at(i)) / perf.cycles : 0.0;
+    os << " bank" << i << "=" << activity << "%";
+  }
+  os.flags(flags);
+  os.precision(precision);
+}
+
+void dump_bank_conflicts(std::ostream& os, const CacheSim::PerfStats& perf) {
+  auto flags = os.flags();
+  auto precision = os.precision();
+  os << std::fixed << std::setprecision(2);
+  for (uint32_t i = 0; i < perf.bank_conflicts.size(); ++i) {
+    auto requests = i < perf.bank_requests.size() ? perf.bank_requests.at(i) : 0;
+    auto conflicts = perf.bank_conflicts.at(i);
+    auto pressure = (requests + conflicts)
+                  ? 100.0 * double(conflicts) / double(requests + conflicts)
+                  : 0.0;
+    os << " bank" << i << "=" << conflicts << "(" << pressure << "%)";
+  }
+  os.flags(flags);
+  os.precision(precision);
+}
+
+}
 
 Socket::Socket(const SimContext& ctx,
                 uint32_t socket_id,
@@ -168,4 +201,34 @@ Socket::PerfStats Socket::perf_stats() const {
   perf_stats.icache = icaches_->perf_stats();
   perf_stats.dcache = dcaches_->perf_stats();
   return perf_stats;
+}
+
+MemCoalescer::PerfStats Socket::coalescer_perf_stats() const {
+  MemCoalescer::PerfStats perf_stats;
+  for (auto& core : cores_) {
+    for (uint32_t i = 0; i < NUM_LSU_BLOCKS; ++i) {
+      perf_stats += core->mem_coalescer(i)->perf_stats();
+    }
+  }
+  return perf_stats;
+}
+
+void Socket::dump_cache_bank_activity(std::ostream& os) const {
+  for (uint32_t i = 0; i < cores_.size(); ++i) {
+    uint32_t core_id = socket_id_ * cores_.size() + i;
+    auto icache_perf = icaches_->input_bank_perf_stats(i);
+    os << "PERF: core" << core_id << ": icache bank activity";
+    dump_bank_activity(os, icache_perf);
+    os << "\n";
+    os << "PERF: core" << core_id << ": icache bank conflicts";
+    dump_bank_conflicts(os, icache_perf);
+    os << "\n";
+    auto dcache_perf = dcaches_->input_bank_perf_stats(i);
+    os << "PERF: core" << core_id << ": dcache bank activity";
+    dump_bank_activity(os, dcache_perf);
+    os << "\n";
+    os << "PERF: core" << core_id << ": dcache bank conflicts";
+    dump_bank_conflicts(os, dcache_perf);
+    os << "\n";
+  }
 }

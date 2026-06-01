@@ -34,7 +34,11 @@ public:
 		, CoreRspPorts(num_inputs, std::vector<SimPort<MemRsp>>(cache_config.num_inputs, this))
 		, MemReqPorts(cache_config.mem_ports, this)
 		, MemRspPorts(cache_config.mem_ports, this)
-		, caches_(MAX(num_units, 0x1)) {
+		, caches_(MAX(num_units, 0x1))
+		, per_input_bank_requests_(num_inputs, std::vector<uint64_t>(1 << cache_config.B, 0))
+		, per_input_bank_conflicts_(num_inputs, std::vector<uint64_t>(1 << cache_config.B, 0))
+		, per_input_bank_last_cycle_(num_inputs, std::vector<uint64_t>(1 << cache_config.B, uint64_t(-1)))
+		, cycles_(0) {
 
 		CacheSim::Config cache_config2(cache_config);
 		if (0 == num_units) {
@@ -52,6 +56,18 @@ public:
 			for (uint32_t j = 0; j < num_inputs; ++j) {
 				this->CoreReqPorts.at(j).at(i).bind(&input_arbs.at(i)->ReqIn.at(j));
 				input_arbs.at(i)->RspIn.at(j).bind(&this->CoreRspPorts.at(j).at(i));
+				this->CoreReqPorts.at(j).at(i).tx_callback([this, j, cache_config](const MemReq& req, uint64_t cycle) {
+					uint32_t bank_id = 0;
+					if (cache_config.B != 0) {
+						bank_id = (req.addr >> cache_config.L) & ((1 << cache_config.B) - 1);
+					}
+					if (per_input_bank_last_cycle_.at(j).at(bank_id) == cycle) {
+						++per_input_bank_conflicts_.at(j).at(bank_id);
+					} else {
+						per_input_bank_last_cycle_.at(j).at(bank_id) = cycle;
+					}
+					++per_input_bank_requests_.at(j).at(bank_id);
+				});
 			}
 		}
 
@@ -85,7 +101,9 @@ public:
 
 	void reset() {}
 
-	void tick() {}
+	void tick() {
+		++cycles_;
+	}
 
 	CacheSim::PerfStats perf_stats() const {
 		CacheSim::PerfStats perf;
@@ -95,8 +113,20 @@ public:
 		return perf;
 	}
 
+	CacheSim::PerfStats input_bank_perf_stats(uint32_t input_id) const {
+		CacheSim::PerfStats perf;
+		perf.cycles = cycles_;
+		perf.bank_requests = per_input_bank_requests_.at(input_id);
+		perf.bank_conflicts = per_input_bank_conflicts_.at(input_id);
+		return perf;
+	}
+
 private:
   std::vector<CacheSim::Ptr> caches_;
+	std::vector<std::vector<uint64_t>> per_input_bank_requests_;
+	std::vector<std::vector<uint64_t>> per_input_bank_conflicts_;
+	std::vector<std::vector<uint64_t>> per_input_bank_last_cycle_;
+	uint64_t cycles_;
 };
 
 }

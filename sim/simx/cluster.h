@@ -14,6 +14,7 @@
 #pragma once
 
 #include <simobject.h>
+#include <ostream>
 #include "dcrs.h"
 #include "arch.h"
 #include "cache_cluster.h"
@@ -68,6 +69,8 @@ public:
   void barrier(uint32_t bar_id, uint32_t count, uint32_t core_id);
 
   PerfStats perf_stats() const;
+  MemCoalescer::PerfStats coalescer_perf_stats() const;
+  void dump_cache_bank_activity(std::ostream& os) const;
 
 private:
   uint32_t                    cluster_id_;

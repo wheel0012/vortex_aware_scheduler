@@ -13,6 +13,7 @@
 
 #include "processor.h"
 #include "processor_impl.h"
+#include <iomanip>
 #include <iostream>
 
 using namespace vortex;
@@ -108,6 +109,49 @@ ProcessorImpl::ProcessorImpl(const Arch& arch)
 }
 
 ProcessorImpl::~ProcessorImpl() {
+  if (dcrs_.base_dcrs.read(VX_DCR_BASE_MPM_CLASS) == VX_DCR_MPM_CLASS_MEM) {
+    auto cerr_flags = std::cerr.flags();
+    auto cerr_precision = std::cerr.precision();
+    MemCoalescer::PerfStats coalescer_perf;
+    for (auto& cluster : clusters_) {
+      coalescer_perf += cluster->coalescer_perf_stats();
+    }
+    auto read_avg = coalescer_perf.read_outputs
+                  ? double(coalescer_perf.read_inputs) / coalescer_perf.read_outputs
+                  : 0.0;
+    auto write_avg = coalescer_perf.write_outputs
+                   ? double(coalescer_perf.write_inputs) / coalescer_perf.write_outputs
+                   : 0.0;
+    std::cerr << std::fixed << std::setprecision(2)
+              << "PERF: coalescer average request read=" << read_avg
+              << " write=" << write_avg << "\n";
+
+    auto mem_perf = memsim_->perf_stats();
+    if (mem_perf.cycles != 0 && !mem_perf.bank_requests.empty()) {
+      std::cerr << "PERF: memory bank activity";
+      for (uint32_t i = 0; i < mem_perf.bank_requests.size(); ++i) {
+        auto activity = 100.0 * double(mem_perf.bank_requests.at(i)) / mem_perf.cycles;
+        std::cerr << " bank" << i << "=" << activity << "%";
+      }
+      std::cerr << "\n";
+      std::cerr << "PERF: memory bank conflicts";
+      for (uint32_t i = 0; i < mem_perf.bank_conflicts.size(); ++i) {
+        auto requests = i < mem_perf.bank_requests.size() ? mem_perf.bank_requests.at(i) : 0;
+        auto conflicts = mem_perf.bank_conflicts.at(i);
+        auto pressure = (requests + conflicts)
+                      ? 100.0 * double(conflicts) / double(requests + conflicts)
+                      : 0.0;
+        std::cerr << " bank" << i << "=" << conflicts << "(" << pressure << "%)";
+      }
+      std::cerr << "\n";
+    }
+    for (auto& cluster : clusters_) {
+      cluster->dump_cache_bank_activity(std::cerr);
+    }
+    std::cerr.flags(cerr_flags);
+    std::cerr.precision(cerr_precision);
+  }
+
   auto userpc_mem_requests = perf_userpc_mem_reads_ + perf_userpc_mem_writes_;
   if (userpc_mem_requests != 0) {
     auto avg_latency = perf_userpc_mem_reads_ ? double(perf_userpc_mem_latency_) / perf_userpc_mem_reads_ : 0.0;

@@ -324,11 +324,15 @@ public:
 		, mshr_(config.mshr_size)
 		, pipe_req_(TFifo<bank_req_t>::Create("", config.latency-1))
 	{
+		perf_stats_.bank_requests.resize(1 << config.B, 0);
+		perf_stats_.bank_conflicts.resize(1 << config.B, 0);
 		this->reset();
 	}
 
   void reset() {
 		perf_stats_ = CacheSim::PerfStats();
+		perf_stats_.bank_requests.resize(1 << config_.B, 0);
+		perf_stats_.bank_conflicts.resize(1 << config_.B, 0);
 		pending_mshr_size_ = 0;
     pending_read_reqs_ = 0;
 		pending_write_reqs_ = 0;
@@ -407,6 +411,7 @@ private:
 					++perf_stats_.writes;
 				else
 					++perf_stats_.reads;
+				++perf_stats_.bank_requests.at(bank_id_);
 				core_req_port.pop();
 				break;
 			}
@@ -644,6 +649,7 @@ public:
 	}
 
   void tick() {
+		++perf_stats_.cycles;
 		if (config_.bypass)
 			return;
 
@@ -696,10 +702,13 @@ public:
 		if (config_.bypass) {
 			perf_stats = perf_stats_;
 		} else {
+			perf_stats.cycles = perf_stats_.cycles;
 			for (const auto& bank : banks_) {
 				perf_stats += bank->perf_stats();
 			}
+			perf_stats.cycles = perf_stats_.cycles;
 			perf_stats.bank_stalls = bank_core_xbar_->collisions();
+			perf_stats.bank_conflicts = bank_core_xbar_->output_collisions();
 		}
 		return perf_stats;
 	}

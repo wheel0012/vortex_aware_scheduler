@@ -87,15 +87,21 @@ LSU_BLOCKS="${LSU_BLOCKS:-}"
 DCACHE_BANKS="${DCACHE_BANKS:-}"
 DCACHE_SIZE="${DCACHE_SIZE:-}"
 L2_CACHE_SIZE="${L2_CACHE_SIZE:-}"
+L2_ENABLE="${L2_ENABLE:-1}"
+BFS_MAX_THREADS_PER_BLOCK="${BFS_MAX_THREADS_PER_BLOCK:-256}"
 ANALYZE_ARGS_STR="${ANALYZE_ARGS:-}"
 USER_PC_BASE="${USER_PC_BASE:-0x80000000}"
 USER_PC_FROM="${USER_PC_FROM:-}"
 USER_PC_TO="${USER_PC_TO:-}"
+USER_PC_PRESET="${USER_PC_PRESET:-}"
 USER_PC_AUTO="${USER_PC_AUTO:-}"
 USER_PC_SYMBOLS="${USER_PC_SYMBOLS:-}"
 USER_FROM_EVENT="${USER_FROM_EVENT:-}"
 USER_TO_EVENT="${USER_TO_EVENT:-}"
 USER_SPLIT_BY_WSPAWN="${USER_SPLIT_BY_WSPAWN:-}"
+KERNEL_TIMELINES="${KERNEL_TIMELINES:-}"
+KERNEL_GAP_CYCLES="${KERNEL_GAP_CYCLES:-100}"
+KERNEL_TIMELINE_CALLS="${KERNEL_TIMELINE_CALLS:-}"
 INTERACTIVE_PLOTS="${INTERACTIVE_PLOTS:-}"
 SCHED_POLICY_MATCH_ARBITER="${SCHED_POLICY_MATCH_ARBITER:-}"
 TRACE_USERPC_ONLY="${TRACE_USERPC_ONLY:-}"
@@ -107,6 +113,9 @@ fi
 
 SGEMM_N="${SGEMM_N:-24}"
 SGEMM_TILE="${SGEMM_TILE:-8}"
+GTO_ARITH_N="${GTO_ARITH_N:-4}"
+GTO_ARITH_LOCAL="${GTO_ARITH_LOCAL:-1}"
+GTO_ARITH_ITERS="${GTO_ARITH_ITERS:-16}"
 KMEANS_POINTS="${KMEANS_POINTS:-128}"
 KMEANS_FEATURES="${KMEANS_FEATURES:-32}"
 KMEANS_CLUSTERS="${KMEANS_CLUSTERS:-8}"
@@ -148,7 +157,7 @@ declare -A BENCH_ARGS=(
   [kmeans]="-p${KMEANS_POINTS} -f${KMEANS_FEATURES} -n${KMEANS_CLUSTERS} -m${KMEANS_CLUSTERS} -l${KMEANS_LOOPS}"
   [hotspot]="${HOTSPOT_SIZE} ${HOTSPOT_ITERS} ${HOTSPOT_SIM_TIME} $ROOT_DIR/tests/opencl/hotspot/temp_${HOTSPOT_SIZE} $ROOT_DIR/tests/opencl/hotspot/power_${HOTSPOT_SIZE} ${HOTSPOT_OUTPUT}"
   [sssp]="${SSSP_GRAPH} ${SSSP_KERNEL} ${SSSP_SOURCE}"
-  [gto_arith_chain]="-n4 -l1 -i16"
+  [gto_arith_chain]="-n${GTO_ARITH_N} -l${GTO_ARITH_LOCAL} -i${GTO_ARITH_ITERS}"
   [vecadd]="-n64"
 )
 
@@ -207,7 +216,7 @@ if [ ! -x "$ROOT_DIR/sim/simx/analyze_warp_sched_trace.py" ]; then
   exit 1
 fi
 
-if [ -n "$TRACE_USERPC_ONLY" ] && [ "$TRACE_USERPC_ONLY" != "0" ] && [ "$TRACE_USERPC_ONLY" != "false" ] && [ -z "$USER_PC_FROM" ] && [ -z "$USER_PC_TO" ]; then
+if [ -n "$TRACE_USERPC_ONLY" ] && [ "$TRACE_USERPC_ONLY" != "0" ] && [ "$TRACE_USERPC_ONLY" != "false" ] && [ -z "$USER_PC_FROM" ] && [ -z "$USER_PC_TO" ] && { [ -z "$USER_PC_PRESET" ] || [ "$USER_PC_PRESET" = "0" ] || [ "$USER_PC_PRESET" = "false" ]; }; then
   echo "TRACE_USERPC_ONLY requires USER_PC_FROM/USER_PC_TO during simulation; disabling trace-time filter." >&2
   echo "USER_PC_AUTO is applied after the run and cannot shrink the trace file while it is being written." >&2
   TRACE_USERPC_ONLY_EFFECTIVE=""
@@ -227,6 +236,19 @@ tool_path() {
 
 user_pc_auto_enabled() {
   [ -n "$USER_PC_AUTO" ] && [ "$USER_PC_AUTO" != "0" ] && [ "$USER_PC_AUTO" != "false" ]
+}
+
+user_pc_preset_enabled() {
+  [ -n "$USER_PC_PRESET" ] && [ "$USER_PC_PRESET" != "0" ] && [ "$USER_PC_PRESET" != "false" ]
+}
+
+kernel_timelines_enabled() {
+  [ -n "$KERNEL_TIMELINES" ] && [ "$KERNEL_TIMELINES" != "0" ] && [ "$KERNEL_TIMELINES" != "false" ]
+}
+
+kernel_timeline_calls_enabled() {
+  [ -n "$KERNEL_TIMELINE_CALLS" ] && [ "$KERNEL_TIMELINE_CALLS" != "0" ] && [ "$KERNEL_TIMELINE_CALLS" != "false" ] && return 0
+  [ "$KERNEL_TIMELINES" = "thorough" ] || [ "$KERNEL_TIMELINES" = "thoroughful" ]
 }
 
 interactive_plots_enabled() {
@@ -257,6 +279,18 @@ default_user_pc_symbols() {
   esac
 }
 
+default_user_pc_window() {
+  local bench="$1"
+  case "$bench" in
+    bfs) echo "0x94 0x274" ;;
+    kmeans) echo "0x94 0x230" ;;
+    sgemm3) echo "0x450 0x8ff" ;;
+    hotspot) echo "0x460 0x960" ;;
+    sssp) echo "0x460 0x960" ;;
+    *) return 1 ;;
+  esac
+}
+
 infer_user_pc_args() {
   local bench="$1"
   local elf_dir="$2"
@@ -282,6 +316,34 @@ infer_user_pc_args() {
     --nm "$llvm_nm" \
     --pc-base "$USER_PC_BASE" \
     --summary "$analysis_dir/userpc_auto_window.txt"
+}
+
+infer_kernel_symbol_windows() {
+  local bench="$1"
+  local elf_dir="$2"
+  local analysis_dir="$3"
+  local tooldir
+  local llvm_vortex
+  local llvm_nm
+  local symbols
+
+  tooldir="$(config_value TOOLDIR)"
+  llvm_vortex="$(tool_path "$(config_value LLVM_VORTEX)" "$tooldir")"
+  llvm_nm="${LLVM_NM:-$llvm_vortex/bin/llvm-nm}"
+  symbols="$(default_user_pc_symbols "$bench")"
+
+  if [ ! -x "$llvm_nm" ]; then
+    echo "KERNEL_TIMELINES requested, but llvm-nm is missing: $llvm_nm" >&2
+    return 1
+  fi
+
+  python3 "$ROOT_DIR/worklogs/scripts/infer_device_symbol_windows.py" \
+    --elf-dir "$elf_dir" \
+    --symbols "$symbols" \
+    --nm "$llvm_nm" \
+    --pc-base "$USER_PC_BASE" \
+    --out "$analysis_dir/kernel_symbol_windows.csv" \
+    --nm-out "$analysis_dir/device_symbols.nm"
 }
 
 annotate_device_dumps() {
@@ -322,7 +384,7 @@ for bench in "${BENCHES_ARR[@]}"; do
   if [ "$bench" = "bfs" ]; then
     read -r bfs_nodes < "$BFS_GRAPH"
     BFS_WORK_GROUP_SIZE="$bfs_nodes"
-    [ "$BFS_WORK_GROUP_SIZE" -gt 256 ] && BFS_WORK_GROUP_SIZE=256
+    [ "$BFS_WORK_GROUP_SIZE" -gt "$BFS_MAX_THREADS_PER_BLOCK" ] && BFS_WORK_GROUP_SIZE="$BFS_MAX_THREADS_PER_BLOCK"
     if [ "$BFS_WORK_GROUP_SIZE" -gt $((WARPS * THREADS)) ]; then
       echo "bfs graph $(basename "$BFS_GRAPH") uses work_group_size=$BFS_WORK_GROUP_SIZE." >&2
       echo "Current WARPS*THREADS=$((WARPS * THREADS)) cannot host that local size." >&2
@@ -399,7 +461,12 @@ if [ "${#PERFS_ARR[@]}" -eq 1 ] && [ -z "${PERFS_ARR[0]}" ]; then
 else
   PERF_LABEL="${PERFS_ARR[*]}"
 fi
-SHAPE_FLAGS="-DNUM_CORES=$CORES -DNUM_WARPS=$WARPS -DNUM_THREADS=$THREADS -DL2_ENABLE"
+SHAPE_FLAGS="-DNUM_CORES=$CORES -DNUM_WARPS=$WARPS -DNUM_THREADS=$THREADS"
+BLACKBOX_L2_ARG=()
+if [ "$L2_ENABLE" != "0" ] && [ "$L2_ENABLE" != "false" ]; then
+  SHAPE_FLAGS="$SHAPE_FLAGS -DL2_ENABLE"
+  BLACKBOX_L2_ARG=(--l2cache)
+fi
 PERF_FLAGS=""
 [ "$PERF_LABEL" != "disabled" ] && PERF_FLAGS="-DPERF_ENABLE"
 MEM_FLAGS=""
@@ -437,6 +504,7 @@ HW_FLAGS=""
 [ -n "$DCACHE_BANKS" ] && HW_FLAGS="$HW_FLAGS -DDCACHE_NUM_BANKS=$DCACHE_BANKS"
 [ -n "$DCACHE_SIZE" ] && HW_FLAGS="$HW_FLAGS -DDCACHE_SIZE=$DCACHE_SIZE"
 [ -n "$L2_CACHE_SIZE" ] && HW_FLAGS="$HW_FLAGS -DL2_CACHE_SIZE=$L2_CACHE_SIZE"
+[ -n "$BFS_MAX_THREADS_PER_BLOCK" ] && HW_FLAGS="$HW_FLAGS -DMAX_THREADS_PER_BLOCK=$BFS_MAX_THREADS_PER_BLOCK"
 KMEANS_FLAGS=""
 if [ -n "$KMEANS_WG" ]; then
   KMEANS_FLAGS="-DRD_WG_SIZE_0=$KMEANS_WG -DRD_WG_SIZE_1=$KMEANS_WG"
@@ -453,7 +521,7 @@ SUMMARY="$LOG_ROOT/SUMMARY.md"
   echo
   echo "- root: \`$ROOT_DIR\`"
   echo "- build: \`$BUILD_DIR\`"
-  echo "- cores=$CORES, warps=$WARPS, threads=$THREADS, l2cache=on"
+  echo "- cores=$CORES, warps=$WARPS, threads=$THREADS, l2cache=$([ "${#BLACKBOX_L2_ARG[@]}" -gt 0 ] && echo on || echo off)"
   echo "- perf classes: \`$PERF_LABEL\`"
   echo "- mem latency: \`${MEM_LATENCY:-ramulator}\`"
   echo "- cache latency: \`${CACHE_LATENCY:-2}\`"
@@ -475,7 +543,11 @@ SUMMARY="$LOG_ROOT/SUMMARY.md"
   echo "- analyzer args: \`${ANALYZE_ARGS_STR:-none}\`"
   echo "- effective analyzer args: \`${ANALYZE_ARGS_ARR[*]:-none}\`"
   echo "- interactive plots: \`${INTERACTIVE_PLOTS:-disabled}\`"
+  echo "- kernel timelines: \`${KERNEL_TIMELINES:-disabled}\`"
+  echo "- kernel timeline calls: \`${KERNEL_TIMELINE_CALLS:-disabled}\`"
+  echo "- kernel gap cycles: \`$KERNEL_GAP_CYCLES\`"
   echo "- user PC monitor: \`$USER_MONITOR_LABEL\`"
+  echo "- user PC preset: \`${USER_PC_PRESET:-disabled}\`"
   echo "- user PC auto: \`${USER_PC_AUTO:-disabled}\`"
   echo "- user PC symbols: \`${USER_PC_SYMBOLS:-bench defaults}\`"
   echo "- kmeans points/features/clusters/loops/wg: \`${KMEANS_POINTS}/${KMEANS_FEATURES}/${KMEANS_CLUSTERS}/${KMEANS_LOOPS}/${KMEANS_WG}\`"
@@ -483,16 +555,27 @@ SUMMARY="$LOG_ROOT/SUMMARY.md"
   echo "- sssp graph/kernel/source: \`${SSSP_GRAPH}/${SSSP_KERNEL}/${SSSP_SOURCE}\`"
   echo "- bfs graph: \`$BFS_GRAPH\`"
   echo "- bfs work-group size: \`$BFS_WORK_GROUP_SIZE\`"
+  echo "- gto_arith_chain n/local/iters: \`${GTO_ARITH_N}/${GTO_ARITH_LOCAL}/${GTO_ARITH_ITERS}\`"
   echo "- VORTEX_ARBITER: Priority=0, GTO=1, RR=2, Matrix=3, gCAWS=4"
   echo
   echo "## Workloads"
   echo
-  echo "| Workload | Args |"
-  echo "|---|---|"
+  echo "| Workload | Args | UserPC window |"
+  echo "|---|---|---|"
   for bench in "${BENCHES_ARR[@]}"; do
     args="${BENCH_ARGS[$bench]-}"
     [ -z "$args" ] && args="(Makefile default OPTS)"
-    echo "| $bench | \`$args\` |"
+    bench_pc_from="$USER_PC_FROM"
+    bench_pc_to="$USER_PC_TO"
+    if user_pc_preset_enabled && [ -z "$bench_pc_from" ] && [ -z "$bench_pc_to" ]; then
+      read -r bench_pc_from bench_pc_to < <(default_user_pc_window "$bench" || true)
+    fi
+    if [ -n "$bench_pc_from" ] || [ -n "$bench_pc_to" ]; then
+      bench_pc_label="${USER_PC_BASE}+${bench_pc_from:-begin}..${USER_PC_BASE}+${bench_pc_to:-end}"
+    else
+      bench_pc_label="disabled"
+    fi
+    echo "| $bench | \`$args\` | \`$bench_pc_label\` |"
   done
   echo
   echo "## Results"
@@ -537,6 +620,15 @@ for label in "${POLICIES_ARR[@]}"; do
 
   for bench in "${BENCHES_ARR[@]}"; do
     args="${BENCH_ARGS[$bench]-}"
+    bench_user_pc_from="$USER_PC_FROM"
+    bench_user_pc_to="$USER_PC_TO"
+    bench_user_pc_preset_label=""
+    if user_pc_preset_enabled && [ -z "$bench_user_pc_from" ] && [ -z "$bench_user_pc_to" ]; then
+      read -r bench_user_pc_from bench_user_pc_to < <(default_user_pc_window "$bench" || true)
+      if [ -n "$bench_user_pc_from" ] || [ -n "$bench_user_pc_to" ]; then
+        bench_user_pc_preset_label="$bench_user_pc_from..$bench_user_pc_to"
+      fi
+    fi
     for perf in "${PERFS_ARR[@]}"; do
       perf_label="${perf:-disabled}"
       if [ "$PERF_MULTI" -eq 1 ]; then
@@ -547,7 +639,7 @@ for label in "${POLICIES_ARR[@]}"; do
       analysis_dir="$bench_dir/analysis"
       mkdir -p "$analysis_dir"
       device_elf_dir=""
-      if user_pc_auto_enabled; then
+      if user_pc_auto_enabled || kernel_timelines_enabled; then
         device_elf_dir="$bench_dir/device_elf"
         mkdir -p "$device_elf_dir"
       fi
@@ -562,21 +654,30 @@ for label in "${POLICIES_ARR[@]}"; do
       perf_arg=()
       [ -n "$perf" ] && perf_arg=(--perf="$perf")
 
-      echo ">>> [$label/perf=$perf_label/$bench] args=\"$args\" trace=\"$trace_csv\"" | tee "$run_log"
+      if [ -n "$bench_user_pc_preset_label" ]; then
+        echo ">>> [$label/perf=$perf_label/$bench] args=\"$args\" userpc=\"$bench_user_pc_preset_label\" trace=\"$trace_csv\"" | tee "$run_log"
+      else
+        echo ">>> [$label/perf=$perf_label/$bench] args=\"$args\" trace=\"$trace_csv\"" | tee "$run_log"
+      fi
       (
         cd "$BUILD_DIR" || exit 1
-        env -u DEBUG \
-        CONFIGS="$conf" \
-        VX_TRACE_WARP_SCHED=1 \
-        VX_TRACE_WARP_SCHED_FILE="$trace_csv" \
-        VX_USER_PC_BASE="$USER_PC_BASE" \
-        VX_USER_PC_FROM="$USER_PC_FROM" \
-        VX_USER_PC_TO="$USER_PC_TO" \
-        VX_TRACE_WARP_SCHED_USERPC_ONLY="$TRACE_USERPC_ONLY_EFFECTIVE" \
-        VXBIN_SAVE_ELF_DIR="$device_elf_dir" \
-        VX_WARP_SCHED_POLICY="$label" \
+        unset DEBUG
+        export CONFIGS="$conf"
+        export VX_TRACE_WARP_SCHED=1
+        export VX_TRACE_WARP_SCHED_FILE="$trace_csv"
+        export VX_USER_PC_BASE="$USER_PC_BASE"
+        export VX_USER_PC_FROM="$bench_user_pc_from"
+        export VX_USER_PC_TO="$bench_user_pc_to"
+        if [ -n "$TRACE_USERPC_ONLY_EFFECTIVE" ]; then
+          export VX_TRACE_WARP_SCHED_USERPC_ONLY="$TRACE_USERPC_ONLY_EFFECTIVE"
+        else
+          unset VX_TRACE_WARP_SCHED_USERPC_ONLY
+        fi
+        export VXBIN_SAVE_ELF_DIR="$device_elf_dir"
+        export VX_WARP_SCHED_POLICY="$label"
         timeout "$TIMEOUT_SEC" ./ci/blackbox.sh \
           --driver=simx --app="$bench" \
+          --cores="$CORES" --warps="$WARPS" --threads="$THREADS" "${BLACKBOX_L2_ARG[@]}" \
           "${perf_arg[@]}" \
           "${extra[@]}" >> "$run_log" 2>&1
       )
@@ -596,7 +697,13 @@ for label in "${POLICIES_ARR[@]}"; do
       fi
 
       analyze_args=("${ANALYZE_ARGS_ARR[@]}")
-      if user_pc_auto_enabled && [ -z "$USER_PC_FROM" ] && [ -z "$USER_PC_TO" ] && [[ "$ANALYZE_ARGS_STR" != *"--pc-from"* ]] && [[ "$ANALYZE_ARGS_STR" != *"--pc-to"* ]]; then
+      if [ -n "$bench_user_pc_preset_label" ]; then
+        analyze_args+=(--pc-base "$USER_PC_BASE")
+        [ -n "$bench_user_pc_from" ] && analyze_args+=(--pc-from "$bench_user_pc_from")
+        [ -n "$bench_user_pc_to" ] && analyze_args+=(--pc-to "$bench_user_pc_to")
+        echo "  [$label/perf=$perf_label/$bench] USER_PC_PRESET window=\"$bench_user_pc_preset_label\""
+      fi
+      if user_pc_auto_enabled && [ -z "$bench_user_pc_preset_label" ] && [ -z "$USER_PC_FROM" ] && [ -z "$USER_PC_TO" ] && [[ "$ANALYZE_ARGS_STR" != *"--pc-from"* ]] && [[ "$ANALYZE_ARGS_STR" != *"--pc-to"* ]]; then
         auto_pc_log="$analysis_dir/userpc_auto_infer.log"
         mapfile -t auto_pc_args < <(infer_user_pc_args "$bench" "$device_elf_dir" "$analysis_dir" 2> "$auto_pc_log")
         infer_rc=$?
@@ -611,6 +718,34 @@ for label in "${POLICIES_ARR[@]}"; do
       if ! python3 "$ROOT_DIR/sim/simx/analyze_warp_sched_trace.py" "$trace_csv" -o "$analysis_dir" --run-log "$run_log" "${analyze_args[@]}" > "$analyze_log" 2>&1; then
         echo "  [$label/perf=$perf_label/$bench] analyzer FAIL; see $analyze_log"
         status="analyze_fail($status)"
+      elif kernel_timelines_enabled; then
+        kernel_window_log="$analysis_dir/kernel_symbol_windows.log"
+        if infer_kernel_symbol_windows "$bench" "$device_elf_dir" "$analysis_dir" > "$kernel_window_log" 2>&1; then
+          while IFS=, read -r symbol pc_base pc_from pc_to addr size elf_path; do
+            [ "$symbol" != "symbol" ] || continue
+            [ -n "$symbol" ] || continue
+            safe_symbol="$(printf '%s' "$symbol" | tr -c 'A-Za-z0-9_.' '_')"
+            symbol_dir="$analysis_dir/kernel_${safe_symbol}"
+            symbol_log="$symbol_dir/analyze.log"
+            symbol_analyze_extra=()
+            if kernel_timeline_calls_enabled; then
+              symbol_analyze_extra=(--split-by-kernel --kernel-gap-cycles "$KERNEL_GAP_CYCLES")
+            fi
+            mkdir -p "$symbol_dir"
+            if ! python3 "$ROOT_DIR/sim/simx/analyze_warp_sched_trace.py" "$trace_csv" \
+              -o "$symbol_dir" \
+              --run-log "$run_log" \
+              --pc-base "$pc_base" \
+              --pc-from "$pc_from" \
+              --pc-to "$pc_to" \
+              "${symbol_analyze_extra[@]}" > "$symbol_log" 2>&1; then
+              echo "  [$label/perf=$perf_label/$bench] kernel timeline FAIL symbol=$symbol; see $symbol_log"
+            fi
+          done < "$analysis_dir/kernel_symbol_windows.csv"
+          echo "  [$label/perf=$perf_label/$bench] KERNEL_TIMELINES symbols=\"$(default_user_pc_symbols "$bench")\""
+        else
+          echo "  [$label/perf=$perf_label/$bench] KERNEL_TIMELINES failed; see $kernel_window_log"
+        fi
       elif interactive_plots_enabled; then
         interactive_key="$label/$bench"
         if [ -z "${INTERACTIVE_SEEN[$interactive_key]+x}" ]; then

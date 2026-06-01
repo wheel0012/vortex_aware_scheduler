@@ -49,6 +49,9 @@ public:
 		uint64_t bank_stalls;
 		uint64_t mshr_stalls;
 		uint64_t mem_latency;
+		uint64_t cycles;
+		std::vector<uint64_t> bank_requests;
+		std::vector<uint64_t> bank_conflicts;
 
 		PerfStats()
 			: reads(0)
@@ -63,6 +66,7 @@ public:
 			, bank_stalls(0)
 			, mshr_stalls(0)
 			, mem_latency(0)
+			, cycles(0)
 		{}
 
 		PerfStats& operator+=(const PerfStats& rhs) {
@@ -78,6 +82,17 @@ public:
 			this->bank_stalls += rhs.bank_stalls;
 			this->mshr_stalls += rhs.mshr_stalls;
 			this->mem_latency += rhs.mem_latency;
+			this->cycles += rhs.cycles;
+			if (this->bank_requests.size() < rhs.bank_requests.size())
+				this->bank_requests.resize(rhs.bank_requests.size(), 0);
+			for (uint32_t i = 0; i < rhs.bank_requests.size(); ++i) {
+				this->bank_requests.at(i) += rhs.bank_requests.at(i);
+			}
+			if (this->bank_conflicts.size() < rhs.bank_conflicts.size())
+				this->bank_conflicts.resize(rhs.bank_conflicts.size(), 0);
+			for (uint32_t i = 0; i < rhs.bank_conflicts.size(); ++i) {
+				this->bank_conflicts.at(i) += rhs.bank_conflicts.at(i);
+			}
 			return *this;
 		}
 	};

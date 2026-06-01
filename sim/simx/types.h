@@ -14,6 +14,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <algorithm>
 #include <bitset>
 #include <queue>
 #include <vector>
@@ -1503,7 +1504,9 @@ public:
     , lg2_inputs_(log2ceil(num_inputs))
     , lg2_outputs_(log2ceil(num_outputs))
     , output_sel_(output_sel)
-    , collisions_(0) {
+    , collisions_(0)
+    , output_requests_(num_outputs, 0)
+    , output_collisions_(num_outputs, 0) {
     assert(delay != 0);
     assert(num_inputs <= 64);
     assert(num_outputs <= 64);
@@ -1517,7 +1520,9 @@ public:
   }
 
   void reset() {
-    //--
+    collisions_ = 0;
+    std::fill(output_requests_.begin(), output_requests_.end(), 0);
+    std::fill(output_collisions_.begin(), output_collisions_.end(), 0);
   }
 
   void tick() {
@@ -1556,12 +1561,22 @@ public:
         Outputs.at(o).push(RspType(req, input_idx), delay_);
         req_in.pop();
         collisions_ += has_collision;
+        ++output_requests_.at(o);
+        output_collisions_.at(o) += has_collision;
       }
     }
   }
 
   uint64_t collisions() const {
     return collisions_;
+  }
+
+  const std::vector<uint64_t>& output_requests() const {
+    return output_requests_;
+  }
+
+  const std::vector<uint64_t>& output_collisions() const {
+    return output_collisions_;
   }
 
 protected:
@@ -1571,6 +1586,8 @@ protected:
   uint32_t lg2_outputs_;
   std::function<uint32_t(const Type& req)> output_sel_;
   uint64_t collisions_;
+  std::vector<uint64_t> output_requests_;
+  std::vector<uint64_t> output_collisions_;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1729,6 +1746,9 @@ public:
   }
 
   void reset() {
+    if (crossbar_) {
+      crossbar_->reset();
+    }
     arbiter_.reset();
   }
 
@@ -1776,6 +1796,22 @@ public:
       return crossbar_->collisions();
     }
     return 0;
+  }
+
+  const std::vector<uint64_t>& output_requests() const {
+    static const std::vector<uint64_t> empty;
+    if (crossbar_) {
+      return crossbar_->output_requests();
+    }
+    return empty;
+  }
+
+  const std::vector<uint64_t>& output_collisions() const {
+    static const std::vector<uint64_t> empty;
+    if (crossbar_) {
+      return crossbar_->output_collisions();
+    }
+    return empty;
   }
 
 protected:

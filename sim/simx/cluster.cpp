@@ -150,3 +150,17 @@ Cluster::PerfStats Cluster::perf_stats() const {
   perf_stats.l2cache = l2cache_->perf_stats();
   return perf_stats;
 }
+
+MemCoalescer::PerfStats Cluster::coalescer_perf_stats() const {
+  MemCoalescer::PerfStats perf_stats;
+  for (auto& socket : sockets_) {
+    perf_stats += socket->coalescer_perf_stats();
+  }
+  return perf_stats;
+}
+
+void Cluster::dump_cache_bank_activity(std::ostream& os) const {
+  for (auto& socket : sockets_) {
+    socket->dump_cache_bank_activity(os);
+  }
+}

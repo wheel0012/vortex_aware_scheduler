@@ -15,6 +15,7 @@
 
 #include <cstdlib>
 #include <fstream>
+#include <iostream>
 #include <stdexcept>
 #include <string>
 
@@ -137,8 +138,18 @@ private:
 
     const char* userpc_only = std::getenv("VX_TRACE_WARP_SCHED_USERPC_ONLY");
     userpc_only_ = userpc_only
+                && userpc_only[0] != '\0'
                 && std::string(userpc_only) != "0"
                 && std::string(userpc_only) != "false";
+
+    const char* debug = std::getenv("VX_TRACE_WARP_SCHED_DEBUG");
+    if (debug && std::string(debug) != "0" && std::string(debug) != "false") {
+      std::cerr << "[WarpSchedTrace] enabled=" << (enabled_ ? 1 : 0)
+                << " path=" << path_
+                << " policy=" << policy_
+                << " userpc_only=" << (userpc_only_ ? 1 : 0)
+                << "\n";
+    }
   }
 
   static void open() {

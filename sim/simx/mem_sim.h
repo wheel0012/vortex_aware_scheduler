@@ -14,6 +14,7 @@
 #pragma once
 
 #include <simobject.h>
+#include <vector>
 #include "types.h"
 
 namespace vortex {
@@ -29,13 +30,28 @@ public:
 
 	struct PerfStats {
 		uint64_t bank_stalls;
+		uint64_t cycles;
+		std::vector<uint64_t> bank_requests;
+		std::vector<uint64_t> bank_conflicts;
 
 		PerfStats()
 			: bank_stalls(0)
+			, cycles(0)
 		{}
 
 		PerfStats& operator+=(const PerfStats& rhs) {
 			this->bank_stalls += rhs.bank_stalls;
+			this->cycles += rhs.cycles;
+			if (this->bank_requests.size() < rhs.bank_requests.size())
+				this->bank_requests.resize(rhs.bank_requests.size(), 0);
+			for (uint32_t i = 0; i < rhs.bank_requests.size(); ++i) {
+				this->bank_requests.at(i) += rhs.bank_requests.at(i);
+			}
+			if (this->bank_conflicts.size() < rhs.bank_conflicts.size())
+				this->bank_conflicts.resize(rhs.bank_conflicts.size(), 0);
+			for (uint32_t i = 0; i < rhs.bank_conflicts.size(); ++i) {
+				this->bank_conflicts.at(i) += rhs.bank_conflicts.at(i);
+			}
 			return *this;
 		}
 	};

@@ -149,6 +149,13 @@ void MemCoalescer::tick() {
 
   // track partial responses
   perf_stats_.misses += (cur_mask.count() != in_req.mask.count());
+  if (in_req.write) {
+    perf_stats_.write_inputs += cur_mask.count();
+    perf_stats_.write_outputs += out_mask.count();
+  } else {
+    perf_stats_.read_inputs += cur_mask.count();
+    perf_stats_.read_outputs += out_mask.count();
+  }
 
   // update sent mask
   sent_mask_ |= cur_mask;

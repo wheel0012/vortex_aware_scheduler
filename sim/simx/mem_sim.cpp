@@ -42,6 +42,8 @@ public:
 		, config_(config)
 		, dram_sim_(config.num_banks, config.block_size, config.clock_ratio)
 	{
+		perf_stats_.bank_requests.resize(config.num_banks, 0);
+		perf_stats_.bank_conflicts.resize(config.num_banks, 0);
 		char sname[100];
 		snprintf(sname, 100, "%s-xbar", simobject->name().c_str());
 		mem_xbar_ = MemCrossBar::Create(sname, ArbiterType::RoundRobin, config.num_ports, config.num_banks,
@@ -61,15 +63,20 @@ public:
 
 	const PerfStats& perf_stats() const {
 		perf_stats_.bank_stalls = mem_xbar_->collisions();
+		perf_stats_.bank_conflicts = mem_xbar_->output_collisions();
 		return perf_stats_;
 	}
 
 	void reset() {
 		dram_sim_.reset();
+		perf_stats_ = PerfStats();
+		perf_stats_.bank_requests.resize(config_.num_banks, 0);
+		perf_stats_.bank_conflicts.resize(config_.num_banks, 0);
 	}
 
 	void tick() {
 		dram_sim_.tick();
+		++perf_stats_.cycles;
 
 		for (uint32_t i = 0; i < config_.num_banks; ++i) {
 			if (mem_xbar_->ReqOut.at(i).empty())
@@ -96,6 +103,7 @@ public:
 			);
 
 			DT(3, simobject_->name() << "-mem-req" << i << ": " << mem_req);
+			++perf_stats_.bank_requests.at(i);
 			mem_xbar_->ReqOut.at(i).pop();
 		}
 	}

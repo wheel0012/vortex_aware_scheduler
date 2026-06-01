@@ -18,6 +18,9 @@ miscs/apptainer/vortex.sif
 /worklogs/experiment_record/
 /worklogs/generated_inputs/
 /worklogs/trace_runs/
+/worklogs/*.csv
+/worklogs/*.log
+/worklogs/*_report.md
 /ramulator.stats.log
 /trace/
 
@@ -32,3 +35,6 @@ miscs/apptainer/vortex.sif
 /tests/opencl/sssp/*.o
 /tests/opencl/sssp/*.log
 /tests/opencl/sssp/.depend
+
+# Large local benchmark inputs/archives
+/tests/opencl/bfs/graph4k.zip
