@@ -327,6 +327,8 @@ private:
   struct UserPCDCacheReadOwner {
     uint32_t wid;
     uint32_t tid;
+    uint64_t wg_id;
+    bool has_wg_id;
   };
 
   uint32_t core_id_;
@@ -375,6 +377,11 @@ private:
   std::unordered_map<uint64_t, std::deque<uint32_t>> userpc_dcache_pending_read_locality_;
   std::unordered_map<uint64_t, UserPCDCacheReadOwner> userpc_dcache_last_read_owner_;
   std::unordered_map<uint64_t, std::unordered_set<uint64_t>> userpc_dcache_tags_by_set_;
+  bool userpc_dcache_locality_wg_enabled_;
+  uint64_t userpc_dcache_locality_feature_base_;
+  uint64_t userpc_dcache_locality_npoints_;
+  uint64_t userpc_dcache_locality_nfeatures_;
+  uint64_t userpc_dcache_locality_wg_size_;
 
   std::vector<TraceArbiter::Ptr> commit_arbs_;
 

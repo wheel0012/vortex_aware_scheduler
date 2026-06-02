@@ -71,6 +71,23 @@ bool env_enabled(const char* name) {
   return value && value[0] != '\0' && std::string(value) != "0" && std::string(value) != "false";
 }
 
+bool userpc_feature_wg_id(uint64_t addr,
+                          uint64_t feature_base,
+                          uint64_t npoints,
+                          uint64_t nfeatures,
+                          uint64_t wg_size,
+                          uint64_t* wg_id) {
+  if (npoints == 0 || nfeatures == 0 || wg_size == 0)
+    return false;
+  uint64_t feature_bytes = npoints * nfeatures * sizeof(float);
+  if (addr < feature_base || addr >= feature_base + feature_bytes)
+    return false;
+  uint64_t element = (addr - feature_base) / sizeof(float);
+  uint64_t point_id = element % npoints;
+  *wg_id = point_id / wg_size;
+  return true;
+}
+
 std::string to_hex_string(uint64_t value) {
   std::ostringstream os;
   os << "0x" << std::hex << value;
@@ -323,13 +340,26 @@ Core::Core(const SimContext& ctx,
         auto line = req.addr / line_size;
         auto set = line % num_sets;
         auto tag = line / num_sets;
+        uint64_t wg_id = 0;
+        bool has_wg_id =
+            userpc_dcache_locality_wg_enabled_
+            && userpc_feature_wg_id(req.addr,
+                                    userpc_dcache_locality_feature_base_,
+                                    userpc_dcache_locality_npoints_,
+                                    userpc_dcache_locality_nfeatures_,
+                                    userpc_dcache_locality_wg_size_,
+                                    &wg_id);
         ++userpc_perf_.dcache_read_access_index;
         auto seen_line = !userpc_dcache_read_lines_.insert(line).second;
         userpc_dcache_pending_read_cold_[req.uuid].push_back(!seen_line);
         auto owner_it = userpc_dcache_last_read_owner_.find(line);
         uint32_t locality = UserPCReadLocalityCold;
         if (owner_it != userpc_dcache_last_read_owner_.end()) {
-          if (owner_it->second.wid == req.wid) {
+          bool same_wg =
+              !has_wg_id
+              || !owner_it->second.has_wg_id
+              || owner_it->second.wg_id == wg_id;
+          if (same_wg && owner_it->second.wid == req.wid) {
             locality = (owner_it->second.tid == req.tid)
                          ? UserPCReadLocalityThreadLocal
                          : UserPCReadLocalityIntraWarp;
@@ -373,7 +403,7 @@ Core::Core(const SimContext& ctx,
           ++userpc_perf_.dcache_read_cold_accesses;
         }
         userpc_dcache_last_read_access_[line] = userpc_perf_.dcache_read_access_index;
-        userpc_dcache_last_read_owner_[line] = UserPCDCacheReadOwner{req.wid, req.tid};
+        userpc_dcache_last_read_owner_[line] = UserPCDCacheReadOwner{req.wid, req.tid, wg_id, has_wg_id};
         userpc_dcache_tags_by_set_[set].insert(tag);
         if (userpc_perf_.dcache_set_valid
             && userpc_perf_.dcache_last_read_set == set
@@ -641,6 +671,14 @@ void Core::userpc_init() {
   userpc_dcache_pending_read_locality_.clear();
   userpc_dcache_last_read_owner_.clear();
   userpc_dcache_tags_by_set_.clear();
+  userpc_dcache_locality_feature_base_ = parse_u64_env("VX_USERPC_LOCALITY_FEATURE_BASE", 0);
+  userpc_dcache_locality_npoints_ = parse_u64_env("VX_USERPC_LOCALITY_NPOINTS", 0);
+  userpc_dcache_locality_nfeatures_ = parse_u64_env("VX_USERPC_LOCALITY_NFEATURES", 0);
+  userpc_dcache_locality_wg_size_ = parse_u64_env("VX_USERPC_LOCALITY_WG_SIZE", 0);
+  userpc_dcache_locality_wg_enabled_ =
+      userpc_dcache_locality_wg_size_ != 0
+      && userpc_dcache_locality_npoints_ != 0
+      && userpc_dcache_locality_nfeatures_ != 0;
   userpc_perf_.pc_base = parse_u64_env("VX_USER_PC_BASE", userpc_perf_.pc_base);
   auto from_env = std::getenv("VX_USER_PC_FROM");
   auto to_env = std::getenv("VX_USER_PC_TO");
@@ -983,10 +1021,22 @@ void Core::dump_userpc_perf() const {
       userpc_perf_.dcache_read_locality_inter_warp_accesses > userpc_perf_.dcache_read_locality_inter_warp_misses
         ? userpc_perf_.dcache_read_locality_inter_warp_accesses - userpc_perf_.dcache_read_locality_inter_warp_misses
         : 0;
+  auto dcache_read_locality_accesses =
+      userpc_perf_.dcache_read_locality_cold_accesses
+    + userpc_perf_.dcache_read_locality_thread_local_accesses
+    + userpc_perf_.dcache_read_locality_intra_warp_accesses
+    + userpc_perf_.dcache_read_locality_inter_warp_accesses;
   auto ipc = span ? double(userpc_perf_.instrs) / span : 0.0;
 
   std::cerr << "PERF: userpc pc_from=0x" << std::hex << userpc_perf_.pc_from
             << " pc_to=0x" << userpc_perf_.pc_to << std::dec << "\n";
+  std::cerr << "PERF: userpc dcache locality workgroup"
+            << " enabled=" << (userpc_dcache_locality_wg_enabled_ ? 1 : 0)
+            << " feature_base=0x" << std::hex << userpc_dcache_locality_feature_base_ << std::dec
+            << " npoints=" << userpc_dcache_locality_npoints_
+            << " nfeatures=" << userpc_dcache_locality_nfeatures_
+            << " wg_size=" << userpc_dcache_locality_wg_size_
+            << "\n";
   std::cerr << "PERF: userpc scheduler idle=" << idle_cycles
             << " (" << pct_u64(idle_cycles, span) << "%)\n";
   std::cerr << "PERF: userpc scheduler stalls=0 (0%)\n";
@@ -1058,6 +1108,17 @@ void Core::dump_userpc_perf() const {
             << " thread_local=" << userpc_perf_.dcache_read_locality_thread_local_misses
             << " intra_warp=" << userpc_perf_.dcache_read_locality_intra_warp_misses
             << " inter_warp=" << userpc_perf_.dcache_read_locality_inter_warp_misses
+            << "\n";
+  std::cerr << "PERF: userpc dcache read locality hits"
+            << " thread_local=" << dcache_read_thread_local_hits
+            << " intra_warp=" << dcache_read_intra_warp_hits
+            << " inter_warp=" << dcache_read_inter_warp_hits
+            << "\n";
+  std::cerr << "PERF: userpc dcache read locality access ratios"
+            << " cold=" << pct_u64(userpc_perf_.dcache_read_locality_cold_accesses, dcache_read_locality_accesses) << "%"
+            << " thread_local=" << pct_u64(userpc_perf_.dcache_read_locality_thread_local_accesses, dcache_read_locality_accesses) << "%"
+            << " intra_warp=" << pct_u64(userpc_perf_.dcache_read_locality_intra_warp_accesses, dcache_read_locality_accesses) << "%"
+            << " inter_warp=" << pct_u64(userpc_perf_.dcache_read_locality_inter_warp_accesses, dcache_read_locality_accesses) << "%"
             << "\n";
   std::cerr << "PERF: userpc dcache read locality hit ratios"
             << " thread_local=" << pct_u64(dcache_read_thread_local_hits, userpc_perf_.dcache_read_locality_thread_local_accesses) << "%"
