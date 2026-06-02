@@ -77,6 +77,13 @@ std::string to_hex_string(uint64_t value) {
   return os.str();
 }
 
+enum UserPCReadLocality : uint32_t {
+  UserPCReadLocalityCold = 0,
+  UserPCReadLocalityThreadLocal = 1,
+  UserPCReadLocalityIntraWarp = 2,
+  UserPCReadLocalityInterWarp = 3
+};
+
 std::string trace_inst_type(const instr_trace_t* trace) {
   std::ostringstream os;
   std::visit([&](auto&& op_type) {
@@ -319,6 +326,32 @@ Core::Core(const SimContext& ctx,
         ++userpc_perf_.dcache_read_access_index;
         auto seen_line = !userpc_dcache_read_lines_.insert(line).second;
         userpc_dcache_pending_read_cold_[req.uuid].push_back(!seen_line);
+        auto owner_it = userpc_dcache_last_read_owner_.find(line);
+        uint32_t locality = UserPCReadLocalityCold;
+        if (owner_it != userpc_dcache_last_read_owner_.end()) {
+          if (owner_it->second.wid == req.wid) {
+            locality = (owner_it->second.tid == req.tid)
+                         ? UserPCReadLocalityThreadLocal
+                         : UserPCReadLocalityIntraWarp;
+          } else {
+            locality = UserPCReadLocalityInterWarp;
+          }
+        }
+        userpc_dcache_pending_read_locality_[req.uuid].push_back(locality);
+        switch (locality) {
+        case UserPCReadLocalityThreadLocal:
+          ++userpc_perf_.dcache_read_locality_thread_local_accesses;
+          break;
+        case UserPCReadLocalityIntraWarp:
+          ++userpc_perf_.dcache_read_locality_intra_warp_accesses;
+          break;
+        case UserPCReadLocalityInterWarp:
+          ++userpc_perf_.dcache_read_locality_inter_warp_accesses;
+          break;
+        default:
+          ++userpc_perf_.dcache_read_locality_cold_accesses;
+          break;
+        }
         if (seen_line) {
           ++userpc_perf_.dcache_read_reuse_accesses;
           auto last_it = userpc_dcache_last_read_access_.find(line);
@@ -340,6 +373,7 @@ Core::Core(const SimContext& ctx,
           ++userpc_perf_.dcache_read_cold_accesses;
         }
         userpc_dcache_last_read_access_[line] = userpc_perf_.dcache_read_access_index;
+        userpc_dcache_last_read_owner_[line] = UserPCDCacheReadOwner{req.wid, req.tid};
         userpc_dcache_tags_by_set_[set].insert(tag);
         if (userpc_perf_.dcache_set_valid
             && userpc_perf_.dcache_last_read_set == set
@@ -402,6 +436,8 @@ Core::Core(const SimContext& ctx,
         --userpc_perf_.dcache_pending_reads;
       bool read_cold = false;
       bool have_read_cold = false;
+      uint32_t locality = UserPCReadLocalityCold;
+      bool have_locality = false;
       if (!rsp.write) {
         auto it = userpc_dcache_pending_read_cold_.find(rsp.uuid);
         if (it != userpc_dcache_pending_read_cold_.end() && !it->second.empty()) {
@@ -410,6 +446,14 @@ Core::Core(const SimContext& ctx,
           it->second.pop_front();
           if (it->second.empty())
             userpc_dcache_pending_read_cold_.erase(it);
+        }
+        auto loc_it = userpc_dcache_pending_read_locality_.find(rsp.uuid);
+        if (loc_it != userpc_dcache_pending_read_locality_.end() && !loc_it->second.empty()) {
+          locality = loc_it->second.front();
+          have_locality = true;
+          loc_it->second.pop_front();
+          if (loc_it->second.empty())
+            userpc_dcache_pending_read_locality_.erase(loc_it);
         }
       }
       if (rsp.miss) {
@@ -422,6 +466,22 @@ Core::Core(const SimContext& ctx,
               ++userpc_perf_.dcache_read_cold_misses;
             } else {
               ++userpc_perf_.dcache_read_non_cold_misses;
+            }
+          }
+          if (have_locality) {
+            switch (locality) {
+            case UserPCReadLocalityThreadLocal:
+              ++userpc_perf_.dcache_read_locality_thread_local_misses;
+              break;
+            case UserPCReadLocalityIntraWarp:
+              ++userpc_perf_.dcache_read_locality_intra_warp_misses;
+              break;
+            case UserPCReadLocalityInterWarp:
+              ++userpc_perf_.dcache_read_locality_inter_warp_misses;
+              break;
+            default:
+              ++userpc_perf_.dcache_read_locality_cold_misses;
+              break;
             }
           }
         }
@@ -538,6 +598,14 @@ Core::UserPCPerfStats::UserPCPerfStats()
   , dcache_read_reuse_gap_le64(0)
   , dcache_read_reuse_gap_le256(0)
   , dcache_read_reuse_gap_gt256(0)
+  , dcache_read_locality_cold_accesses(0)
+  , dcache_read_locality_thread_local_accesses(0)
+  , dcache_read_locality_intra_warp_accesses(0)
+  , dcache_read_locality_inter_warp_accesses(0)
+  , dcache_read_locality_cold_misses(0)
+  , dcache_read_locality_thread_local_misses(0)
+  , dcache_read_locality_intra_warp_misses(0)
+  , dcache_read_locality_inter_warp_misses(0)
   , dcache_line_stride_valid(false)
   , dcache_last_read_line(0)
   , dcache_read_line_stride_sum(0)
@@ -570,6 +638,8 @@ void Core::userpc_init() {
   userpc_dcache_read_lines_.clear();
   userpc_dcache_last_read_access_.clear();
   userpc_dcache_pending_read_cold_.clear();
+  userpc_dcache_pending_read_locality_.clear();
+  userpc_dcache_last_read_owner_.clear();
   userpc_dcache_tags_by_set_.clear();
   userpc_perf_.pc_base = parse_u64_env("VX_USER_PC_BASE", userpc_perf_.pc_base);
   auto from_env = std::getenv("VX_USER_PC_FROM");
@@ -901,6 +971,18 @@ void Core::dump_userpc_perf() const {
       userpc_perf_.dcache_read_reuse_accesses > userpc_perf_.dcache_read_non_cold_misses
         ? userpc_perf_.dcache_read_reuse_accesses - userpc_perf_.dcache_read_non_cold_misses
         : 0;
+  auto dcache_read_thread_local_hits =
+      userpc_perf_.dcache_read_locality_thread_local_accesses > userpc_perf_.dcache_read_locality_thread_local_misses
+        ? userpc_perf_.dcache_read_locality_thread_local_accesses - userpc_perf_.dcache_read_locality_thread_local_misses
+        : 0;
+  auto dcache_read_intra_warp_hits =
+      userpc_perf_.dcache_read_locality_intra_warp_accesses > userpc_perf_.dcache_read_locality_intra_warp_misses
+        ? userpc_perf_.dcache_read_locality_intra_warp_accesses - userpc_perf_.dcache_read_locality_intra_warp_misses
+        : 0;
+  auto dcache_read_inter_warp_hits =
+      userpc_perf_.dcache_read_locality_inter_warp_accesses > userpc_perf_.dcache_read_locality_inter_warp_misses
+        ? userpc_perf_.dcache_read_locality_inter_warp_accesses - userpc_perf_.dcache_read_locality_inter_warp_misses
+        : 0;
   auto ipc = span ? double(userpc_perf_.instrs) / span : 0.0;
 
   std::cerr << "PERF: userpc pc_from=0x" << std::hex << userpc_perf_.pc_from
@@ -965,6 +1047,23 @@ void Core::dump_userpc_perf() const {
             << " non_cold_misses=" << userpc_perf_.dcache_read_non_cold_misses
             << " reuse_hit_ratio=" << pct_u64(dcache_read_reuse_hits, userpc_perf_.dcache_read_reuse_accesses)
             << "%\n";
+  std::cerr << "PERF: userpc dcache read locality accesses"
+            << " cold=" << userpc_perf_.dcache_read_locality_cold_accesses
+            << " thread_local=" << userpc_perf_.dcache_read_locality_thread_local_accesses
+            << " intra_warp=" << userpc_perf_.dcache_read_locality_intra_warp_accesses
+            << " inter_warp=" << userpc_perf_.dcache_read_locality_inter_warp_accesses
+            << "\n";
+  std::cerr << "PERF: userpc dcache read locality misses"
+            << " cold=" << userpc_perf_.dcache_read_locality_cold_misses
+            << " thread_local=" << userpc_perf_.dcache_read_locality_thread_local_misses
+            << " intra_warp=" << userpc_perf_.dcache_read_locality_intra_warp_misses
+            << " inter_warp=" << userpc_perf_.dcache_read_locality_inter_warp_misses
+            << "\n";
+  std::cerr << "PERF: userpc dcache read locality hit ratios"
+            << " thread_local=" << pct_u64(dcache_read_thread_local_hits, userpc_perf_.dcache_read_locality_thread_local_accesses) << "%"
+            << " intra_warp=" << pct_u64(dcache_read_intra_warp_hits, userpc_perf_.dcache_read_locality_intra_warp_accesses) << "%"
+            << " inter_warp=" << pct_u64(dcache_read_inter_warp_hits, userpc_perf_.dcache_read_locality_inter_warp_accesses) << "%"
+            << "\n";
   std::cerr << "PERF: userpc dcache read reuse gap buckets(le4=" << userpc_perf_.dcache_read_reuse_gap_le4
             << ", le16=" << userpc_perf_.dcache_read_reuse_gap_le16
             << ", le64=" << userpc_perf_.dcache_read_reuse_gap_le64
@@ -1053,7 +1152,11 @@ void Core::dump_userpc_perf() const {
             << " unique_lines=" << userpc_dcache_read_lines_.size()
             << " cold_misses=" << userpc_perf_.dcache_read_cold_misses
             << " non_cold_misses=" << userpc_perf_.dcache_read_non_cold_misses
-            << " reuse_accesses=" << userpc_perf_.dcache_read_reuse_accesses << "\n";
+            << " reuse_accesses=" << userpc_perf_.dcache_read_reuse_accesses
+            << " locality_thread_local_hit_ratio=" << pct_u64(dcache_read_thread_local_hits, userpc_perf_.dcache_read_locality_thread_local_accesses)
+            << " locality_intra_warp_hit_ratio=" << pct_u64(dcache_read_intra_warp_hits, userpc_perf_.dcache_read_locality_intra_warp_accesses)
+            << " locality_inter_warp_hit_ratio=" << pct_u64(dcache_read_inter_warp_hits, userpc_perf_.dcache_read_locality_inter_warp_accesses)
+            << "\n";
 
   std::cerr << "[USERPC_PERF WARP core=" << core_id_ << "] wid issues first_cycle last_cycle\n";
   for (uint32_t wid = 0; wid < userpc_perf_.per_warp_issues.size(); ++wid) {

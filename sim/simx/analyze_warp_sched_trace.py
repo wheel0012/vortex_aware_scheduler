@@ -266,6 +266,42 @@ def load_userpc_perf_log(path):
             metrics["perf2.dcache_read_reuse_access_ratio"] = f"{(100.0 * int(m.group(3)) / reads):.2f}" if reads else "0.00"
             continue
         m = re.match(
+            r"PERF: userpc dcache read locality accesses cold=(\d+) "
+            r"thread_local=(\d+) intra_warp=(\d+) inter_warp=(\d+)",
+            line,
+        )
+        if m:
+            metrics["perf2.dcache_read_locality_cold_accesses"] = int(m.group(1))
+            metrics["perf2.dcache_read_locality_thread_local_accesses"] = int(m.group(2))
+            metrics["perf2.dcache_read_locality_intra_warp_accesses"] = int(m.group(3))
+            metrics["perf2.dcache_read_locality_inter_warp_accesses"] = int(m.group(4))
+            total = sum(int(m.group(i)) for i in range(1, 5))
+            metrics["perf2.dcache_read_locality_thread_local_access_ratio"] = f"{(100.0 * int(m.group(2)) / total):.2f}" if total else "0.00"
+            metrics["perf2.dcache_read_locality_intra_warp_access_ratio"] = f"{(100.0 * int(m.group(3)) / total):.2f}" if total else "0.00"
+            metrics["perf2.dcache_read_locality_inter_warp_access_ratio"] = f"{(100.0 * int(m.group(4)) / total):.2f}" if total else "0.00"
+            continue
+        m = re.match(
+            r"PERF: userpc dcache read locality misses cold=(\d+) "
+            r"thread_local=(\d+) intra_warp=(\d+) inter_warp=(\d+)",
+            line,
+        )
+        if m:
+            metrics["perf2.dcache_read_locality_cold_misses"] = int(m.group(1))
+            metrics["perf2.dcache_read_locality_thread_local_misses"] = int(m.group(2))
+            metrics["perf2.dcache_read_locality_intra_warp_misses"] = int(m.group(3))
+            metrics["perf2.dcache_read_locality_inter_warp_misses"] = int(m.group(4))
+            continue
+        m = re.match(
+            r"PERF: userpc dcache read locality hit ratios "
+            r"thread_local=(\d+)% intra_warp=(\d+)% inter_warp=(\d+)%",
+            line,
+        )
+        if m:
+            metrics["perf2.dcache_read_locality_thread_local_hit_ratio"] = m.group(1)
+            metrics["perf2.dcache_read_locality_intra_warp_hit_ratio"] = m.group(2)
+            metrics["perf2.dcache_read_locality_inter_warp_hit_ratio"] = m.group(3)
+            continue
+        m = re.match(
             r"PERF: userpc dcache read reuse gap buckets\(le4=(\d+), le16=(\d+), "
             r"le64=(\d+), le256=(\d+), gt256=(\d+)\)",
             line,
@@ -944,6 +980,27 @@ def build_perf_metrics(rows, perf_window_rows=None, external_metrics=None):
                    "read misses after the cache line was already seen once in the userpc window"),
         metric_row("perf2.dcache_read_reuse_hit_ratio", external_metrics.get("perf2.dcache_read_reuse_hit_ratio"), "%",
                    "simx-run-log" if "perf2.dcache_read_reuse_hit_ratio" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_locality_thread_local_hit_ratio", external_metrics.get("perf2.dcache_read_locality_thread_local_hit_ratio"), "%",
+                   "simx-run-log" if "perf2.dcache_read_locality_thread_local_hit_ratio" in external_metrics else "unavailable",
+                   "hits on lines last read by the same warp and same thread"),
+        metric_row("perf2.dcache_read_locality_intra_warp_hit_ratio", external_metrics.get("perf2.dcache_read_locality_intra_warp_hit_ratio"), "%",
+                   "simx-run-log" if "perf2.dcache_read_locality_intra_warp_hit_ratio" in external_metrics else "unavailable",
+                   "hits on lines last read by a different thread in the same warp"),
+        metric_row("perf2.dcache_read_locality_inter_warp_hit_ratio", external_metrics.get("perf2.dcache_read_locality_inter_warp_hit_ratio"), "%",
+                   "simx-run-log" if "perf2.dcache_read_locality_inter_warp_hit_ratio" in external_metrics else "unavailable",
+                   "hits on lines last read by another warp"),
+        metric_row("perf2.dcache_read_locality_thread_local_access_ratio", external_metrics.get("perf2.dcache_read_locality_thread_local_access_ratio"), "%",
+                   "simx-run-log" if "perf2.dcache_read_locality_thread_local_access_ratio" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_locality_intra_warp_access_ratio", external_metrics.get("perf2.dcache_read_locality_intra_warp_access_ratio"), "%",
+                   "simx-run-log" if "perf2.dcache_read_locality_intra_warp_access_ratio" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_locality_inter_warp_access_ratio", external_metrics.get("perf2.dcache_read_locality_inter_warp_access_ratio"), "%",
+                   "simx-run-log" if "perf2.dcache_read_locality_inter_warp_access_ratio" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_locality_thread_local_accesses", external_metrics.get("perf2.dcache_read_locality_thread_local_accesses"), "requests",
+                   "simx-run-log" if "perf2.dcache_read_locality_thread_local_accesses" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_locality_intra_warp_accesses", external_metrics.get("perf2.dcache_read_locality_intra_warp_accesses"), "requests",
+                   "simx-run-log" if "perf2.dcache_read_locality_intra_warp_accesses" in external_metrics else "unavailable"),
+        metric_row("perf2.dcache_read_locality_inter_warp_accesses", external_metrics.get("perf2.dcache_read_locality_inter_warp_accesses"), "requests",
+                   "simx-run-log" if "perf2.dcache_read_locality_inter_warp_accesses" in external_metrics else "unavailable"),
         metric_row("perf2.dcache_read_reuse_gap_le4", external_metrics.get("perf2.dcache_read_reuse_gap_le4"), "requests",
                    "simx-run-log" if "perf2.dcache_read_reuse_gap_le4" in external_metrics else "unavailable"),
         metric_row("perf2.dcache_read_reuse_gap_le16", external_metrics.get("perf2.dcache_read_reuse_gap_le16"), "requests",

@@ -285,6 +285,14 @@ private:
     uint64_t dcache_read_reuse_gap_le64;
     uint64_t dcache_read_reuse_gap_le256;
     uint64_t dcache_read_reuse_gap_gt256;
+    uint64_t dcache_read_locality_cold_accesses;
+    uint64_t dcache_read_locality_thread_local_accesses;
+    uint64_t dcache_read_locality_intra_warp_accesses;
+    uint64_t dcache_read_locality_inter_warp_accesses;
+    uint64_t dcache_read_locality_cold_misses;
+    uint64_t dcache_read_locality_thread_local_misses;
+    uint64_t dcache_read_locality_intra_warp_misses;
+    uint64_t dcache_read_locality_inter_warp_misses;
     bool dcache_line_stride_valid;
     uint64_t dcache_last_read_line;
     uint64_t dcache_read_line_stride_sum;
@@ -314,6 +322,11 @@ private:
     std::vector<uint64_t> per_warp_last;
 
     UserPCPerfStats();
+  };
+
+  struct UserPCDCacheReadOwner {
+    uint32_t wid;
+    uint32_t tid;
   };
 
   uint32_t core_id_;
@@ -359,6 +372,8 @@ private:
   std::unordered_set<uint64_t> userpc_dcache_read_lines_;
   std::unordered_map<uint64_t, uint64_t> userpc_dcache_last_read_access_;
   std::unordered_map<uint64_t, std::deque<bool>> userpc_dcache_pending_read_cold_;
+  std::unordered_map<uint64_t, std::deque<uint32_t>> userpc_dcache_pending_read_locality_;
+  std::unordered_map<uint64_t, UserPCDCacheReadOwner> userpc_dcache_last_read_owner_;
   std::unordered_map<uint64_t, std::unordered_set<uint64_t>> userpc_dcache_tags_by_set_;
 
   std::vector<TraceArbiter::Ptr> commit_arbs_;

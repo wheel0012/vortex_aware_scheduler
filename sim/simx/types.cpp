@@ -65,9 +65,11 @@ void LocalMemSwitch::tick() {
         if (type == AddrType::Shared) {
           out_lmem_req.mask.set(i);
           out_lmem_req.addrs.at(i) = in_req.addrs.at(i);
+          out_lmem_req.tids.at(i) = in_req.tids.at(i);
         } else {
           out_dc_req.mask.set(i);
           out_dc_req.addrs.at(i) = in_req.addrs.at(i);
+          out_dc_req.tids.at(i) = in_req.tids.at(i);
         }
       }
     }
@@ -153,6 +155,8 @@ void LsuMemAdapter::tick() {
         out_req.cid   = in_req.cid;
         out_req.uuid  = in_req.uuid;
         out_req.userpc = in_req.userpc;
+        out_req.wid = in_req.wid;
+        out_req.tid = in_req.tids.at(i);
         // send memory request
         ReqOut.at(i).push(out_req, delay_);
         DT(4, this->name() << "-req" << i << ": " << out_req);

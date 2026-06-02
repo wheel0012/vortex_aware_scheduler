@@ -737,6 +737,7 @@ inline std::ostream &operator<<(std::ostream &os, const AddrType& type) {
 struct mem_addr_size_t {
   uint64_t addr;
   uint32_t size;
+  uint32_t tid = 0;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1114,20 +1115,24 @@ private:
 struct LsuReq {
   BitVector<> mask;
   std::vector<uint64_t> addrs;
+  std::vector<uint32_t> tids;
   bool     write;
   uint32_t tag;
   uint32_t cid;
   uint64_t uuid;
   bool userpc;
+  uint32_t wid;
 
   LsuReq(uint32_t size)
     : mask(size)
     , addrs(size, 0)
+    , tids(size, 0)
     , write(false)
     , tag(0)
     , cid(0)
     , uuid(0)
     , userpc(false)
+    , wid(0)
   {}
 
   friend std::ostream &operator<<(std::ostream &os, const LsuReq& req) {
@@ -1180,6 +1185,8 @@ struct MemReq {
   uint32_t cid;
   uint64_t uuid;
   bool userpc;
+  uint32_t wid;
+  uint32_t tid;
 
   MemReq(uint64_t _addr = 0,
           bool _write = false,
@@ -1187,7 +1194,9 @@ struct MemReq {
           uint64_t _tag = 0,
           uint32_t _cid = 0,
           uint64_t _uuid = 0,
-          bool _userpc = false
+          bool _userpc = false,
+          uint32_t _wid = 0,
+          uint32_t _tid = 0
   ) : addr(_addr)
     , write(_write)
     , type(_type)
@@ -1195,6 +1204,8 @@ struct MemReq {
     , cid(_cid)
     , uuid(_uuid)
     , userpc(_userpc)
+    , wid(_wid)
+    , tid(_tid)
   {}
 
   friend std::ostream &operator<<(std::ostream &os, const MemReq& req) {

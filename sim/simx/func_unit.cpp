@@ -330,6 +330,7 @@ void LsuUnit::tick() {
 						if (!trace->tmask.test(t))
 							continue;
 						for (auto addr : trace_data->mem_addrs.at(t)) {
+							addr.tid = t;
 							pending_addrs_.push_back(addr);
 						}
 					}
@@ -340,7 +341,9 @@ void LsuUnit::tick() {
 					for (uint32_t t = 0; t < trace_data->mem_addrs.size(); ++t) {
 						if (!trace->tmask.test(t))
 							continue;
-						pending_addrs_.push_back(trace_data->mem_addrs.at(t));
+						auto addr = trace_data->mem_addrs.at(t);
+						addr.tid = t;
+						pending_addrs_.push_back(addr);
 					}
 				}
 				remain_addrs_ = pending_addrs_.size();
@@ -355,6 +358,7 @@ void LsuUnit::tick() {
 			for (uint32_t i = 0; i < NUM_LSU_LANES; ++i) {
 				lsu_req.mask.set(i);
 				lsu_req.addrs.at(i) = pending_addrs_.at(t0 + i).addr;
+				lsu_req.tids.at(i) = pending_addrs_.at(t0 + i).tid;
 				--remain_addrs_;
 				if (remain_addrs_ == 0)
 					break;
@@ -371,6 +375,7 @@ void LsuUnit::tick() {
 			lsu_req.cid  = trace->cid;
 			lsu_req.uuid = trace->uuid;
 			lsu_req.userpc = trace->userpc_marked;
+			lsu_req.wid = trace->wid;
 
 			// send memory request
 			core_->lmem_switch_.at(block_idx)->ReqIn.push(lsu_req);
