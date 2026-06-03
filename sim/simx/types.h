@@ -747,6 +747,7 @@ enum class ArbiterType {
   RoundRobin,
   Matrix,
   GTO,
+  GTOStrict,
   GCAWS
 };
 
@@ -755,12 +756,14 @@ enum class ArbiterType {
 #define VORTEX_ARBITER_RR       2
 #define VORTEX_ARBITER_MATRIX   3
 #define VORTEX_ARBITER_GCAWS    4
+#define VORTEX_ARBITER_GTOS     5
 
 #define ARBITER_PRIORITY VORTEX_ARBITER_PRIORITY
 #define ARBITER_GTO      VORTEX_ARBITER_GTO
 #define ARBITER_RR       VORTEX_ARBITER_RR
 #define ARBITER_MATRIX   VORTEX_ARBITER_MATRIX
 #define ARBITER_GCAWS    VORTEX_ARBITER_GCAWS
+#define ARBITER_GTOS     VORTEX_ARBITER_GTOS
 
 #ifndef VORTEX_ARBITER
   #ifdef ARBITER
@@ -786,9 +789,10 @@ inline ArbiterType configured_issue_arbiter() {
     ArbiterType::GTO,
     ArbiterType::RoundRobin,
     ArbiterType::Matrix,
-    ArbiterType::GCAWS
+    ArbiterType::GCAWS,
+    ArbiterType::GTOStrict
   };
-  static_assert(VORTEX_ARBITER >= 0 && VORTEX_ARBITER < 5, "Invalid VORTEX_ARBITER value");
+  static_assert(VORTEX_ARBITER >= 0 && VORTEX_ARBITER < 6, "Invalid VORTEX_ARBITER value");
   return arbiter_table[VORTEX_ARBITER];
 }
 
@@ -798,9 +802,10 @@ inline ArbiterType configured_sched_policy() {
     ArbiterType::GTO,
     ArbiterType::RoundRobin,
     ArbiterType::Matrix,
-    ArbiterType::GCAWS
+    ArbiterType::GCAWS,
+    ArbiterType::GTOStrict
   };
-  static_assert(VORTEX_SCHED_POLICY >= 0 && VORTEX_SCHED_POLICY < 5, "Invalid VORTEX_SCHED_POLICY value");
+  static_assert(VORTEX_SCHED_POLICY >= 0 && VORTEX_SCHED_POLICY < 6, "Invalid VORTEX_SCHED_POLICY value");
   return policy_table[VORTEX_SCHED_POLICY];
 }
 
@@ -810,6 +815,7 @@ inline std::ostream &operator<<(std::ostream &os, const ArbiterType& type) {
   case ArbiterType::RoundRobin: os << "RoundRobin"; break;
   case ArbiterType::Matrix:     os << "Matrix"; break;
   case ArbiterType::GTO:        os << "GTO"; break;
+  case ArbiterType::GTOStrict:  os << "GTOStrict"; break;
   case ArbiterType::GCAWS:      os << "GCAWS"; break;
   default: assert(false);
   }
@@ -984,6 +990,11 @@ private:
   uint32_t current_grant_;
 };
 
+class GTOStrictArbiter : public GTOArbiter {
+public:
+  GTOStrictArbiter(uint32_t size) : GTOArbiter(size) {}
+};
+
 class GCAWSArbiter : public IArbiterImpl {
 public:
   GCAWSArbiter(uint32_t size,
@@ -1083,6 +1094,10 @@ public:
     case ArbiterType::GTO:
       (void)spawn_times;  // true-GTO uses internal grant ordering
       impl_ = std::make_shared<GTOArbiter>(size);
+      break;
+    case ArbiterType::GTOStrict:
+      (void)spawn_times;
+      impl_ = std::make_shared<GTOStrictArbiter>(size);
       break;
     case ArbiterType::GCAWS:
       impl_ = std::make_shared<GCAWSArbiter>(size, spawn_times, criticality, block_ids);

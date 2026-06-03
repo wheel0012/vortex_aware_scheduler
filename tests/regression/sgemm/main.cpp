@@ -69,11 +69,11 @@ public:
   }
 };
 
-static void matmul_cpu(TYPE* out, const TYPE* A, const TYPE* B, uint32_t width, uint32_t height) {
+static void matmul_cpu(TYPE* out, const TYPE* A, const TYPE* B, uint32_t width, uint32_t height, uint32_t inner_size) {
   for (uint32_t row = 0; row < height; ++row) {
     for (uint32_t col = 0; col < width; ++col) {
       TYPE sum(0);
-      for (uint32_t e = 0; e < width; ++e) {
+      for (uint32_t e = 0; e < inner_size; ++e) {
           sum += A[row * width + e] * B[e * width + col];
       }
       out[row * width + col] = sum;
@@ -83,6 +83,7 @@ static void matmul_cpu(TYPE* out, const TYPE* A, const TYPE* B, uint32_t width, 
 
 const char* kernel_file = "kernel.vxbin";
 uint32_t size = 32;
+uint32_t inner_size = 0;
 
 vx_device_h device = nullptr;
 vx_buffer_h A_buffer = nullptr;
@@ -94,18 +95,21 @@ kernel_arg_t kernel_arg = {};
 
 static void show_usage() {
    std::cout << "Vortex Test." << std::endl;
-   std::cout << "Usage: [-k: kernel] [-n size] [-h: help]" << std::endl;
+   std::cout << "Usage: [-k: kernel] [-n size] [-i inner-loop-limit] [-h: help]" << std::endl;
 }
 
 static void parse_args(int argc, char **argv) {
   int c;
-  while ((c = getopt(argc, argv, "n:k:h")) != -1) {
+  while ((c = getopt(argc, argv, "n:k:i:h")) != -1) {
     switch (c) {
     case 'n':
       size = atoi(optarg);
       break;
     case 'k':
       kernel_file = optarg;
+      break;
+    case 'i':
+      inner_size = atoi(optarg);
       break;
     case 'h':
       show_usage();
@@ -115,6 +119,13 @@ static void parse_args(int argc, char **argv) {
       show_usage();
       exit(-1);
     }
+  }
+  if (inner_size == 0) {
+    inner_size = size;
+  }
+  if (inner_size > size) {
+    std::cout << "Error: inner-loop-limit must be <= matrix size" << std::endl;
+    exit(-1);
   }
 }
 
@@ -143,11 +154,12 @@ int main(int argc, char *argv[]) {
   uint32_t buf_size = size_sq * sizeof(TYPE);
 
   std::cout << "data type: " << Comparator<TYPE>::type_str() << std::endl;
-  std::cout << "matrix size: " << size << "x" << size << std::endl;
+  std::cout << "matrix size: " << size << "x" << size << ", inner size: " << inner_size << std::endl;
 
   kernel_arg.grid_dim[0] = size;
   kernel_arg.grid_dim[1] = size;
   kernel_arg.size = size;
+  kernel_arg.inner_size = inner_size;
 
   // allocate device memory
   std::cout << "allocate device memory" << std::endl;
@@ -214,7 +226,7 @@ int main(int argc, char *argv[]) {
   int errors = 0;
   {
     std::vector<TYPE> h_ref(size_sq);
-    matmul_cpu(h_ref.data(), h_A.data(), h_B.data(), size, size);
+    matmul_cpu(h_ref.data(), h_A.data(), h_B.data(), size, size, inner_size);
 
     for (uint32_t i = 0; i < h_ref.size(); ++i) {
       if (!Comparator<TYPE>::compare(h_C[i], h_ref[i], i, errors)) {

@@ -18,6 +18,7 @@
 #   EXTRA_CONFIGS="-D..." TIMEOUT_SEC=1200 ./worklogs/scripts/trace_small_aware_schedulers.sh
 #   MEM_LATENCY=4 CACHE_LATENCY=1 BENCHES=sgemm3 SGEMM_N=4 SGEMM_TILE=2 WARPS=4 THREADS=2 ./worklogs/scripts/trace_small_aware_schedulers.sh
 #   ALL_LATENCY=1 BENCHES=sgemm3 SGEMM_N=4 SGEMM_TILE=2 WARPS=16 THREADS=1 ./worklogs/scripts/trace_small_aware_schedulers.sh
+#   ALL_LATENCY=1 BENCHES=sgemm SGEMM_N=4 SGEMM_K=1 WARPS=8 THREADS=1 ./worklogs/scripts/trace_small_aware_schedulers.sh
 #   LSU_BLOCKS=2 DCACHE_BANKS=4 BENCHES=sgemm3 ./worklogs/scripts/trace_small_aware_schedulers.sh
 #   DCACHE_SIZE=8192 L2_CACHE_SIZE=65536 BENCHES=kmeans ./worklogs/scripts/trace_small_aware_schedulers.sh
 #   ANALYZE_ARGS="--split-by-wspawn" ./worklogs/scripts/trace_small_aware_schedulers.sh
@@ -112,6 +113,7 @@ if [ -n "$ALL_LATENCY" ]; then
 fi
 
 SGEMM_N="${SGEMM_N:-24}"
+SGEMM_K="${SGEMM_K:-}"
 SGEMM_TILE="${SGEMM_TILE:-8}"
 GTO_ARITH_N="${GTO_ARITH_N:-4}"
 GTO_ARITH_LOCAL="${GTO_ARITH_LOCAL:-1}"
@@ -146,6 +148,8 @@ declare -A ARBITER=(
   [RR]=2
   [Matrix]=3
   [gCAWS]=4
+  [GTOS]=5
+  [GTOStrict]=5
 )
 
 declare -A INTERACTIVE_SEEN=()
@@ -153,6 +157,7 @@ INTERACTIVE_CMDS=()
 
 declare -A BENCH_ARGS=(
   [bfs]="$BFS_GRAPH"
+  [sgemm]="-n${SGEMM_N}${SGEMM_K:+ -i${SGEMM_K}}"
   [sgemm3]="-n${SGEMM_N} -t${SGEMM_TILE}"
   [kmeans]="-p${KMEANS_POINTS} -f${KMEANS_FEATURES} -n${KMEANS_CLUSTERS} -m${KMEANS_CLUSTERS} -l${KMEANS_LOOPS}"
   [hotspot]="${HOTSPOT_SIZE} ${HOTSPOT_ITERS} ${HOTSPOT_SIM_TIME} $ROOT_DIR/tests/opencl/hotspot/temp_${HOTSPOT_SIZE} $ROOT_DIR/tests/opencl/hotspot/power_${HOTSPOT_SIZE} ${HOTSPOT_OUTPUT}"
@@ -271,6 +276,7 @@ default_user_pc_symbols() {
   fi
   case "$bench" in
     bfs) echo "BFS_1 BFS_2" ;;
+    sgemm) echo "_Z11kernel_bodyP12kernel_arg_t kernel_body" ;;
     sgemm3) echo "sgemm3" ;;
     kmeans) echo "kmeans_kernel_c" ;;
     hotspot) echo "hotspot" ;;
@@ -556,7 +562,7 @@ SUMMARY="$LOG_ROOT/SUMMARY.md"
   echo "- bfs graph: \`$BFS_GRAPH\`"
   echo "- bfs work-group size: \`$BFS_WORK_GROUP_SIZE\`"
   echo "- gto_arith_chain n/local/iters: \`${GTO_ARITH_N}/${GTO_ARITH_LOCAL}/${GTO_ARITH_ITERS}\`"
-  echo "- VORTEX_ARBITER: Priority=0, GTO=1, RR=2, Matrix=3, gCAWS=4"
+  echo "- VORTEX_ARBITER: Priority=0, GTO=1, RR=2, Matrix=3, gCAWS=4, GTOS=5"
   echo
   echo "## Workloads"
   echo

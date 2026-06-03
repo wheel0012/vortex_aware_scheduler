@@ -186,9 +186,11 @@ int setup(int argc, char **argv) {
   // io_timing = omp_get_wtime();
 
   if (filename) {
+    nfeatures = 0;
+    npoints = 0;
     if (isBinaryFile) { // Binary file input
       FILE *infile;
-      if ((infile = fopen("100", "r")) == NULL) {
+      if ((infile = fopen(filename, "rb")) == NULL) {
         fprintf(stderr, "Error: no such file (%s)\n", filename);
         exit(1);
       }
@@ -206,7 +208,7 @@ int setup(int argc, char **argv) {
       fclose(infile);
     } else {
       FILE *infile;
-      if ((infile = fopen("100", "r")) == NULL) {
+      if ((infile = fopen(filename, "r")) == NULL) {
         fprintf(stderr, "Error: no such file (%s)\n", filename);
         exit(1);
       }

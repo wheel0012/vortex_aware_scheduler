@@ -149,6 +149,18 @@ def metric_row(name, value, unit="", source="trace", note=""):
     }
 
 
+def percentile(sorted_values, pct):
+    if not sorted_values:
+        return 0
+    index = int(math.ceil((pct / 100.0) * len(sorted_values))) - 1
+    index = max(0, min(index, len(sorted_values) - 1))
+    return sorted_values[index]
+
+
+def bit_is_set(mask, wid):
+    return wid is not None and wid >= 0 and bool(mask & (1 << wid))
+
+
 def load_userpc_perf_log(path):
     metrics = {}
     if path is None or not path.exists():
@@ -689,6 +701,105 @@ def event_cycles(rows, inst_type):
     return cycles
 
 
+def build_issue_stream_metrics(rows):
+    ordered = []
+    for index, row in enumerate(rows):
+        cycle = row_cycle(row)
+        if cycle is None:
+            continue
+        ordered.append((row_issue_slot(row), cycle, index, row))
+    ordered.sort()
+
+    next_checks = 0
+    last_candidate = 0
+    last_ready = 0
+    last_ibuf_empty = 0
+    last_scoreboard_blocked = 0
+    last_selected = 0
+    prefer_last_checks = 0
+    prefer_last_success = 0
+    prefer_last_blocked = 0
+    prefer_last_blocked_ibuf = 0
+    prefer_last_blocked_scoreboard = 0
+
+    last_issued_by_slot = {}
+    prev_row_issued_by_slot = defaultdict(bool)
+    current_streak_by_slot = defaultdict(int)
+    streaks = []
+
+    for slot, _, _, row in ordered:
+        last_wid = last_issued_by_slot.get(slot)
+        actual_wid = row_actual_wid(row)
+        candidate_mask = row_mask(row, "candidate_mask")
+        ready_mask = row_mask(row, "ready_mask")
+        ibuf_empty_mask = row_mask(row, "ibuffer_empty_mask")
+        preferred_wid = parse_int(row.get("preferred_wid"))
+
+        if prev_row_issued_by_slot.get(slot, False) and last_wid is not None:
+            next_checks += 1
+            last_is_candidate = bit_is_set(candidate_mask, last_wid)
+            last_is_ready = bit_is_set(ready_mask, last_wid)
+            last_is_ibuf_empty = bit_is_set(ibuf_empty_mask, last_wid)
+            if last_is_candidate:
+                last_candidate += 1
+            if last_is_ready:
+                last_ready += 1
+            if last_is_ibuf_empty:
+                last_ibuf_empty += 1
+            if (not last_is_ibuf_empty) and (not last_is_ready):
+                last_scoreboard_blocked += 1
+            if row_issued(row) and actual_wid == last_wid:
+                last_selected += 1
+
+            if preferred_wid == last_wid:
+                prefer_last_checks += 1
+                if row_issued(row) and actual_wid == last_wid:
+                    prefer_last_success += 1
+                elif not last_is_ready:
+                    prefer_last_blocked += 1
+                    if last_is_ibuf_empty:
+                        prefer_last_blocked_ibuf += 1
+                    else:
+                        prefer_last_blocked_scoreboard += 1
+
+        if row_issued(row):
+            if last_wid is not None and actual_wid == last_wid:
+                current_streak_by_slot[slot] += 1
+            else:
+                if current_streak_by_slot[slot] > 0:
+                    streaks.append(current_streak_by_slot[slot])
+                current_streak_by_slot[slot] = 1
+            last_issued_by_slot[slot] = actual_wid
+
+        prev_row_issued_by_slot[slot] = row_issued(row)
+
+    for streak in current_streak_by_slot.values():
+        if streak > 0:
+            streaks.append(streak)
+
+    streaks.sort()
+    streak_sum = sum(streaks)
+    return {
+        "same_wid_streak_count": len(streaks),
+        "same_wid_streak_avg": f"{(streak_sum / len(streaks)):.2f}" if streaks else "0.00",
+        "same_wid_streak_p50": percentile(streaks, 50),
+        "same_wid_streak_p90": percentile(streaks, 90),
+        "same_wid_streak_max": streaks[-1] if streaks else 0,
+        "last_wid_next_checks": next_checks,
+        "last_wid_candidate_next_ratio": f"{percent(last_candidate, next_checks):.2f}",
+        "last_wid_ready_next_ratio": f"{percent(last_ready, next_checks):.2f}",
+        "last_wid_ibuf_empty_next_ratio": f"{percent(last_ibuf_empty, next_checks):.2f}",
+        "last_wid_scoreboard_blocked_next_ratio": f"{percent(last_scoreboard_blocked, next_checks):.2f}",
+        "last_wid_selected_next_ratio": f"{percent(last_selected, next_checks):.2f}",
+        "prefer_last_checks": prefer_last_checks,
+        "prefer_last_ratio": f"{percent(prefer_last_checks, next_checks):.2f}",
+        "prefer_last_success_ratio": f"{percent(prefer_last_success, prefer_last_checks):.2f}",
+        "prefer_last_blocked_ratio": f"{percent(prefer_last_blocked, prefer_last_checks):.2f}",
+        "prefer_last_blocked_ibuf_ratio": f"{percent(prefer_last_blocked_ibuf, prefer_last_checks):.2f}",
+        "prefer_last_blocked_scoreboard_ratio": f"{percent(prefer_last_blocked_scoreboard, prefer_last_checks):.2f}",
+    }
+
+
 def write_split_index(path, splits):
     fields = ["split", "cycle_from", "cycle_to", "rows", "issued"]
     with path.open("w", newline="") as f:
@@ -840,6 +951,19 @@ def build_perf_metrics(rows, perf_window_rows=None, external_metrics=None):
         and row_mask(row, "ready_mask") == 0
     ])
     scheduler_other_stalls = max(0, slot_rows - scheduler_idle - scoreboard_stalls - slot_issued)
+    preferred_blocked_rows = [
+        row for row in perf_window_rows
+        if row.get("preferred_blocked", "").lower() == "true"
+    ]
+    preferred_intended_mismatch_rows = []
+    for row in perf_window_rows:
+        try:
+            preferred_wid = int(row.get("preferred_wid", "-1"))
+            intended_wid = int(row.get("intended_wid", "-1"))
+        except ValueError:
+            continue
+        if preferred_wid >= 0 and intended_wid >= 0 and preferred_wid != intended_wid:
+            preferred_intended_mismatch_rows.append(row)
 
     loads = len([row for row in issued if row.get("inst_type") in {"LOAD"}])
     stores = len([row for row in issued if row.get("inst_type") in {"STORE"}])
@@ -847,6 +971,7 @@ def build_perf_metrics(rows, perf_window_rows=None, external_metrics=None):
     ipc = (instrs / span_cycles) if span_cycles else 0.0
     issue_density = (instrs / span_cycles) if span_cycles else 0.0
     issue_active_rate = (instrs / len(set(issued_cycles))) if issued_cycles else 0.0
+    issue_stream = build_issue_stream_metrics(perf_window_rows)
 
     metrics = [
         metric_row("pc_window.first_cycle", first_cycle, "cycles", "trace"),
@@ -893,6 +1018,40 @@ def build_perf_metrics(rows, perf_window_rows=None, external_metrics=None):
                    "simx-run-log" if "perf1.candidate_checks" in external_metrics else "unavailable"),
         metric_row("perf1.ready_hit_ratio", external_metrics.get("perf1.ready_hit_ratio"), "%",
                    "simx-run-log" if "perf1.ready_hit_ratio" in external_metrics else "unavailable"),
+        metric_row("perf1.preferred_blocked", len(preferred_blocked_rows), "rows", "trace",
+                   "preferred warp from candidate_set was not ready; captures GTO current-grant fallback pressure"),
+        metric_row("perf1.preferred_blocked_percent", f"{percent(len(preferred_blocked_rows), slot_rows):.2f}", "%", "trace",
+                   "preferred_blocked rows over all scheduler rows in the selected PC window"),
+        metric_row("perf1.preferred_to_intended_mismatch", len(preferred_intended_mismatch_rows), "rows", "trace",
+                   "preferred_wid from candidate_set differs from intended_wid from ready_set"),
+        metric_row("perf1.preferred_to_intended_mismatch_percent", f"{percent(len(preferred_intended_mismatch_rows), slot_rows):.2f}", "%", "trace",
+                   "preferred/intended mismatch rows over all scheduler rows in the selected PC window"),
+        metric_row("perf1.gto_feasibility.same_wid_streak_avg", issue_stream["same_wid_streak_avg"], "issued-insts/streak", "trace",
+                   "average consecutive issued instructions with the same wid, tracked per issue slot"),
+        metric_row("perf1.gto_feasibility.same_wid_streak_p50", issue_stream["same_wid_streak_p50"], "issued-insts/streak", "trace"),
+        metric_row("perf1.gto_feasibility.same_wid_streak_p90", issue_stream["same_wid_streak_p90"], "issued-insts/streak", "trace"),
+        metric_row("perf1.gto_feasibility.same_wid_streak_max", issue_stream["same_wid_streak_max"], "issued-insts/streak", "trace"),
+        metric_row("perf1.gto_feasibility.last_wid_next_checks", issue_stream["last_wid_next_checks"], "scheduler-rows", "trace",
+                   "rows immediately following an issued row in the same issue slot"),
+        metric_row("perf1.gto_feasibility.last_wid_candidate_next_ratio", issue_stream["last_wid_candidate_next_ratio"], "%", "trace",
+                   "fraction of next scheduler rows where the previously issued wid still had an ibuffer candidate"),
+        metric_row("perf1.gto_feasibility.last_wid_ready_next_ratio", issue_stream["last_wid_ready_next_ratio"], "%", "trace",
+                   "fraction of next scheduler rows where the previously issued wid was ready again"),
+        metric_row("perf1.gto_feasibility.last_wid_ibuf_empty_next_ratio", issue_stream["last_wid_ibuf_empty_next_ratio"], "%", "trace",
+                   "fraction of next scheduler rows where the previously issued wid had an empty ibuffer"),
+        metric_row("perf1.gto_feasibility.last_wid_scoreboard_blocked_next_ratio", issue_stream["last_wid_scoreboard_blocked_next_ratio"], "%", "trace",
+                   "previous wid was not ibuffer-empty but also not ready; approximates scoreboard/dependency blocking"),
+        metric_row("perf1.gto_feasibility.last_wid_selected_next_ratio", issue_stream["last_wid_selected_next_ratio"], "%", "trace",
+                   "fraction of next scheduler rows that actually issued the same wid again"),
+        metric_row("perf1.gto_feasibility.prefer_last_checks", issue_stream["prefer_last_checks"], "scheduler-rows", "trace",
+                   "next scheduler rows where preferred_wid equals the previously issued wid"),
+        metric_row("perf1.gto_feasibility.prefer_last_ratio", issue_stream["prefer_last_ratio"], "%", "trace"),
+        metric_row("perf1.gto_feasibility.prefer_last_success_ratio", issue_stream["prefer_last_success_ratio"], "%", "trace",
+                   "when preferred_wid was previous wid, fraction that successfully issued that wid"),
+        metric_row("perf1.gto_feasibility.prefer_last_blocked_ratio", issue_stream["prefer_last_blocked_ratio"], "%", "trace",
+                   "when preferred_wid was previous wid, fraction where that wid was not ready"),
+        metric_row("perf1.gto_feasibility.prefer_last_blocked_ibuf_ratio", issue_stream["prefer_last_blocked_ibuf_ratio"], "%", "trace"),
+        metric_row("perf1.gto_feasibility.prefer_last_blocked_scoreboard_ratio", issue_stream["prefer_last_blocked_scoreboard_ratio"], "%", "trace"),
         metric_row("perf1.operands_stalls", metric_na(), "cycles", "unavailable",
                    "operand-stage stalls are not present in issue_trace.csv"),
         metric_row("perf1.ifetches", instrs, "instructions", "estimated",
@@ -1114,6 +1273,10 @@ def write_perf_summary(path, metrics):
                 f"csrs={val('perf1.scoreboard_stalls.csrs_percent')}%, "
                 f"wctl={val('perf1.scoreboard_stalls.wctl_percent')}%, "
                 f"fpu={val('perf1.scoreboard_stalls.fpu_percent')}%)\n")
+        f.write(f"PERF: preferred blocked={val('perf1.preferred_blocked')} "
+                f"({val('perf1.preferred_blocked_percent')}%), "
+                f"preferred-intended mismatch={val('perf1.preferred_to_intended_mismatch')} "
+                f"({val('perf1.preferred_to_intended_mismatch_percent')}%)\n")
         f.write(f"PERF: operands stalls={val('perf1.operands_stalls')}\n")
         f.write(f"PERF: ifetches={val('perf1.ifetches')}\n")
         f.write(f"PERF: loads={val('perf1.loads')}\n")

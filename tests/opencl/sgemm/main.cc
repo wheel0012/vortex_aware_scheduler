@@ -140,17 +140,21 @@ static void cleanup() {
 }
 
 uint32_t size = 32;
+uint32_t k_limit = 0;
 
 static void show_usage() {
-  printf("Usage: [-n size] [-h: help]\n");
+  printf("Usage: [-n size] [-i inner-loop-limit] [-h: help]\n");
 }
 
 static void parse_args(int argc, char **argv) {
   int c;
-  while ((c = getopt(argc, argv, "n:h")) != -1) {
+  while ((c = getopt(argc, argv, "n:i:h")) != -1) {
     switch (c) {
     case 'n':
       size = atoi(optarg);
+      break;
+    case 'i':
+      k_limit = atoi(optarg);
       break;
     case 'h':
       show_usage();
@@ -166,8 +170,15 @@ static void parse_args(int argc, char **argv) {
     printf("Error: invalid size!\n");
     exit(-1);
   }
+  if (k_limit == 0) {
+    k_limit = size;
+  }
+  if (k_limit > size) {
+    printf("Error: invalid inner-loop-limit!\n");
+    exit(-1);
+  }
 
-  printf("Workload size=%d\n", size);
+  printf("Workload size=%d, K=%d\n", size, k_limit);
 }
 
 int main (int argc, char **argv) {
@@ -211,6 +222,7 @@ int main (int argc, char **argv) {
   CL_CHECK(clSetKernelArg(kernel, 1, sizeof(cl_mem), (void *)&b_memobj));
   CL_CHECK(clSetKernelArg(kernel, 2, sizeof(cl_mem), (void *)&c_memobj));
   CL_CHECK(clSetKernelArg(kernel, 3, sizeof(size), (void*)&size));
+  CL_CHECK(clSetKernelArg(kernel, 4, sizeof(k_limit), (void*)&k_limit));
 
   // Allocate memories for input arrays and output arrays.
   std::vector<TYPE> h_a(size_sq);
@@ -247,7 +259,7 @@ int main (int argc, char **argv) {
 
   printf("Verify result\n");
   std::vector<TYPE> h_ref(size_sq);
-  sgemm_cpu(h_ref.data(), h_a.data(), h_b.data(), size, size, size);
+  sgemm_cpu(h_ref.data(), h_a.data(), h_b.data(), size, size, k_limit);
   int errors = 0;
   for (uint32_t i = 0; i < size_sq; ++i) {
     if (!Comparator<TYPE>::compare(h_c[i], h_ref[i], i, errors)) {

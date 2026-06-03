@@ -182,6 +182,7 @@ public:
   const PerfStats& perf_stats() const;
 
   void userpc_count_lsu(const instr_trace_t* trace, bool is_write, uint32_t count);
+  void userpc_count_lane_dcache_read(const instr_trace_t* trace, uint32_t tid, uint64_t addr);
   void userpc_add_load_latency(uint64_t pending_loads);
   void userpc_add_dcache_latency(uint64_t pending_reads);
 
@@ -240,6 +241,9 @@ private:
     uint64_t ready_sum;
     uint64_t not_ready_fallbacks;
     uint64_t preferred_blocked;
+    uint64_t issue_streak_next_checks;
+    uint64_t same_wid_consecutive_issues;
+    uint64_t wid_switches;
     uint64_t ibuf_stalls;
     uint64_t scrb_stalls;
     uint64_t scrb_blocked;
@@ -280,6 +284,7 @@ private:
     uint64_t dcache_read_cold_misses;
     uint64_t dcache_read_non_cold_misses;
     uint64_t dcache_read_access_index;
+    uint64_t dcache_read_reuse_distance_sum;
     uint64_t dcache_read_reuse_gap_le4;
     uint64_t dcache_read_reuse_gap_le16;
     uint64_t dcache_read_reuse_gap_le64;
@@ -293,6 +298,20 @@ private:
     uint64_t dcache_read_locality_thread_local_misses;
     uint64_t dcache_read_locality_intra_warp_misses;
     uint64_t dcache_read_locality_inter_warp_misses;
+    uint64_t lane_dcache_read_accesses;
+    uint64_t lane_dcache_read_cold_accesses;
+    uint64_t lane_dcache_read_same_inst_accesses;
+    uint64_t lane_dcache_read_thread_local_accesses;
+    uint64_t lane_dcache_read_intra_warp_accesses;
+    uint64_t lane_dcache_read_inter_warp_accesses;
+    uint64_t lane_dcache_read_hit_accesses;
+    uint64_t lane_dcache_read_cold_hits;
+    uint64_t lane_dcache_read_same_inst_hits;
+    uint64_t lane_dcache_read_thread_local_hits;
+    uint64_t lane_dcache_read_intra_warp_hits;
+    uint64_t lane_dcache_read_inter_warp_hits;
+    uint64_t lane_dcache_read_reuse_accesses;
+    uint64_t lane_dcache_read_reuse_distance_sum;
     bool dcache_line_stride_valid;
     uint64_t dcache_last_read_line;
     uint64_t dcache_read_line_stride_sum;
@@ -320,6 +339,9 @@ private:
     std::vector<uint64_t> per_warp_issues;
     std::vector<uint64_t> per_warp_first;
     std::vector<uint64_t> per_warp_last;
+    std::vector<int> last_issue_wid_by_slot;
+    std::vector<uint64_t> current_wid_streak_by_slot;
+    std::vector<uint64_t> same_wid_streaks;
 
     UserPCPerfStats();
   };
@@ -327,8 +349,34 @@ private:
   struct UserPCDCacheReadOwner {
     uint32_t wid;
     uint32_t tid;
+    uint64_t uuid;
     uint64_t wg_id;
     bool has_wg_id;
+  };
+
+  struct UserPCLaneDCacheReadGroup {
+    uint64_t cold;
+    uint64_t same_inst;
+    uint64_t thread_local_count;
+    uint64_t intra_warp;
+    uint64_t inter_warp;
+
+    UserPCLaneDCacheReadGroup()
+      : cold(0)
+      , same_inst(0)
+      , thread_local_count(0)
+      , intra_warp(0)
+      , inter_warp(0)
+    {}
+
+    uint64_t total() const {
+      return cold + same_inst + thread_local_count + intra_warp + inter_warp;
+    }
+  };
+
+  struct UserPCLaneDCachePendingReadGroup {
+    uint64_t line;
+    UserPCLaneDCacheReadGroup group;
   };
 
   uint32_t core_id_;
@@ -377,6 +425,11 @@ private:
   std::unordered_map<uint64_t, std::deque<uint32_t>> userpc_dcache_pending_read_locality_;
   std::unordered_map<uint64_t, UserPCDCacheReadOwner> userpc_dcache_last_read_owner_;
   std::unordered_map<uint64_t, std::unordered_set<uint64_t>> userpc_dcache_tags_by_set_;
+  std::unordered_set<uint64_t> userpc_lane_dcache_read_lines_;
+  std::unordered_map<uint64_t, uint64_t> userpc_lane_dcache_last_read_access_;
+  std::unordered_map<uint64_t, UserPCDCacheReadOwner> userpc_lane_dcache_last_read_owner_;
+  std::unordered_map<uint64_t, std::deque<UserPCLaneDCachePendingReadGroup>> userpc_lane_dcache_pending_groups_;
+  std::unordered_map<uint64_t, std::deque<UserPCLaneDCacheReadGroup>> userpc_lane_dcache_rsp_groups_;
   bool userpc_dcache_locality_wg_enabled_;
   uint64_t userpc_dcache_locality_feature_base_;
   uint64_t userpc_dcache_locality_npoints_;

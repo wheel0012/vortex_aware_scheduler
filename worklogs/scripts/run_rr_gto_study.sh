@@ -32,6 +32,8 @@ declare -A ARBITER=(
   [RR]=2
   [Matrix]=3
   [gCAWS]=4
+  [GTOS]=5
+  [GTOStrict]=5
 )
 
 read -r -a POLICIES_ARR <<< "$POLICIES_STR"

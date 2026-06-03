@@ -6,7 +6,7 @@
 #   - build directory defaults to ./build, whose config.mk points VORTEX_HOME
 #     at this source tree.
 #   - scheduler selection uses VORTEX_ARBITER, not VORTEX_SCHED.
-#   - available policies are Priority=0, GTO=1, RR=2, Matrix=3, gCAWS=4.
+#   - available policies are Priority=0, GTO=1, RR=2, Matrix=3, gCAWS=4, GTOS=5.
 #   - default sweep uses RR/GTO/gCAWS; override with:
 #       POLICIES="RR GTO gCAWS Priority Matrix" ./worklogs/scripts/sweep_aware_schedulers.sh
 #
@@ -40,6 +40,8 @@ declare -A ARBITER=(
   [RR]=2
   [Matrix]=3
   [gCAWS]=4
+  [GTOS]=5
+  [GTOStrict]=5
 )
 
 declare -A BENCH_ARGS=(
@@ -102,7 +104,7 @@ SUMMARY="$LOG_ROOT/SUMMARY.md"
   echo "- cores=$CORES, warps=$WARPS, threads=$THREADS, l2cache=on"
   echo "- perf classes: \`$PERFS_STR\`"
   echo "- base flags: \`$BASE_FLAGS\`"
-  echo "- VORTEX_ARBITER: Priority=0, GTO=1, RR=2, Matrix=3, gCAWS=4"
+  echo "- VORTEX_ARBITER: Priority=0, GTO=1, RR=2, Matrix=3, gCAWS=4, GTOS=5"
   echo
   echo "## Workloads"
   echo

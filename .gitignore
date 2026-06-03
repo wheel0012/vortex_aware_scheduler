@@ -18,6 +18,7 @@ miscs/apptainer/vortex.sif
 /worklogs/experiment_record/
 /worklogs/generated_inputs/
 /worklogs/trace_runs/
+/worklogs/tmp/
 /worklogs/*.csv
 /worklogs/*.log
 /worklogs/*_report.md

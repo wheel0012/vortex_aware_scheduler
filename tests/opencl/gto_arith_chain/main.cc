@@ -61,14 +61,19 @@ static uint32_t arithmetic_rshift(uint32_t x, unsigned shift) {
 }
 
 static uint32_t gto_arith_chain_cpu(uint32_t gid, int iters) {
-  uint32_t x = gid + 1;
-  for (int i = 0; i < iters; ++i) {
-    x = x * 1664525u + 1013904223u;
-    x = x ^ arithmetic_rshift(x, 13);
-    x = x + (x << 5);
-    x = x ^ arithmetic_rshift(x, 7);
-  }
-  return x;
+  (void)iters;
+  uint32_t seed = gid + 1;
+  uint32_t a0 = seed + 0x00000011u;
+  uint32_t a1 = seed ^ 0x00000101u;
+  uint32_t a2 = seed + 0x00001003u;
+  uint32_t a3 = seed ^ 0x00010001u;
+
+  a0 = a0 * 1664525u + 1013904223u;
+  a1 = a1 ^ (a1 >> 13);
+  a2 = a2 + (a2 << 5);
+  a3 = a3 ^ (a3 >> 7);
+
+  return (a0 ^ a1) + (a2 ^ a3);
 }
 
 cl_device_id device_id = NULL;
@@ -161,7 +166,17 @@ int main (int argc, char **argv) {
     return -1;
   }
 
-  CL_CHECK(clBuildProgram(program, 1, &device_id, NULL, NULL, NULL));
+  cl_int build_err = clBuildProgram(program, 1, &device_id, NULL, NULL, NULL);
+  if (build_err != CL_SUCCESS) {
+    char log[65536];
+    size_t log_size = 0;
+    clGetProgramBuildInfo(program, device_id, CL_PROGRAM_BUILD_LOG,
+                          sizeof(log) - 1, log, &log_size);
+    size_t end = (log_size < sizeof(log) - 1) ? log_size : sizeof(log) - 1;
+    log[end] = '\0';
+    printf("<<<<\n%s\n>>>>\n", log);
+  }
+  CL_CHECK(build_err);
 
   kernel = CL_CHECK2(clCreateKernel(program, KERNEL_NAME, &_err));
 

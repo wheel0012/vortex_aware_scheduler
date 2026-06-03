@@ -24,7 +24,9 @@
 #include <unordered_map>
 #include <array>
 
-#define CACHE_BLOCK_SIZE  64
+#ifndef CACHE_BLOCK_SIZE
+#define CACHE_BLOCK_SIZE  MEM_BLOCK_SIZE
+#endif
 
 #define RAM_PAGE_SIZE     4096 // Please use MEM_PAGE_SIZE in VX_config.h
 
