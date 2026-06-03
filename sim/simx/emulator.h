@@ -99,6 +99,8 @@ public:
 
   void resume(uint32_t wid);
 
+  bool is_stalled(uint32_t wid) const;
+
   bool barrier(uint32_t bar_id, uint32_t count, uint32_t wid);
 
   bool wspawn(uint32_t num_warps, Word nextPC);

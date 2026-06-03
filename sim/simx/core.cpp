@@ -46,6 +46,22 @@ namespace {
 #define SIMX_DISPATCH_LATENCY 2
 #endif
 
+#ifndef SIMX_DECODE_WIDTH
+#define SIMX_DECODE_WIDTH 2
+#endif
+
+#ifndef SIMX_FRONTEND_PENDING_PER_WARP
+#define SIMX_FRONTEND_PENDING_PER_WARP 1
+#endif
+
+#ifndef SIMX_GTO_FRONTEND_PENDING_PER_WARP
+#define SIMX_GTO_FRONTEND_PENDING_PER_WARP 4
+#endif
+
+#ifndef SIMX_FRONTEND_ICACHE_PENDING_FACTOR
+#define SIMX_FRONTEND_ICACHE_PENDING_FACTOR 4
+#endif
+
 uint64_t parse_u64_env(const char* name, uint64_t default_value) {
   auto value = std::getenv(name);
   if (value == nullptr || value[0] == '\0')
@@ -70,6 +86,21 @@ uint32_t pct_u64(uint64_t value, uint64_t total) {
 bool env_enabled(const char* name) {
   auto value = std::getenv(name);
   return value && value[0] != '\0' && std::string(value) != "0" && std::string(value) != "false";
+}
+
+uint32_t frontend_pending_limit() {
+  auto arbiter = configured_issue_arbiter();
+  if (arbiter == ArbiterType::GTO
+   || arbiter == ArbiterType::GTOStrict
+   || arbiter == ArbiterType::GCAWS) {
+    return std::max<uint32_t>(1, SIMX_GTO_FRONTEND_PENDING_PER_WARP);
+  }
+  return std::max<uint32_t>(1, SIMX_FRONTEND_PENDING_PER_WARP);
+}
+
+uint32_t frontend_pending_capacity_per_warp() {
+  auto pending_limit = std::max<uint32_t>(frontend_pending_limit(), SIMX_FRONTEND_PENDING_PER_WARP);
+  return pending_limit * std::max<uint32_t>(1, SIMX_FRONTEND_ICACHE_PENDING_FACTOR);
 }
 
 bool userpc_feature_wg_id(uint64_t addr,
@@ -203,7 +234,10 @@ Core::Core(const SimContext& ctx,
   , func_units_((uint32_t)FUType::Count)
   , lmem_switch_(NUM_LSU_BLOCKS)
   , mem_coalescers_(NUM_LSU_BLOCKS)
-  , pending_icache_(arch_.num_warps())
+  , pending_icache_(arch_.num_warps() * frontend_pending_capacity_per_warp())
+  , frontend_pending_by_warp_(arch_.num_warps(), 0)
+  , frontend_suspended_by_warp_(arch_.num_warps(), false)
+  , frontend_fetch_stall_by_warp_(arch_.num_warps(), false)
   , commit_arbs_(ISSUE_WIDTH)
   , ibuffer_spawn_times_(ISSUE_WIDTH, std::vector<uint64_t>(PER_ISSUE_WARPS, 0))
   , ibuffer_criticality_(ISSUE_WIDTH, std::vector<uint64_t>(PER_ISSUE_WARPS, 0))
@@ -650,6 +684,12 @@ Core::UserPCPerfStats::UserPCPerfStats()
   , issue_streak_next_checks(0)
   , same_wid_consecutive_issues(0)
   , wid_switches(0)
+  , last_wid_next_checks(0)
+  , last_wid_candidate_next(0)
+  , last_wid_ready_next(0)
+  , last_wid_ibuf_empty_next(0)
+  , last_wid_scoreboard_blocked_next(0)
+  , last_wid_selected_next(0)
   , ibuf_stalls(0)
   , scrb_stalls(0)
   , scrb_blocked(0)
@@ -1292,6 +1332,27 @@ void Core::dump_userpc_perf() const {
   auto same_wid_streak_p50 = streak_percentile(50);
   auto same_wid_streak_p90 = streak_percentile(90);
   auto same_wid_streak_max = streaks.empty() ? 0 : streaks.back();
+  uint64_t streak_len_1 = 0;
+  uint64_t streak_len_2 = 0;
+  uint64_t streak_len_3_4 = 0;
+  uint64_t streak_len_5_8 = 0;
+  uint64_t streak_len_9_16 = 0;
+  uint64_t streak_len_17_plus = 0;
+  for (auto streak : streaks) {
+    if (streak <= 1) {
+      ++streak_len_1;
+    } else if (streak == 2) {
+      ++streak_len_2;
+    } else if (streak <= 4) {
+      ++streak_len_3_4;
+    } else if (streak <= 8) {
+      ++streak_len_5_8;
+    } else if (streak <= 16) {
+      ++streak_len_9_16;
+    } else {
+      ++streak_len_17_plus;
+    }
+  }
   auto same_wid_issue_rate = userpc_perf_.issue_streak_next_checks
                                ? 100.0 * userpc_perf_.same_wid_consecutive_issues
                                    / userpc_perf_.issue_streak_next_checks
@@ -1342,6 +1403,27 @@ void Core::dump_userpc_perf() const {
             << " next_checks=" << userpc_perf_.issue_streak_next_checks
             << " same_wid_issue_rate=" << same_wid_issue_rate << "%"
             << " wid_switch_rate=" << wid_switch_rate << "%"
+            << "\n";
+  std::cerr << "PERF: userpc issue streak histogram"
+            << " len1=" << streak_len_1
+            << " len2=" << streak_len_2
+            << " len3_4=" << streak_len_3_4
+            << " len5_8=" << streak_len_5_8
+            << " len9_16=" << streak_len_9_16
+            << " len17_plus=" << streak_len_17_plus
+            << "\n";
+  std::cerr << "PERF: userpc last wid next"
+            << " checks=" << userpc_perf_.last_wid_next_checks
+            << " candidate=" << userpc_perf_.last_wid_candidate_next
+            << " ready=" << userpc_perf_.last_wid_ready_next
+            << " ibuf_empty=" << userpc_perf_.last_wid_ibuf_empty_next
+            << " scoreboard_blocked=" << userpc_perf_.last_wid_scoreboard_blocked_next
+            << " selected=" << userpc_perf_.last_wid_selected_next
+            << " candidate_rate=" << pct_u64(userpc_perf_.last_wid_candidate_next, userpc_perf_.last_wid_next_checks) << "%"
+            << " ready_rate=" << pct_u64(userpc_perf_.last_wid_ready_next, userpc_perf_.last_wid_next_checks) << "%"
+            << " ibuf_empty_rate=" << pct_u64(userpc_perf_.last_wid_ibuf_empty_next, userpc_perf_.last_wid_next_checks) << "%"
+            << " scoreboard_blocked_rate=" << pct_u64(userpc_perf_.last_wid_scoreboard_blocked_next, userpc_perf_.last_wid_next_checks) << "%"
+            << " selected_rate=" << pct_u64(userpc_perf_.last_wid_selected_next, userpc_perf_.last_wid_next_checks) << "%"
             << "\n";
   std::cerr << "PERF: userpc ifetches=" << userpc_perf_.ifetches << "\n";
   std::cerr << "PERF: userpc loads=" << userpc_perf_.loads << "\n";
@@ -1605,6 +1687,31 @@ void Core::dump_userpc_perf() const {
             << "\n";
 
   std::cerr << "[USERPC_PERF core=" << core_id_ << "] "
+            << "issue_streak_histogram"
+            << " len1=" << streak_len_1
+            << " len2=" << streak_len_2
+            << " len3_4=" << streak_len_3_4
+            << " len5_8=" << streak_len_5_8
+            << " len9_16=" << streak_len_9_16
+            << " len17_plus=" << streak_len_17_plus
+            << "\n";
+
+  std::cerr << "[USERPC_PERF core=" << core_id_ << "] "
+            << "last_wid_next"
+            << " checks=" << userpc_perf_.last_wid_next_checks
+            << " candidate=" << userpc_perf_.last_wid_candidate_next
+            << " ready=" << userpc_perf_.last_wid_ready_next
+            << " ibuf_empty=" << userpc_perf_.last_wid_ibuf_empty_next
+            << " scoreboard_blocked=" << userpc_perf_.last_wid_scoreboard_blocked_next
+            << " selected=" << userpc_perf_.last_wid_selected_next
+            << " candidate_rate=" << pct_u64(userpc_perf_.last_wid_candidate_next, userpc_perf_.last_wid_next_checks) << "%"
+            << " ready_rate=" << pct_u64(userpc_perf_.last_wid_ready_next, userpc_perf_.last_wid_next_checks) << "%"
+            << " ibuf_empty_rate=" << pct_u64(userpc_perf_.last_wid_ibuf_empty_next, userpc_perf_.last_wid_next_checks) << "%"
+            << " scoreboard_blocked_rate=" << pct_u64(userpc_perf_.last_wid_scoreboard_blocked_next, userpc_perf_.last_wid_next_checks) << "%"
+            << " selected_rate=" << pct_u64(userpc_perf_.last_wid_selected_next, userpc_perf_.last_wid_next_checks) << "%"
+            << "\n";
+
+  std::cerr << "[USERPC_PERF core=" << core_id_ << "] "
             << "issues_by_fu"
             << " alu=" << userpc_perf_.alu_issues
             << " fpu=" << userpc_perf_.fpu_issues
@@ -1633,6 +1740,7 @@ void Core::dump_userpc_perf() const {
             << " tcu=" << userpc_perf_.scrb_tcu
           #endif
             << "\n";
+
 
   std::cerr << "[USERPC_PERF core=" << core_id_ << "] "
             << "lsu_ops loads=" << userpc_perf_.loads
@@ -1836,6 +1944,9 @@ void Core::reset() {
   cpl_max_committed_ = 0;
 
   pending_instrs_.clear();
+  std::fill(frontend_pending_by_warp_.begin(), frontend_pending_by_warp_.end(), 0);
+  std::fill(frontend_suspended_by_warp_.begin(), frontend_suspended_by_warp_.end(), false);
+  std::fill(frontend_fetch_stall_by_warp_.begin(), frontend_fetch_stall_by_warp_.end(), false);
   pending_ifetches_ = 0;
   pending_userpc_ifetches_ = 0;
 
@@ -1868,8 +1979,19 @@ void Core::schedule() {
     return;
   }
 
-  // suspend warp until decode
-  emulator_.suspend(trace->wid);
+  // Keep GTO-family frontends fed by allowing a warp to have multiple
+  // instructions in the fetch/decode pipe before it is suspended.
+  auto pending_limit = frontend_pending_limit();
+  auto& frontend_pending = frontend_pending_by_warp_.at(trace->wid);
+  ++frontend_pending;
+  auto frontend_occupancy = ibuffers_.at(trace->wid).size() + frontend_pending;
+  if (trace->fetch_stall || frontend_occupancy >= pending_limit) {
+    if (!frontend_suspended_by_warp_.at(trace->wid)) {
+      emulator_.suspend(trace->wid);
+      frontend_suspended_by_warp_.at(trace->wid) = true;
+    }
+    frontend_fetch_stall_by_warp_.at(trace->wid) = trace->fetch_stall;
+  }
 
   DT(3, "pipeline-schedule: " << *trace);
 
@@ -1919,42 +2041,51 @@ void Core::fetch() {
 }
 
 void Core::decode() {
-  if (decode_latch_.empty())
-    return;
+  for (uint32_t i = 0; i < std::max<uint32_t>(1, SIMX_DECODE_WIDTH); ++i) {
+    if (decode_latch_.empty())
+      return;
 
-  auto trace = decode_latch_.front();
-  this->userpc_mark(trace);
+    auto trace = decode_latch_.front();
+    this->userpc_mark(trace);
 
-  // check ibuffer capacity
-  auto& ibuffer = ibuffers_.at(trace->wid);
-  if (ibuffer.full()) {
-    if (!trace->log_once(true)) {
-      DT(4, "*** ibuffer-stall: " << *trace);
+    // check ibuffer capacity
+    auto& ibuffer = ibuffers_.at(trace->wid);
+    if (ibuffer.full()) {
+      if (!trace->log_once(true)) {
+        DT(4, "*** ibuffer-stall: " << *trace);
+      }
+      ++perf_stats_.ibuf_stalls;
+      if (trace->userpc_marked) {
+        ++userpc_perf_.ibuf_stalls;
+      }
+      return;
+    } else {
+      trace->log_once(false);
     }
-    ++perf_stats_.ibuf_stalls;
-    if (trace->userpc_marked) {
-      ++userpc_perf_.ibuf_stalls;
+
+    auto& frontend_pending = frontend_pending_by_warp_.at(trace->wid);
+    assert(frontend_pending != 0);
+    --frontend_pending;
+
+    // release warp
+    if (!trace->fetch_stall
+     && frontend_suspended_by_warp_.at(trace->wid)
+     && !frontend_fetch_stall_by_warp_.at(trace->wid)
+     && (ibuffer.size() + frontend_pending + 1) < frontend_pending_limit()) {
+      this->resume(trace->wid);
     }
-    return;
-  } else {
-    trace->log_once(false);
+
+    DT(3, "pipeline-decode: " << *trace);
+
+    // insert to ibuffer
+    ibuffer.push(trace);
+    if (trace->cpl_inst_delta != 0) {
+      cpl_inst_pending_.at(trace->wid) += trace->cpl_inst_delta;
+      this->cpl_update_score(trace->wid);
+    }
+
+    decode_latch_.pop();
   }
-
-  // release warp
-  if (!trace->fetch_stall) {
-    emulator_.resume(trace->wid);
-  }
-
-  DT(3, "pipeline-decode: " << *trace);
-
-  // insert to ibuffer
-  ibuffer.push(trace);
-  if (trace->cpl_inst_delta != 0) {
-    cpl_inst_pending_.at(trace->wid) += trace->cpl_inst_delta;
-    this->cpl_update_score(trace->wid);
-  }
-
-  decode_latch_.pop();
 }
 
 void Core::reset_warp_cpl(uint32_t wid) {
@@ -2208,6 +2339,18 @@ void Core::issue() {
           auto& current_streak = userpc_perf_.current_wid_streak_by_slot.at(iw);
           if (last_wid >= 0) {
             ++userpc_perf_.issue_streak_next_checks;
+            auto last_bit = wid_bit(static_cast<uint32_t>(last_wid));
+            ++userpc_perf_.last_wid_next_checks;
+            if (candidate_mask & last_bit)
+              ++userpc_perf_.last_wid_candidate_next;
+            if (ready_mask & last_bit)
+              ++userpc_perf_.last_wid_ready_next;
+            if (ibuffer_empty_mask & last_bit)
+              ++userpc_perf_.last_wid_ibuf_empty_next;
+            if ((candidate_mask & last_bit) && (0 == (ready_mask & last_bit)))
+              ++userpc_perf_.last_wid_scoreboard_blocked_next;
+            if (last_wid == static_cast<int>(wid))
+              ++userpc_perf_.last_wid_selected_next;
             if (last_wid == static_cast<int>(wid)) {
               ++userpc_perf_.same_wid_consecutive_issues;
               ++current_streak;
@@ -2266,6 +2409,11 @@ void Core::issue() {
       // to operand stage
       operands_.at(iw)->Input.push(trace, SIMX_OPERANDS_LATENCY);
       ibuffer.pop();
+      if (frontend_suspended_by_warp_.at(wid)
+       && !frontend_fetch_stall_by_warp_.at(wid)
+       && (ibuffer.size() + frontend_pending_by_warp_.at(wid)) < frontend_pending_limit()) {
+        this->resume(wid);
+      }
     } else {
       write_warp_sched_trace(core_id_,
                              iw,
@@ -2407,7 +2555,20 @@ bool Core::running() const {
 }
 
 void Core::resume(uint32_t wid) {
-  emulator_.resume(wid);
+  if (wid != uint32_t(-1)) {
+    if (!emulator_.is_stalled(wid)) {
+      frontend_suspended_by_warp_.at(wid) = false;
+      frontend_fetch_stall_by_warp_.at(wid) = false;
+      return;
+    }
+    emulator_.resume(wid);
+    frontend_suspended_by_warp_.at(wid) = false;
+    frontend_fetch_stall_by_warp_.at(wid) = false;
+  } else {
+    emulator_.resume(wid);
+    std::fill(frontend_suspended_by_warp_.begin(), frontend_suspended_by_warp_.end(), false);
+    std::fill(frontend_fetch_stall_by_warp_.begin(), frontend_fetch_stall_by_warp_.end(), false);
+  }
 }
 
 bool Core::barrier(uint32_t bar_id, uint32_t count, uint32_t wid) {

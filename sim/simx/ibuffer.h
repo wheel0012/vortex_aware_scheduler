@@ -32,6 +32,14 @@ public:
 		return (entries_.size() == capacity_);
 	}
 
+	uint32_t size() const {
+		return entries_.size();
+	}
+
+	uint32_t capacity() const {
+		return capacity_;
+	}
+
 	instr_trace_t* top() const {
 		return entries_.front();
 	}

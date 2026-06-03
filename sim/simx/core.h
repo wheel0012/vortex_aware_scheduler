@@ -244,6 +244,12 @@ private:
     uint64_t issue_streak_next_checks;
     uint64_t same_wid_consecutive_issues;
     uint64_t wid_switches;
+    uint64_t last_wid_next_checks;
+    uint64_t last_wid_candidate_next;
+    uint64_t last_wid_ready_next;
+    uint64_t last_wid_ibuf_empty_next;
+    uint64_t last_wid_scoreboard_blocked_next;
+    uint64_t last_wid_selected_next;
     uint64_t ibuf_stalls;
     uint64_t scrb_stalls;
     uint64_t scrb_blocked;
@@ -426,6 +432,9 @@ private:
   PipelineLatch decode_latch_;
 
   HashTable<instr_trace_t*> pending_icache_;
+  std::vector<uint32_t> frontend_pending_by_warp_;
+  std::vector<bool> frontend_suspended_by_warp_;
+  std::vector<bool> frontend_fetch_stall_by_warp_;
   std::list<instr_trace_t*, PoolAllocator<instr_trace_t*, 64>> pending_instrs_;
 
   uint64_t pending_ifetches_;

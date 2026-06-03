@@ -23,6 +23,7 @@ kmeans_kernel_c(__global float  *feature,
 				
 				float dist = 0;
 				float ans  = 0;
+#pragma unroll 4
 				for (int l=0; l<nfeatures; l++){
 						ans += (feature[l * npoints + point_id]-clusters[i*nfeatures+l])* 
 							   (feature[l * npoints + point_id]-clusters[i*nfeatures+l]);
@@ -54,6 +55,7 @@ kmeans_swap(__global float  *feature,
 	//	feature_swap[i * npoints + tid] = feature[tid * nfeatures + i];
     //Lingjie Zhang modificated at 11/05/2015
     if (tid < npoints){
+#pragma unroll 4
 	    for(int i = 0; i <  nfeatures; i++)
 		    feature_swap[i * npoints + tid] = feature[tid * nfeatures + i];
     }
