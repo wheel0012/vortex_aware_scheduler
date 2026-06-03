@@ -71,6 +71,9 @@ public:
   void resume(uint32_t core_id);
 
   PerfStats perf_stats() const;
+  const Core::PerfStats& core_perf_stats(uint32_t core_index) const;
+  LocalMem::PerfStats local_mem_perf_stats(uint32_t core_index) const;
+  uint64_t coalescer_misses(uint32_t core_index) const;
   MemCoalescer::PerfStats coalescer_perf_stats() const;
   void dump_cache_bank_activity(std::ostream& os) const;
 

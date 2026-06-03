@@ -56,7 +56,8 @@ Cluster::Cluster(const SimContext& ctx,
     L2_WRITEBACK,           // write-back
     false,                  // write response
     L2_MSHR_SIZE,           // mshr size
-    SIMX_CACHE_LATENCY,     // pipeline latency
+    SIMX_L2_CACHE_LATENCY,  // pipeline latency
+    MemCacheLevelL2,        // cache level
   });
 
   // connect l2cache core interfaces
@@ -149,6 +150,29 @@ Cluster::PerfStats Cluster::perf_stats() const {
   PerfStats perf_stats;
   perf_stats.l2cache = l2cache_->perf_stats();
   return perf_stats;
+}
+
+Socket::PerfStats Cluster::socket_perf_stats(uint32_t local_core_id) const {
+  uint32_t socket_id = local_core_id / cores_per_socket_;
+  return sockets_.at(socket_id)->perf_stats();
+}
+
+const Core::PerfStats& Cluster::core_perf_stats(uint32_t local_core_id) const {
+  uint32_t socket_id = local_core_id / cores_per_socket_;
+  uint32_t core_index = local_core_id % cores_per_socket_;
+  return sockets_.at(socket_id)->core_perf_stats(core_index);
+}
+
+LocalMem::PerfStats Cluster::local_mem_perf_stats(uint32_t local_core_id) const {
+  uint32_t socket_id = local_core_id / cores_per_socket_;
+  uint32_t core_index = local_core_id % cores_per_socket_;
+  return sockets_.at(socket_id)->local_mem_perf_stats(core_index);
+}
+
+uint64_t Cluster::coalescer_misses(uint32_t local_core_id) const {
+  uint32_t socket_id = local_core_id / cores_per_socket_;
+  uint32_t core_index = local_core_id % cores_per_socket_;
+  return sockets_.at(socket_id)->coalescer_misses(core_index);
 }
 
 MemCoalescer::PerfStats Cluster::coalescer_perf_stats() const {

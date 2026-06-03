@@ -54,6 +54,7 @@ ProcessorImpl::ProcessorImpl(const Arch& arch)
     false,                    // write response
     L3_MSHR_SIZE,             // mshr size
     SIMX_CACHE_LATENCY,       // pipeline latency
+    MemCacheLevelL3,          // cache level
     }
   );
 
@@ -214,6 +215,105 @@ void ProcessorImpl::dcr_write(uint32_t addr, uint32_t value) {
   dcrs_.write(addr, value);
 }
 
+int ProcessorImpl::mpm_query(uint32_t addr, uint32_t core_id, uint64_t* value) const {
+  auto read64 = [&](uint32_t csr_addr, uint64_t csr_value) -> bool {
+    if (addr == csr_addr) {
+      *value = csr_value & 0xffffffff;
+      return true;
+    }
+    if (addr == (csr_addr + (VX_CSR_MPM_BASE_H - VX_CSR_MPM_BASE))) {
+      *value = (csr_value >> 32) & 0xffffffff;
+      return true;
+    }
+    return false;
+  };
+
+  uint32_t cores_per_cluster = arch_.num_cores();
+  uint32_t cluster_id = core_id / cores_per_cluster;
+  uint32_t local_core_id = core_id % cores_per_cluster;
+  if (cluster_id >= clusters_.size())
+    return -1;
+
+  auto cluster = clusters_.at(cluster_id);
+  auto& core_perf = cluster->core_perf_stats(local_core_id);
+  if (read64(VX_CSR_MCYCLE, core_perf.cycles))
+    return 0;
+  if (read64(VX_CSR_MINSTRET, core_perf.instrs))
+    return 0;
+
+  auto perf_class = dcrs_.base_dcrs.read(VX_DCR_BASE_MPM_CLASS);
+  switch (perf_class) {
+  case VX_DCR_MPM_CLASS_NONE:
+    *value = 0;
+    return 0;
+  case VX_DCR_MPM_CLASS_CORE:
+    if (read64(VX_CSR_MPM_SCHED_ID, core_perf.sched_idle)) return 0;
+    if (read64(VX_CSR_MPM_SCHED_ST, core_perf.sched_stalls)) return 0;
+    if (read64(VX_CSR_MPM_IBUF_ST, core_perf.ibuf_stalls)) return 0;
+    if (read64(VX_CSR_MPM_SCRB_ST, core_perf.scrb_stalls)) return 0;
+    if (read64(VX_CSR_MPM_OPDS_ST, core_perf.opds_stalls)) return 0;
+    if (read64(VX_CSR_MPM_SCRB_ALU, core_perf.scrb_alu)) return 0;
+    if (read64(VX_CSR_MPM_SCRB_FPU, core_perf.scrb_fpu)) return 0;
+    if (read64(VX_CSR_MPM_SCRB_LSU, core_perf.scrb_lsu)) return 0;
+    if (read64(VX_CSR_MPM_SCRB_SFU, core_perf.scrb_sfu)) return 0;
+  #ifdef EXT_TCU_ENABLE
+    if (read64(VX_CSR_MPM_SCRB_TCU, core_perf.scrb_tcu)) return 0;
+  #endif
+  #ifdef EXT_V_ENABLE
+    if (read64(VX_CSR_MPM_SCRB_VPU, core_perf.scrb_vpu)) return 0;
+  #endif
+    if (read64(VX_CSR_MPM_SCRB_CSRS, core_perf.scrb_csrs)) return 0;
+    if (read64(VX_CSR_MPM_SCRB_WCTL, core_perf.scrb_wctl)) return 0;
+    if (read64(VX_CSR_MPM_IFETCHES, core_perf.ifetches)) return 0;
+    if (read64(VX_CSR_MPM_LOADS, core_perf.loads)) return 0;
+    if (read64(VX_CSR_MPM_STORES, core_perf.stores)) return 0;
+    if (read64(VX_CSR_MPM_IFETCH_LT, core_perf.ifetch_latency)) return 0;
+    if (read64(VX_CSR_MPM_LOAD_LT, core_perf.load_latency)) return 0;
+    break;
+  case VX_DCR_MPM_CLASS_MEM: {
+    auto proc_perf = this->perf_stats();
+    auto cluster_perf = cluster->perf_stats();
+    auto socket_perf = cluster->socket_perf_stats(local_core_id);
+    auto lmem_perf = cluster->local_mem_perf_stats(local_core_id);
+    auto coalescer_misses = cluster->coalescer_misses(local_core_id);
+
+    if (read64(VX_CSR_MPM_ICACHE_READS, socket_perf.icache.reads)) return 0;
+    if (read64(VX_CSR_MPM_ICACHE_MISS_R, socket_perf.icache.read_misses)) return 0;
+    if (read64(VX_CSR_MPM_ICACHE_MSHR_ST, socket_perf.icache.mshr_stalls)) return 0;
+    if (read64(VX_CSR_MPM_DCACHE_READS, socket_perf.dcache.reads)) return 0;
+    if (read64(VX_CSR_MPM_DCACHE_WRITES, socket_perf.dcache.writes)) return 0;
+    if (read64(VX_CSR_MPM_DCACHE_MISS_R, socket_perf.dcache.read_misses)) return 0;
+    if (read64(VX_CSR_MPM_DCACHE_MISS_W, socket_perf.dcache.write_misses)) return 0;
+    if (read64(VX_CSR_MPM_DCACHE_BANK_ST, socket_perf.dcache.bank_stalls)) return 0;
+    if (read64(VX_CSR_MPM_DCACHE_MSHR_ST, socket_perf.dcache.mshr_stalls)) return 0;
+    if (read64(VX_CSR_MPM_L2CACHE_READS, cluster_perf.l2cache.reads)) return 0;
+    if (read64(VX_CSR_MPM_L2CACHE_WRITES, cluster_perf.l2cache.writes)) return 0;
+    if (read64(VX_CSR_MPM_L2CACHE_MISS_R, cluster_perf.l2cache.read_misses)) return 0;
+    if (read64(VX_CSR_MPM_L2CACHE_MISS_W, cluster_perf.l2cache.write_misses)) return 0;
+    if (read64(VX_CSR_MPM_L2CACHE_BANK_ST, cluster_perf.l2cache.bank_stalls)) return 0;
+    if (read64(VX_CSR_MPM_L2CACHE_MSHR_ST, cluster_perf.l2cache.mshr_stalls)) return 0;
+    if (read64(VX_CSR_MPM_L3CACHE_READS, proc_perf.l3cache.reads)) return 0;
+    if (read64(VX_CSR_MPM_L3CACHE_WRITES, proc_perf.l3cache.writes)) return 0;
+    if (read64(VX_CSR_MPM_L3CACHE_MISS_R, proc_perf.l3cache.read_misses)) return 0;
+    if (read64(VX_CSR_MPM_L3CACHE_MISS_W, proc_perf.l3cache.write_misses)) return 0;
+    if (read64(VX_CSR_MPM_L3CACHE_BANK_ST, proc_perf.l3cache.bank_stalls)) return 0;
+    if (read64(VX_CSR_MPM_L3CACHE_MSHR_ST, proc_perf.l3cache.mshr_stalls)) return 0;
+    if (read64(VX_CSR_MPM_MEM_READS, proc_perf.mem_reads)) return 0;
+    if (read64(VX_CSR_MPM_MEM_WRITES, proc_perf.mem_writes)) return 0;
+    if (read64(VX_CSR_MPM_MEM_LT, proc_perf.mem_latency)) return 0;
+    if (read64(VX_CSR_MPM_MEM_BANK_ST, proc_perf.memsim.bank_stalls)) return 0;
+    if (read64(VX_CSR_MPM_COALESCER_MISS, coalescer_misses)) return 0;
+    if (read64(VX_CSR_MPM_LMEM_READS, lmem_perf.reads)) return 0;
+    if (read64(VX_CSR_MPM_LMEM_WRITES, lmem_perf.writes)) return 0;
+    if (read64(VX_CSR_MPM_LMEM_BANK_ST, lmem_perf.bank_stalls)) return 0;
+  } break;
+  default:
+    return -1;
+  }
+
+  return -1;
+}
+
 ProcessorImpl::PerfStats ProcessorImpl::perf_stats() const {
   ProcessorImpl::PerfStats perf;
   perf.mem_reads   = perf_mem_reads_;
@@ -259,6 +359,10 @@ int Processor::run() {
 
 void Processor::dcr_write(uint32_t addr, uint32_t value) {
   return impl_->dcr_write(addr, value);
+}
+
+int Processor::mpm_query(uint32_t addr, uint32_t core_id, uint64_t* value) const {
+  return impl_->mpm_query(addr, core_id, value);
 }
 
 #ifdef VM_ENABLE

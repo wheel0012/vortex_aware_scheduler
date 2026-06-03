@@ -514,6 +514,17 @@ Core::Core(const SimContext& ctx,
             userpc_lane_dcache_rsp_groups_.erase(lane_it);
         }
       }
+      if (!rsp.write) {
+        bool l1_hit = (rsp.cache_hit_mask & MemCacheLevelL1) || !rsp.miss;
+        bool l2_hit = (rsp.cache_hit_mask & MemCacheLevelL2) != 0;
+        if (l1_hit) {
+          ++userpc_perf_.dcache_read_l1_hits;
+        } else if (l2_hit) {
+          ++userpc_perf_.dcache_read_l2_hits;
+        } else {
+          ++userpc_perf_.dcache_read_memory_misses;
+        }
+      }
       if (rsp.miss) {
         if (rsp.write) {
           ++userpc_perf_.dcache_write_misses;
@@ -540,6 +551,24 @@ Core::Core(const SimContext& ctx,
             default:
               ++userpc_perf_.dcache_read_locality_cold_misses;
               break;
+            }
+          }
+          if (have_lane_group) {
+            bool l2_hit = (rsp.cache_hit_mask & MemCacheLevelL2) != 0;
+            if (l2_hit) {
+              userpc_perf_.lane_dcache_read_l2_hit_accesses += lane_group.total();
+              userpc_perf_.lane_dcache_read_l2_cold_hits += lane_group.cold;
+              userpc_perf_.lane_dcache_read_l2_same_inst_hits += lane_group.same_inst;
+              userpc_perf_.lane_dcache_read_l2_thread_local_hits += lane_group.thread_local_count;
+              userpc_perf_.lane_dcache_read_l2_intra_warp_hits += lane_group.intra_warp;
+              userpc_perf_.lane_dcache_read_l2_inter_warp_hits += lane_group.inter_warp;
+            } else {
+              userpc_perf_.lane_dcache_read_memory_miss_accesses += lane_group.total();
+              userpc_perf_.lane_dcache_read_memory_cold_misses += lane_group.cold;
+              userpc_perf_.lane_dcache_read_memory_same_inst_misses += lane_group.same_inst;
+              userpc_perf_.lane_dcache_read_memory_thread_local_misses += lane_group.thread_local_count;
+              userpc_perf_.lane_dcache_read_memory_intra_warp_misses += lane_group.intra_warp;
+              userpc_perf_.lane_dcache_read_memory_inter_warp_misses += lane_group.inter_warp;
             }
           }
         }
@@ -643,6 +672,9 @@ Core::UserPCPerfStats::UserPCPerfStats()
   , dcache_writes(0)
   , dcache_read_misses(0)
   , dcache_write_misses(0)
+  , dcache_read_l1_hits(0)
+  , dcache_read_l2_hits(0)
+  , dcache_read_memory_misses(0)
   , dcache_read_latency(0)
   , dcache_pending_reads(0)
   , dcache_stride_valid(false)
@@ -687,6 +719,18 @@ Core::UserPCPerfStats::UserPCPerfStats()
   , lane_dcache_read_thread_local_hits(0)
   , lane_dcache_read_intra_warp_hits(0)
   , lane_dcache_read_inter_warp_hits(0)
+  , lane_dcache_read_l2_hit_accesses(0)
+  , lane_dcache_read_l2_cold_hits(0)
+  , lane_dcache_read_l2_same_inst_hits(0)
+  , lane_dcache_read_l2_thread_local_hits(0)
+  , lane_dcache_read_l2_intra_warp_hits(0)
+  , lane_dcache_read_l2_inter_warp_hits(0)
+  , lane_dcache_read_memory_miss_accesses(0)
+  , lane_dcache_read_memory_cold_misses(0)
+  , lane_dcache_read_memory_same_inst_misses(0)
+  , lane_dcache_read_memory_thread_local_misses(0)
+  , lane_dcache_read_memory_intra_warp_misses(0)
+  , lane_dcache_read_memory_inter_warp_misses(0)
   , lane_dcache_read_reuse_accesses(0)
   , lane_dcache_read_reuse_distance_sum(0)
   , dcache_line_stride_valid(false)
@@ -1200,6 +1244,28 @@ void Core::dump_userpc_perf() const {
       userpc_perf_.lane_dcache_read_inter_warp_accesses;
   auto lane_dcache_read_inter_warp_reuse_hits =
       userpc_perf_.lane_dcache_read_inter_warp_hits;
+  auto lane_dcache_read_l2_same_warp_reuse_hits =
+      userpc_perf_.lane_dcache_read_l2_thread_local_hits
+    + userpc_perf_.lane_dcache_read_l2_intra_warp_hits;
+  auto lane_dcache_read_l2_inter_warp_reuse_hits =
+      userpc_perf_.lane_dcache_read_l2_inter_warp_hits;
+  auto lane_dcache_read_memory_same_warp_reuse_misses =
+      userpc_perf_.lane_dcache_read_memory_thread_local_misses
+    + userpc_perf_.lane_dcache_read_memory_intra_warp_misses;
+  auto lane_dcache_read_memory_inter_warp_reuse_misses =
+      userpc_perf_.lane_dcache_read_memory_inter_warp_misses;
+  auto lane_dcache_read_l2_same_warp_reuse_requests =
+      lane_dcache_read_l2_same_warp_reuse_hits
+    + lane_dcache_read_memory_same_warp_reuse_misses;
+  auto lane_dcache_read_l2_thread_local_requests =
+      userpc_perf_.lane_dcache_read_l2_thread_local_hits
+    + userpc_perf_.lane_dcache_read_memory_thread_local_misses;
+  auto lane_dcache_read_l2_intra_warp_requests =
+      userpc_perf_.lane_dcache_read_l2_intra_warp_hits
+    + userpc_perf_.lane_dcache_read_memory_intra_warp_misses;
+  auto lane_dcache_read_l2_inter_warp_requests =
+      userpc_perf_.lane_dcache_read_l2_inter_warp_hits
+    + userpc_perf_.lane_dcache_read_memory_inter_warp_misses;
   auto dcache_read_locality_accesses =
       userpc_perf_.dcache_read_locality_cold_accesses
     + userpc_perf_.dcache_read_locality_thread_local_accesses
@@ -1287,6 +1353,15 @@ void Core::dump_userpc_perf() const {
             << ", writes=" << userpc_perf_.dcache_writes << ")\n";
   std::cerr << "PERF: userpc dcache read misses=" << userpc_perf_.dcache_read_misses
             << " (hit ratio=" << pct_u64(userpc_perf_.dcache_reads - userpc_perf_.dcache_read_misses, userpc_perf_.dcache_reads) << "%)\n";
+  std::cerr << "PERF: userpc dcache read levels"
+            << " reads=" << userpc_perf_.dcache_reads
+            << " l1_hits=" << userpc_perf_.dcache_read_l1_hits
+            << " l2_hits=" << userpc_perf_.dcache_read_l2_hits
+            << " memory_misses=" << userpc_perf_.dcache_read_memory_misses
+            << " l1_hit_rate=" << pct_u64(userpc_perf_.dcache_read_l1_hits, userpc_perf_.dcache_reads) << "%"
+            << " l2_hit_rate=" << pct_u64(userpc_perf_.dcache_read_l2_hits, userpc_perf_.dcache_reads) << "%"
+            << " memory_miss_rate=" << pct_u64(userpc_perf_.dcache_read_memory_misses, userpc_perf_.dcache_reads) << "%"
+            << "\n";
   std::cerr << "PERF: userpc dcache write misses=" << userpc_perf_.dcache_write_misses
             << " (hit ratio=" << pct_u64(userpc_perf_.dcache_writes - userpc_perf_.dcache_write_misses, userpc_perf_.dcache_writes) << "%)\n";
   std::cerr << "PERF: userpc dcache read stride avg=" << dcache_read_avg_stride
@@ -1422,6 +1497,58 @@ void Core::dump_userpc_perf() const {
             << " inter_warp_hit_rate=" << pct_u64(lane_dcache_read_inter_warp_reuse_hits,
                                                   lane_dcache_read_inter_warp_reuse_accesses) << "%"
             << "\n";
+  std::cerr << "PERF: userpc lane dcache l2 temporal reuse hit rates"
+            << " same_warp_accesses=" << lane_dcache_read_same_warp_reuse_accesses
+            << " same_warp_hits=" << lane_dcache_read_l2_same_warp_reuse_hits
+            << " same_warp_hit_rate=" << pct_u64(lane_dcache_read_l2_same_warp_reuse_hits,
+                                                 lane_dcache_read_same_warp_reuse_accesses) << "%"
+            << " inter_warp_accesses=" << lane_dcache_read_inter_warp_reuse_accesses
+            << " inter_warp_hits=" << lane_dcache_read_l2_inter_warp_reuse_hits
+            << " inter_warp_hit_rate=" << pct_u64(lane_dcache_read_l2_inter_warp_reuse_hits,
+                                                  lane_dcache_read_inter_warp_reuse_accesses) << "%"
+            << "\n";
+  std::cerr << "PERF: userpc lane dcache l2 temporal locality hit rates"
+            << " thread_local_accesses=" << userpc_perf_.lane_dcache_read_thread_local_accesses
+            << " thread_local_hits=" << userpc_perf_.lane_dcache_read_l2_thread_local_hits
+            << " thread_local_hit_rate=" << pct_u64(userpc_perf_.lane_dcache_read_l2_thread_local_hits,
+                                                    userpc_perf_.lane_dcache_read_thread_local_accesses) << "%"
+            << " intra_warp_accesses=" << userpc_perf_.lane_dcache_read_intra_warp_accesses
+            << " intra_warp_hits=" << userpc_perf_.lane_dcache_read_l2_intra_warp_hits
+            << " intra_warp_hit_rate=" << pct_u64(userpc_perf_.lane_dcache_read_l2_intra_warp_hits,
+                                                  userpc_perf_.lane_dcache_read_intra_warp_accesses) << "%"
+            << " inter_warp_accesses=" << userpc_perf_.lane_dcache_read_inter_warp_accesses
+            << " inter_warp_hits=" << userpc_perf_.lane_dcache_read_l2_inter_warp_hits
+            << " inter_warp_hit_rate=" << pct_u64(userpc_perf_.lane_dcache_read_l2_inter_warp_hits,
+                                                  userpc_perf_.lane_dcache_read_inter_warp_accesses) << "%"
+            << "\n";
+  std::cerr << "PERF: userpc lane dcache l2 temporal locality requests"
+            << " l2_same_warp_requests=" << lane_dcache_read_l2_same_warp_reuse_requests
+            << " l2_same_warp_misses=" << lane_dcache_read_memory_same_warp_reuse_misses
+            << " l2_same_warp_hit_rate=" << pct_u64(lane_dcache_read_l2_same_warp_reuse_hits,
+                                                 lane_dcache_read_l2_same_warp_reuse_requests) << "%"
+            << " l2_thread_local_requests=" << lane_dcache_read_l2_thread_local_requests
+            << " l2_thread_local_misses=" << userpc_perf_.lane_dcache_read_memory_thread_local_misses
+            << " l2_thread_local_hit_rate=" << pct_u64(userpc_perf_.lane_dcache_read_l2_thread_local_hits,
+                                                    lane_dcache_read_l2_thread_local_requests) << "%"
+            << " l2_intra_warp_requests=" << lane_dcache_read_l2_intra_warp_requests
+            << " l2_intra_warp_misses=" << userpc_perf_.lane_dcache_read_memory_intra_warp_misses
+            << " l2_intra_warp_hit_rate=" << pct_u64(userpc_perf_.lane_dcache_read_l2_intra_warp_hits,
+                                                  lane_dcache_read_l2_intra_warp_requests) << "%"
+            << " l2_inter_warp_requests=" << lane_dcache_read_l2_inter_warp_requests
+            << " l2_inter_warp_misses=" << userpc_perf_.lane_dcache_read_memory_inter_warp_misses
+            << " l2_inter_warp_hit_rate=" << pct_u64(userpc_perf_.lane_dcache_read_l2_inter_warp_hits,
+                                                  lane_dcache_read_l2_inter_warp_requests) << "%"
+            << "\n";
+  std::cerr << "PERF: userpc lane dcache memory temporal reuse miss rates"
+            << " same_warp_accesses=" << lane_dcache_read_same_warp_reuse_accesses
+            << " same_warp_misses=" << lane_dcache_read_memory_same_warp_reuse_misses
+            << " same_warp_miss_rate=" << pct_u64(lane_dcache_read_memory_same_warp_reuse_misses,
+                                                  lane_dcache_read_same_warp_reuse_accesses) << "%"
+            << " inter_warp_accesses=" << lane_dcache_read_inter_warp_reuse_accesses
+            << " inter_warp_misses=" << lane_dcache_read_memory_inter_warp_reuse_misses
+            << " inter_warp_miss_rate=" << pct_u64(lane_dcache_read_memory_inter_warp_reuse_misses,
+                                                   lane_dcache_read_inter_warp_reuse_accesses) << "%"
+            << "\n";
   std::cerr << "PERF: userpc dcache read reuse gap buckets(le4=" << userpc_perf_.dcache_read_reuse_gap_le4
             << ", le16=" << userpc_perf_.dcache_read_reuse_gap_le16
             << ", le64=" << userpc_perf_.dcache_read_reuse_gap_le64
@@ -1520,6 +1647,16 @@ void Core::dump_userpc_perf() const {
             << " avg_read_latency=" << dcache_read_avg_lat
             << "\n";
   std::cerr << "[USERPC_PERF core=" << core_id_ << "] "
+            << "dcache_level"
+            << " reads=" << userpc_perf_.dcache_reads
+            << " l1_hits=" << userpc_perf_.dcache_read_l1_hits
+            << " l2_hits=" << userpc_perf_.dcache_read_l2_hits
+            << " memory_misses=" << userpc_perf_.dcache_read_memory_misses
+            << " l1_hit_rate=" << pct_u64(userpc_perf_.dcache_read_l1_hits, userpc_perf_.dcache_reads)
+            << " l2_hit_rate=" << pct_u64(userpc_perf_.dcache_read_l2_hits, userpc_perf_.dcache_reads)
+            << " memory_miss_rate=" << pct_u64(userpc_perf_.dcache_read_memory_misses, userpc_perf_.dcache_reads)
+            << "\n";
+  std::cerr << "[USERPC_PERF core=" << core_id_ << "] "
             << "dcache_stride"
             << " avg_read_stride=" << dcache_read_avg_stride
             << " avg_read_stride_capped_4k=" << dcache_read_avg_stride_capped_4k
@@ -1597,6 +1734,62 @@ void Core::dump_userpc_perf() const {
             << " inter_warp_hits=" << lane_dcache_read_inter_warp_reuse_hits
             << " inter_warp_hit_rate=" << pct_u64(lane_dcache_read_inter_warp_reuse_hits,
                                                   lane_dcache_read_inter_warp_reuse_accesses)
+            << "\n";
+  std::cerr << "[USERPC_PERF core=" << core_id_ << "] "
+            << "lane_dcache_l2_temporal_reuse_hit_rate"
+            << " same_warp_accesses=" << lane_dcache_read_same_warp_reuse_accesses
+            << " same_warp_hits=" << lane_dcache_read_l2_same_warp_reuse_hits
+            << " same_warp_hit_rate=" << pct_u64(lane_dcache_read_l2_same_warp_reuse_hits,
+                                                 lane_dcache_read_same_warp_reuse_accesses)
+            << " inter_warp_accesses=" << lane_dcache_read_inter_warp_reuse_accesses
+            << " inter_warp_hits=" << lane_dcache_read_l2_inter_warp_reuse_hits
+            << " inter_warp_hit_rate=" << pct_u64(lane_dcache_read_l2_inter_warp_reuse_hits,
+                                                  lane_dcache_read_inter_warp_reuse_accesses)
+            << "\n";
+  std::cerr << "[USERPC_PERF core=" << core_id_ << "] "
+            << "lane_dcache_l2_temporal_locality_hit_rate"
+            << " thread_local_accesses=" << userpc_perf_.lane_dcache_read_thread_local_accesses
+            << " thread_local_hits=" << userpc_perf_.lane_dcache_read_l2_thread_local_hits
+            << " thread_local_hit_rate=" << pct_u64(userpc_perf_.lane_dcache_read_l2_thread_local_hits,
+                                                    userpc_perf_.lane_dcache_read_thread_local_accesses)
+            << " intra_warp_accesses=" << userpc_perf_.lane_dcache_read_intra_warp_accesses
+            << " intra_warp_hits=" << userpc_perf_.lane_dcache_read_l2_intra_warp_hits
+            << " intra_warp_hit_rate=" << pct_u64(userpc_perf_.lane_dcache_read_l2_intra_warp_hits,
+                                                  userpc_perf_.lane_dcache_read_intra_warp_accesses)
+            << " inter_warp_accesses=" << userpc_perf_.lane_dcache_read_inter_warp_accesses
+            << " inter_warp_hits=" << userpc_perf_.lane_dcache_read_l2_inter_warp_hits
+            << " inter_warp_hit_rate=" << pct_u64(userpc_perf_.lane_dcache_read_l2_inter_warp_hits,
+                                                  userpc_perf_.lane_dcache_read_inter_warp_accesses)
+            << "\n";
+  std::cerr << "[USERPC_PERF core=" << core_id_ << "] "
+            << "lane_dcache_l2_temporal_locality_requests"
+            << " l2_same_warp_requests=" << lane_dcache_read_l2_same_warp_reuse_requests
+            << " l2_same_warp_misses=" << lane_dcache_read_memory_same_warp_reuse_misses
+            << " l2_same_warp_hit_rate=" << pct_u64(lane_dcache_read_l2_same_warp_reuse_hits,
+                                                 lane_dcache_read_l2_same_warp_reuse_requests)
+            << " l2_thread_local_requests=" << lane_dcache_read_l2_thread_local_requests
+            << " l2_thread_local_misses=" << userpc_perf_.lane_dcache_read_memory_thread_local_misses
+            << " l2_thread_local_hit_rate=" << pct_u64(userpc_perf_.lane_dcache_read_l2_thread_local_hits,
+                                                    lane_dcache_read_l2_thread_local_requests)
+            << " l2_intra_warp_requests=" << lane_dcache_read_l2_intra_warp_requests
+            << " l2_intra_warp_misses=" << userpc_perf_.lane_dcache_read_memory_intra_warp_misses
+            << " l2_intra_warp_hit_rate=" << pct_u64(userpc_perf_.lane_dcache_read_l2_intra_warp_hits,
+                                                  lane_dcache_read_l2_intra_warp_requests)
+            << " l2_inter_warp_requests=" << lane_dcache_read_l2_inter_warp_requests
+            << " l2_inter_warp_misses=" << userpc_perf_.lane_dcache_read_memory_inter_warp_misses
+            << " l2_inter_warp_hit_rate=" << pct_u64(userpc_perf_.lane_dcache_read_l2_inter_warp_hits,
+                                                  lane_dcache_read_l2_inter_warp_requests)
+            << "\n";
+  std::cerr << "[USERPC_PERF core=" << core_id_ << "] "
+            << "lane_dcache_memory_temporal_reuse_miss_rate"
+            << " same_warp_accesses=" << lane_dcache_read_same_warp_reuse_accesses
+            << " same_warp_misses=" << lane_dcache_read_memory_same_warp_reuse_misses
+            << " same_warp_miss_rate=" << pct_u64(lane_dcache_read_memory_same_warp_reuse_misses,
+                                                  lane_dcache_read_same_warp_reuse_accesses)
+            << " inter_warp_accesses=" << lane_dcache_read_inter_warp_reuse_accesses
+            << " inter_warp_misses=" << lane_dcache_read_memory_inter_warp_reuse_misses
+            << " inter_warp_miss_rate=" << pct_u64(lane_dcache_read_memory_inter_warp_reuse_misses,
+                                                   lane_dcache_read_inter_warp_reuse_accesses)
             << "\n";
 
   std::cerr << "[USERPC_PERF WARP core=" << core_id_ << "] wid issues first_cycle last_cycle\n";

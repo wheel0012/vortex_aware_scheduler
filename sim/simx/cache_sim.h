@@ -34,6 +34,7 @@ public:
 		bool    write_reponse;  // enable write response
 		uint16_t mshr_size;     // MSHR buffer size
 		uint8_t latency;        // pipeline latency
+		uint32_t level;         // MemCacheLevel bit for response attribution
 	};
 
 	struct PerfStats {

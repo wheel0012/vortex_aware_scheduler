@@ -69,6 +69,10 @@ public:
   void barrier(uint32_t bar_id, uint32_t count, uint32_t core_id);
 
   PerfStats perf_stats() const;
+  Socket::PerfStats socket_perf_stats(uint32_t local_core_id) const;
+  const Core::PerfStats& core_perf_stats(uint32_t local_core_id) const;
+  LocalMem::PerfStats local_mem_perf_stats(uint32_t local_core_id) const;
+  uint64_t coalescer_misses(uint32_t local_core_id) const;
   MemCoalescer::PerfStats coalescer_perf_stats() const;
   void dump_cache_bank_activity(std::ostream& os) const;
 

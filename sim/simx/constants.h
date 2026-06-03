@@ -28,7 +28,12 @@
 #define SIMX_CACHE_LATENCY 2
 #endif
 
+#ifndef SIMX_L2_CACHE_LATENCY
+#define SIMX_L2_CACHE_LATENCY SIMX_CACHE_LATENCY
+#endif
+
 static_assert(SIMX_CACHE_LATENCY >= 1, "SIMX_CACHE_LATENCY must be at least 1");
+static_assert(SIMX_L2_CACHE_LATENCY >= 1, "SIMX_L2_CACHE_LATENCY must be at least 1");
 
 namespace vortex {
 

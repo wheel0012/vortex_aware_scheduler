@@ -36,6 +36,7 @@ public:
   int run();
 
   void dcr_write(uint32_t addr, uint32_t value);
+  int mpm_query(uint32_t addr, uint32_t core_id, uint64_t* value) const;
 #ifdef VM_ENABLE
   bool is_satp_unset();
   uint8_t get_satp_mode();

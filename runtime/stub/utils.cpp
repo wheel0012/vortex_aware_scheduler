@@ -240,6 +240,8 @@ extern int vx_dump_perf(vx_device_h hdevice, FILE* stream) {
   bool tcu_enable     = isa_flags & VX_ISA_EXT_TCU;
 
   auto perf_class = get_profiling_mode();
+  auto include_core_perf = (perf_class == VX_DCR_MPM_CLASS_CORE || perf_class == VX_DCR_MPM_CLASS_MEM);
+  auto include_mem_perf = (perf_class == VX_DCR_MPM_CLASS_MEM);
 
   for (unsigned core_id = 0; core_id < num_cores; ++core_id) {
     uint64_t cycles_per_core;
@@ -252,8 +254,10 @@ extern int vx_dump_perf(vx_device_h hdevice, FILE* stream) {
       return err;
     });
 
-    switch (perf_class) {
-    case VX_DCR_MPM_CLASS_CORE: {
+    if (include_core_perf) {
+      CHECK_ERR(vx_dcr_write(hdevice, VX_DCR_BASE_MPM_CLASS, VX_DCR_MPM_CLASS_CORE), {
+        return err;
+      });
       // PERF: pipeline
       // scheduler idles
       {
@@ -426,8 +430,11 @@ extern int vx_dump_perf(vx_device_h hdevice, FILE* stream) {
         if (num_cores > 1) fprintf(stream, "PERF: core%d: stores=%ld\n", core_id, stores_per_core);
         stores += stores_per_core;
       }
-    } break;
-    case VX_DCR_MPM_CLASS_MEM: {
+    }
+    if (include_mem_perf) {
+      CHECK_ERR(vx_dcr_write(hdevice, VX_DCR_BASE_MPM_CLASS, VX_DCR_MPM_CLASS_MEM), {
+        return err;
+      });
       if (lmem_enable) {
         // PERF: lmem
         uint64_t lmem_reads;
@@ -587,9 +594,6 @@ extern int vx_dump_perf(vx_device_h hdevice, FILE* stream) {
           return err;
         });
       }
-    } break;
-    default:
-      break;
     }
 
     float IPC = caclAverage(instrs_per_core, cycles_per_core);
@@ -599,8 +603,7 @@ extern int vx_dump_perf(vx_device_h hdevice, FILE* stream) {
     max_cycles = std::max<uint64_t>(cycles_per_core, max_cycles);
   }
 
-  switch (perf_class) {
-  case VX_DCR_MPM_CLASS_CORE: {
+  if (include_core_perf) {
     int sched_idles_percent = calcAvgPercent(sched_idles, total_cycles);
     int sched_stalls_percent = calcAvgPercent(sched_stalls, total_cycles);
     int ibuffer_percent = calcAvgPercent(ibuffer_stalls, total_cycles);
@@ -636,8 +639,8 @@ extern int vx_dump_perf(vx_device_h hdevice, FILE* stream) {
     fprintf(stream, "PERF: stores=%ld\n", stores);
     fprintf(stream, "PERF: ifetch latency=%d cycles\n", ifetch_avg_lat);
     fprintf(stream, "PERF: load latency=%d cycles\n", load_avg_lat);
-  } break;
-  case VX_DCR_MPM_CLASS_MEM: {
+  }
+  if (include_mem_perf) {
     if (l2cache_enable) {
       l2cache_reads /= num_cores;
       l2cache_writes /= num_cores;
@@ -678,9 +681,6 @@ extern int vx_dump_perf(vx_device_h hdevice, FILE* stream) {
       fprintf(stream, "PERF: memory latency=%d cycles\n", mem_avg_lat);
       fprintf(stream, "PERF: memory bank stalls=%ld (utilization=%d%%)\n", mem_bank_stalls, mem_bank_utilization);
     }
-  } break;
-  default:
-    break;
   }
 
   float IPC = caclAverage(total_instrs, max_cycles);

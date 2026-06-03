@@ -266,6 +266,9 @@ private:
     uint64_t dcache_writes;
     uint64_t dcache_read_misses;
     uint64_t dcache_write_misses;
+    uint64_t dcache_read_l1_hits;
+    uint64_t dcache_read_l2_hits;
+    uint64_t dcache_read_memory_misses;
     uint64_t dcache_read_latency;
     uint64_t dcache_pending_reads;
     bool dcache_stride_valid;
@@ -310,6 +313,18 @@ private:
     uint64_t lane_dcache_read_thread_local_hits;
     uint64_t lane_dcache_read_intra_warp_hits;
     uint64_t lane_dcache_read_inter_warp_hits;
+    uint64_t lane_dcache_read_l2_hit_accesses;
+    uint64_t lane_dcache_read_l2_cold_hits;
+    uint64_t lane_dcache_read_l2_same_inst_hits;
+    uint64_t lane_dcache_read_l2_thread_local_hits;
+    uint64_t lane_dcache_read_l2_intra_warp_hits;
+    uint64_t lane_dcache_read_l2_inter_warp_hits;
+    uint64_t lane_dcache_read_memory_miss_accesses;
+    uint64_t lane_dcache_read_memory_cold_misses;
+    uint64_t lane_dcache_read_memory_same_inst_misses;
+    uint64_t lane_dcache_read_memory_thread_local_misses;
+    uint64_t lane_dcache_read_memory_intra_warp_misses;
+    uint64_t lane_dcache_read_memory_inter_warp_misses;
     uint64_t lane_dcache_read_reuse_accesses;
     uint64_t lane_dcache_read_reuse_distance_sum;
     bool dcache_line_stride_valid;

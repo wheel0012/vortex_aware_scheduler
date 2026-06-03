@@ -79,6 +79,7 @@ Socket::Socket(const SimContext& ctx,
     false,                  // write response
     ICACHE_MSHR_SIZE,       // mshr size
     SIMX_CACHE_LATENCY,     // pipeline latency
+    MemCacheLevelL1,        // cache level
   });
 
   snprintf(sname, 100, "%s-dcaches", this->name().c_str());
@@ -96,6 +97,7 @@ Socket::Socket(const SimContext& ctx,
     false,                  // write response
     DCACHE_MSHR_SIZE,       // mshr size
     SIMX_CACHE_LATENCY,     // pipeline latency
+    MemCacheLevelL1,        // cache level
   });
 
   // find overlap
@@ -201,6 +203,22 @@ Socket::PerfStats Socket::perf_stats() const {
   perf_stats.icache = icaches_->perf_stats();
   perf_stats.dcache = dcaches_->perf_stats();
   return perf_stats;
+}
+
+const Core::PerfStats& Socket::core_perf_stats(uint32_t core_index) const {
+  return cores_.at(core_index)->perf_stats();
+}
+
+LocalMem::PerfStats Socket::local_mem_perf_stats(uint32_t core_index) const {
+  return cores_.at(core_index)->local_mem()->perf_stats();
+}
+
+uint64_t Socket::coalescer_misses(uint32_t core_index) const {
+  uint64_t misses = 0;
+  for (uint32_t i = 0; i < NUM_LSU_BLOCKS; ++i) {
+    misses += cores_.at(core_index)->mem_coalescer(i)->perf_stats().misses;
+  }
+  return misses;
 }
 
 MemCoalescer::PerfStats Socket::coalescer_perf_stats() const {

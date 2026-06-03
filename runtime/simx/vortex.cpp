@@ -362,6 +362,9 @@ public:
   }
 
   int mpm_query(uint32_t addr, uint32_t core_id, uint64_t *value) {
+    if (0 == processor_.mpm_query(addr, core_id, value))
+      return 0;
+
     uint32_t offset = addr - VX_CSR_MPM_BASE;
     if (offset > 31)
       return -1;

@@ -1234,6 +1234,12 @@ struct MemReq {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+enum MemCacheLevel : uint32_t {
+  MemCacheLevelL1 = 1 << 0,
+  MemCacheLevelL2 = 1 << 1,
+  MemCacheLevelL3 = 1 << 2,
+};
+
 struct MemRsp {
   uint64_t tag;
   uint32_t cid;
@@ -1241,14 +1247,18 @@ struct MemRsp {
   bool userpc;
   bool miss;
   bool write;
+  uint32_t cache_hit_mask;
+  uint32_t cache_miss_mask;
 
-  MemRsp(uint64_t _tag = 0, uint32_t _cid = 0, uint64_t _uuid = 0, bool _userpc = false, bool _miss = false, bool _write = false)
+  MemRsp(uint64_t _tag = 0, uint32_t _cid = 0, uint64_t _uuid = 0, bool _userpc = false, bool _miss = false, bool _write = false, uint32_t _cache_hit_mask = 0, uint32_t _cache_miss_mask = 0)
     : tag (_tag)
     , cid(_cid)
     , uuid(_uuid)
     , userpc(_userpc)
     , miss(_miss)
     , write(_write)
+    , cache_hit_mask(_cache_hit_mask)
+    , cache_miss_mask(_cache_miss_mask)
   {}
 
   friend std::ostream &operator<<(std::ostream &os, const MemRsp& rsp) {
