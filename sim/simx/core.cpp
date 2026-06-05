@@ -1965,7 +1965,8 @@ void Core::tick() {
 
   ++perf_stats_.cycles;
   // Periodic criticality-distribution snapshot for offline analysis.
-  if (env_enabled("VX_CPL_DUMP") && perf_stats_.cycles - dbg_crit_snap_last_cycle_ >= 10000) {
+  // Gated separately from VX_CPL_DUMP so non-gCAWS sweeps don't accumulate noise.
+  if (env_enabled("VX_CRIT_SNAP") && perf_stats_.cycles - dbg_crit_snap_last_cycle_ >= 10000) {
     dbg_crit_snap_last_cycle_ = perf_stats_.cycles;
     this->cpl_snap();
   }
